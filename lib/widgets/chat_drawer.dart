@@ -300,6 +300,9 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   late final ChatProvider _chatProvider;
   Timer? _pollTimer;
   Timer? _typingDebounce;
+  Timer? _typingKeepAlive;
+  Timer? _typingPollTimer;
+  DateTime? _lastTypingPing;
   Timer? _inboxSyncTimer;
 
   int get _myId => context.read<AuthProvider>().user?.id ?? 0;
@@ -334,6 +337,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     _scrollController.dispose();
     _pollTimer?.cancel();
     _typingDebounce?.cancel();
+    _typingKeepAlive?.cancel();
+    _typingPollTimer?.cancel();
     _searchDebounce?.cancel();
     _inboxSyncTimer?.cancel();
     super.dispose();
@@ -649,34 +654,72 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
 
   void _startPoll() {
     _pollTimer?.cancel();
+    _typingPollTimer?.cancel();
     _pollTimer = Timer.periodic(AppQuality.instance.chatMessagePollInterval, (_) async {
       await _loadMessages();
-      await _pollTyping();
       _markRead();
     });
+    _typingPollTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+      _pollTyping();
+    });
+    _pollTyping();
   }
 
   void _stopPoll() {
     _pollTimer?.cancel();
     _pollTimer = null;
+    _typingPollTimer?.cancel();
+    _typingPollTimer = null;
+    _typingKeepAlive?.cancel();
+    _typingKeepAlive = null;
   }
 
   Future<void> _pollTyping() async {
     if (_activeConversation == null) return;
     final typing = await ChatService.getTyping(_activeConversation!.id);
-    if (mounted) {
-      setState(() {
-        _otherIsTyping = typing.isNotEmpty;
-        _typingName = typing.isNotEmpty ? typing.first['full_name'] : null;
-      });
-    }
+    if (!mounted) return;
+    final nextTyping = typing.isNotEmpty;
+    final nextName = nextTyping ? typing.first['full_name'] as String? : null;
+    if (nextTyping == _otherIsTyping && nextName == _typingName) return;
+    setState(() {
+      _otherIsTyping = nextTyping;
+      _typingName = nextName;
+    });
   }
 
-  void _onTextChanged(String _) {
+  void _pingTyping() {
     if (_activeConversation == null) return;
-    _typingDebounce?.cancel();
+    final now = DateTime.now();
+    if (_lastTypingPing != null &&
+        now.difference(_lastTypingPing!) < const Duration(milliseconds: 1800)) {
+      return;
+    }
+    _lastTypingPing = now;
     ChatService.sendTyping(_activeConversation!.id);
-    _typingDebounce = Timer(const Duration(seconds: 3), () {});
+  }
+
+  void _onTextChanged(String text) {
+    if (_activeConversation == null) return;
+    if (text.trim().isEmpty) {
+      _typingKeepAlive?.cancel();
+      _typingKeepAlive = null;
+      return;
+    }
+    _pingTyping();
+    _typingDebounce?.cancel();
+    _typingKeepAlive?.cancel();
+    _typingKeepAlive = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_msgController.text.trim().isEmpty) {
+        _typingKeepAlive?.cancel();
+        _typingKeepAlive = null;
+        return;
+      }
+      _pingTyping();
+    });
+    _typingDebounce = Timer(const Duration(seconds: 4), () {
+      _typingKeepAlive?.cancel();
+      _typingKeepAlive = null;
+    });
   }
 
   Future<void> _sendText() async {
@@ -1167,17 +1210,15 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                   : ListView.builder(
                       controller: _scrollController,
                       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      itemCount: _groupedMessages.length + (_otherIsTyping ? 1 : 0),
+                      itemCount: _groupedMessages.length,
                       itemBuilder: (context, index) {
-                        if (index == _groupedMessages.length) return _buildTypingIndicator();
                         return _buildMessageGroup(_groupedMessages[index], index);
                       },
                     ),
         ),
-        // Typing indicator inline
-        if (_otherIsTyping && _messages.isEmpty)
+        if (_otherIsTyping)
           Padding(
-            padding: const EdgeInsets.only(left: 16, bottom: 4),
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 6),
             child: _buildTypingIndicator(),
           ),
         // Image preview bar
@@ -1193,7 +1234,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   // ═══════════════════════════════════════════════════════════════════════
 
   Widget _buildQuotedReply(ChatMessage msg) {
-    final isRepliedDeleted = msg.replyToText == null;
+    final isRepliedDeleted = msg.isReplyTargetDeleted;
+    final preview = msg.replyPreviewLabel;
     return Container(
       margin: const EdgeInsets.only(bottom: 6),
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
@@ -1212,7 +1254,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
             ),
           const SizedBox(height: 2),
           Text(
-            isRepliedDeleted ? 'Message has been deleted' : msg.replyToText!,
+            preview,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.dmSans(
@@ -1422,24 +1464,19 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   }
 
   Widget _buildTypingIndicator() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(color: const Color(0xFFF1F3F5), borderRadius: BorderRadius.circular(16)),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text('${_typingName ?? 'Someone'} is typing', style: GoogleFonts.dmSans(fontSize: 11.5, color: AppColors.muted)),
-                const SizedBox(width: 4),
-                const _DotsIndicator(),
-              ],
-            ),
+    return Row(
+      children: [
+        Text(
+          '${_typingName ?? 'Someone'} is typing',
+          style: GoogleFonts.dmSans(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: AppColors.muted,
           ),
-        ],
-      ),
+        ),
+        const SizedBox(width: 6),
+        const _DotsIndicator(),
+      ],
     );
   }
 

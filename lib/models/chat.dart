@@ -223,6 +223,7 @@ class ChatMessage {
   final int? replyToId;
   final String? replyToText;
   final String? replyToSenderName;
+  final String? replyToMessageType;
 
   const ChatMessage({
     required this.id,
@@ -242,6 +243,7 @@ class ChatMessage {
     this.replyToId,
     this.replyToText,
     this.replyToSenderName,
+    this.replyToMessageType,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) => ChatMessage(
@@ -262,7 +264,21 @@ class ChatMessage {
     replyToId: j['reply_to_id'],
     replyToText: j['reply_to_text'],
     replyToSenderName: j['reply_to_sender_name'],
+    replyToMessageType: j['reply_to_message_type'],
   );
+
+  /// Preview label for a quoted reply target.
+  String get replyPreviewLabel {
+    final t = replyToText?.trim();
+    if (t != null && t.isNotEmpty) return t;
+    if (replyToMessageType == 'deleted') return 'Message has been deleted';
+    if (replyToMessageType == 'image') return '[Image]';
+    // Legacy API: image replies returned null text (same as deleted).
+    // Prefer [Image] so photo replies don't look deleted.
+    return '[Image]';
+  }
+
+  bool get isReplyTargetDeleted => replyToMessageType == 'deleted';
 
   /// Return a copy with soft-delete applied locally.
   ChatMessage asDeleted() => ChatMessage(
@@ -283,5 +299,6 @@ class ChatMessage {
     replyToId: replyToId,
     replyToText: replyToText,
     replyToSenderName: replyToSenderName,
+    replyToMessageType: replyToMessageType,
   );
 }

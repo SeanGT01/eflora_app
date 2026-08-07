@@ -40,6 +40,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Timer? _pollTimer;
   Timer? _typingDebounce;
+  Timer? _typingKeepAlive;
+  Timer? _typingPollTimer;
+  DateTime? _lastTypingPing;
 
   int get _myId => context.read<AuthProvider>().user?.id ?? 0;
 
@@ -97,6 +100,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void dispose() {
     _pollTimer?.cancel();
     _typingDebounce?.cancel();
+    _typingKeepAlive?.cancel();
+    _typingPollTimer?.cancel();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -149,27 +154,62 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   void _startPoll() {
+    _pollTimer?.cancel();
+    _typingPollTimer?.cancel();
     _pollTimer = Timer.periodic(AppQuality.instance.chatMessagePollInterval, (_) async {
       await _loadMessages();
-      await _pollTyping();
       _markRead();
     });
+    // Faster typing poll so the indicator feels live.
+    _typingPollTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+      _pollTyping();
+    });
+    _pollTyping();
   }
 
   Future<void> _pollTyping() async {
     final typing = await ChatService.getTyping(widget.conversation.id);
-    if (mounted) {
-      setState(() {
-        _otherIsTyping = typing.isNotEmpty;
-        _typingName = typing.isNotEmpty ? typing.first['full_name'] : null;
-      });
-    }
+    if (!mounted) return;
+    final nextTyping = typing.isNotEmpty;
+    final nextName = nextTyping ? typing.first['full_name'] as String? : null;
+    if (nextTyping == _otherIsTyping && nextName == _typingName) return;
+    setState(() {
+      _otherIsTyping = nextTyping;
+      _typingName = nextName;
+    });
   }
 
-  void _onTextChanged(String _) {
-    _typingDebounce?.cancel();
+  void _pingTyping() {
+    final now = DateTime.now();
+    if (_lastTypingPing != null &&
+        now.difference(_lastTypingPing!) < const Duration(milliseconds: 1800)) {
+      return;
+    }
+    _lastTypingPing = now;
     ChatService.sendTyping(widget.conversation.id);
-    _typingDebounce = Timer(const Duration(seconds: 3), () {});
+  }
+
+  void _onTextChanged(String text) {
+    if (text.trim().isEmpty) {
+      _typingKeepAlive?.cancel();
+      _typingKeepAlive = null;
+      return;
+    }
+    _pingTyping();
+    _typingDebounce?.cancel();
+    _typingKeepAlive?.cancel();
+    _typingKeepAlive = Timer.periodic(const Duration(seconds: 2), (_) {
+      if (_controller.text.trim().isEmpty) {
+        _typingKeepAlive?.cancel();
+        _typingKeepAlive = null;
+        return;
+      }
+      _pingTyping();
+    });
+    _typingDebounce = Timer(const Duration(seconds: 4), () {
+      _typingKeepAlive?.cancel();
+      _typingKeepAlive = null;
+    });
   }
 
   Future<void> _sendText() async {
@@ -340,16 +380,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     : ListView.builder(
                         controller: _scrollController,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        itemCount: _groupedMessages.length + (_otherIsTyping ? 1 : 0),
+                        itemCount: _groupedMessages.length,
                         itemBuilder: (context, index) {
-                          if (index == _groupedMessages.length) {
-                            return _buildTypingIndicator();
-                          }
                           final group = _groupedMessages[index];
                           return _buildMessageGroup(group, index);
                         },
                       ),
           ),
+
+          if (_otherIsTyping) _buildTypingIndicator(),
 
           // Image preview bar
           if (_pendingImages.isNotEmpty) _buildImagePreview(),
@@ -510,27 +549,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Widget _buildTypingIndicator() {
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
       child: Row(
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFFF1F3F5),
-              borderRadius: BorderRadius.circular(18),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '${_typingName ?? 'Someone'} is typing',
-                  style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
-                ),
-                const SizedBox(width: 4),
-                const _DotsIndicator(),
-              ],
+          Text(
+            '${_typingName ?? 'Someone'} is typing',
+            style: GoogleFonts.dmSans(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+              color: AppColors.muted,
             ),
           ),
+          const SizedBox(width: 6),
+          const _DotsIndicator(),
         ],
       ),
     );

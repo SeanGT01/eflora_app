@@ -9,8 +9,12 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:debounce_throttle/debounce_throttle.dart';
 import '../../models/checkout.dart';
 import '../../providers/address_provider.dart';
+import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/glass.dart';
 
+/// Grab / Foodpanda–style address form: map-first pin, auto current location,
+/// compact tappable city/barangay rows (bottom-sheet pickers), theme-aligned.
 class AddEditAddressScreen extends StatefulWidget {
   final Address? address; // null = adding new, non-null = editing
 
@@ -36,17 +40,24 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
   String? _selectedPlaceId;
 
   List<String> _barangays = [];
-  bool _isLoading = false;
+  bool _isLoadingBarangays = false;
   bool _isSaving = false;
-  final MapController _mapController = MapController();
   bool _isLocating = false;
+  bool _isReverseGeocoding = false;
+  bool _didAutoLocate = false;
+  bool _mapReady = false;
 
-  // Place search
+  final MapController _mapController = MapController();
+  /// Kept stable across rebuilds — new onTap closures break flutter_map's InheritedModel.
+  late final MapOptions _mapOptions;
+
   late TextEditingController _searchController;
   List<Map<String, dynamic>> _searchResults = [];
   bool _isSearching = false;
   late Debouncer<String> _searchDebouncer;
   final FocusNode _searchFocusNode = FocusNode();
+
+  bool get _isEditing => widget.address != null;
 
   @override
   void initState() {
@@ -57,6 +68,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
       const Duration(milliseconds: 300),
       initialValue: '',
       onChanged: (query) {
+        if (!mounted) return;
         if (query.isNotEmpty) {
           _searchPlaces(query);
         } else {
@@ -65,78 +77,179 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
       },
     );
 
-    if (widget.address != null) {
-      _streetController = TextEditingController(text: widget.address!.street);
-      _buildingDetailsController = TextEditingController(text: widget.address!.buildingDetails);
-      _addressLabel = widget.address!.addressLabel;
-      _isDefault = widget.address!.isDefault;
-      _selectedMunicipality = widget.address!.municipality;
-      _selectedBarangay = widget.address!.barangay;
-      _selectedLatitude = widget.address!.latitude;
-      _selectedLongitude = widget.address!.longitude;
-      _selectedPlaceId = widget.address!.placeId;
+    if (_isEditing) {
+      final a = widget.address!;
+      _streetController = TextEditingController(text: a.street);
+      _buildingDetailsController = TextEditingController(text: a.buildingDetails);
+      _addressLabel = a.addressLabel;
+      _isDefault = a.isDefault;
+      _selectedMunicipality = a.municipality;
+      _selectedBarangay = a.barangay;
+      _selectedLatitude = a.latitude;
+      _selectedLongitude = a.longitude;
+      _selectedPlaceId = a.placeId;
     } else {
       _streetController = TextEditingController();
       _buildingDetailsController = TextEditingController();
       _addressLabel = 'Home';
       _isDefault = false;
-      _selectedLatitude = 14.1694; // Default to Laguna center
+      _selectedLatitude = 14.1694;
       _selectedLongitude = 121.2934;
+    }
+
+    _mapOptions = MapOptions(
+      initialCenter: LatLng(
+        _selectedLatitude ?? 14.1694,
+        _selectedLongitude ?? 121.2934,
+      ),
+      initialZoom: _isEditing ? 16 : 15,
+      keepAlive: true,
+      onMapReady: () {
+        if (!mounted) return;
+        _mapReady = true;
+      },
+      onTap: _onMapTap,
+    );
+
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrap());
+  }
+
+  void _onMapTap(TapPosition tapPosition, LatLng point) {
+    if (!mounted) return;
+    setState(() {
+      _selectedLatitude = point.latitude;
+      _selectedLongitude = point.longitude;
+    });
+    _reverseGeocodeAndFill(point.latitude, point.longitude);
+  }
+
+  void _moveMap(double lat, double lng, double zoom) {
+    if (!mounted) return;
+    if (!_mapReady) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (_mapReady) {
+          try {
+            _mapController.move(LatLng(lat, lng), zoom);
+          } catch (_) {}
+        } else {
+          // Map may still be mounting; try once more next frame.
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (!mounted || !_mapReady) return;
+            try {
+              _mapController.move(LatLng(lat, lng), zoom);
+            } catch (_) {}
+          });
+        }
+      });
+      return;
+    }
+    try {
+      _mapController.move(LatLng(lat, lng), zoom);
+    } catch (_) {}
+  }
+
+  Future<void> _bootstrap() async {
+    final provider = context.read<AddressProvider>();
+    if (provider.municipalities.isEmpty) {
+      await provider.loadMunicipalities();
+    }
+    if (!mounted) return;
+
+    if (_isEditing && _selectedMunicipality != null) {
+      await _loadBarangays(
+        _selectedMunicipality!,
+        moveMap: false,
+        preferredBarangay: _selectedBarangay,
+      );
+      return;
+    }
+
+    // New address: pin + fill from current GPS location.
+    if (!_didAutoLocate) {
+      _didAutoLocate = true;
+      await _goToMyLocation(showErrors: false);
     }
   }
 
   @override
   void dispose() {
+    _searchDebouncer.cancel();
     _streetController.dispose();
     _buildingDetailsController.dispose();
     _searchController.dispose();
     _searchFocusNode.dispose();
+    _mapController.dispose();
     super.dispose();
   }
 
   String _formatAddressLine() {
     final parts = <String>[];
-    if (_streetController.text.isNotEmpty) parts.add(_streetController.text);
-    if (_buildingDetailsController.text.isNotEmpty) parts.add(_buildingDetailsController.text);
+    if (_buildingDetailsController.text.trim().isNotEmpty) {
+      parts.add(_buildingDetailsController.text.trim());
+    }
+    if (_streetController.text.trim().isNotEmpty) {
+      parts.add(_streetController.text.trim());
+    }
     if (_selectedBarangay != null) parts.add(_selectedBarangay!);
     if (_selectedMunicipality != null) parts.add(_selectedMunicipality!);
     return parts.join(', ');
   }
 
-  Future<void> _loadBarangays(String municipality, {bool moveMap = true}) async {
-    setState(() => _isLoading = true);
+  Future<void> _loadBarangays(
+    String municipality, {
+    bool moveMap = true,
+    String? preferredBarangay,
+  }) async {
+    setState(() => _isLoadingBarangays = true);
 
-    final addressProvider = Provider.of<AddressProvider>(context, listen: false);
+    final addressProvider = context.read<AddressProvider>();
     await addressProvider.loadBarangays(municipality);
-
     if (!mounted) return;
 
-    setState(() {
-      _barangays = addressProvider.barangays;
-      _selectedBarangay = null;
-      // If editing and has saved barangay in this municipality, restore it
-      if (widget.address != null && _barangays.contains(widget.address!.barangay)) {
-        _selectedBarangay = widget.address!.barangay;
-      } else if (moveMap && _barangays.isNotEmpty) {
-        // Dropdown-driven change: pick first so the form stays valid.
-        _selectedBarangay = _barangays.first;
-      }
+    final list = addressProvider.barangays;
+    String? nextBarangay;
+    if (preferredBarangay != null) {
+      nextBarangay = _bestMatch(preferredBarangay, list) ??
+          (list.contains(preferredBarangay) ? preferredBarangay : null);
+    }
+    nextBarangay ??= _selectedBarangay != null
+        ? (_bestMatch(_selectedBarangay!, list) ??
+            (list.contains(_selectedBarangay) ? _selectedBarangay : null))
+        : null;
 
-      // Move map to municipality center when selecting from the dropdown only.
+    double? movedLat;
+    double? movedLng;
+
+    setState(() {
+      _barangays = list;
+      _selectedBarangay = nextBarangay;
+      _isLoadingBarangays = false;
+
       if (moveMap &&
           addressProvider.barangayLat != null &&
           addressProvider.barangayLng != null) {
         _selectedLatitude = addressProvider.barangayLat;
         _selectedLongitude = addressProvider.barangayLng;
-        final lat = addressProvider.barangayLat!;
-        final lng = addressProvider.barangayLng!;
+        movedLat = addressProvider.barangayLat;
+        movedLng = addressProvider.barangayLng;
+        final lat = movedLat!;
+        final lng = movedLng!;
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _mapController.move(LatLng(lat, lng), 14);
+          _moveMap(lat, lng, 14);
         });
       }
-
-      _isLoading = false;
     });
+
+    // Refresh street from the new pin (keep selected city/barangay).
+    if (movedLat != null && movedLng != null) {
+      await _reverseGeocodeAndFill(
+        movedLat!,
+        movedLng!,
+        syncArea: false,
+        overwriteStreet: true,
+      );
+    }
   }
 
   String _normalizeForMatch(String? value) {
@@ -148,7 +261,10 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
         .replaceAll(RegExp(r'[òóôõö]'), 'o')
         .replaceAll(RegExp(r'[ùúûü]'), 'u')
         .replaceAll(RegExp(r'[ñ]'), 'n');
-    s = s.replaceAll(RegExp(r'\b(barangay|brgy\.?|city of|city|municipality of|municipality)\b'), ' ');
+    s = s.replaceAll(
+      RegExp(r'\b(barangay|brgy\.?|city of|city|municipality of|municipality)\b'),
+      ' ',
+    );
     s = s.replaceAll(RegExp(r'[^a-z0-9\s]'), ' ');
     return s.replaceAll(RegExp(r'\s+'), ' ').trim();
   }
@@ -162,7 +278,11 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
     for (final option in options) {
       final n = _normalizeForMatch(option);
       if (n.isEmpty) continue;
-      if (h == n || h.contains(' $n ') || h.startsWith('$n ') || h.endsWith(' $n') || h.contains(n)) {
+      if (h == n ||
+          h.contains(' $n ') ||
+          h.startsWith('$n ') ||
+          h.endsWith(' $n') ||
+          h.contains(n)) {
         if (h == n || RegExp('\\b${RegExp.escape(n)}\\b').hasMatch(h)) {
           exact = option;
           break;
@@ -173,8 +293,18 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
     return exact ?? contains;
   }
 
-  /// Reverse-geocode a map pin and sync municipality / barangay / street fields.
-  Future<void> _reverseGeocodeAndFill(double lat, double lng) async {
+  /// Reverse-geocode a map pin.
+  ///
+  /// [syncArea] updates municipality/barangay (pin drag / current location).
+  /// When false (dropdown-driven pin moves), keeps the user's city/barangay and
+  /// only refreshes the street field.
+  Future<void> _reverseGeocodeAndFill(
+    double lat,
+    double lng, {
+    bool syncArea = true,
+    bool overwriteStreet = true,
+  }) async {
+    setState(() => _isReverseGeocoding = true);
     try {
       final dio = Dio();
       final response = await dio.get(
@@ -186,7 +316,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
           'addressdetails': '1',
           'zoom': '18',
         },
-        options: Options(headers: {'User-Agent': 'eflowers-app'}),
+        options: Options(headers: {'User-Agent': 'eflora-app/1.0'}),
       );
 
       if (!mounted || response.statusCode != 200 || response.data is! Map) return;
@@ -213,9 +343,6 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
       ].where((e) => e.trim().isNotEmpty);
 
       final contextText = contextParts.join(', ');
-      final addressProvider = Provider.of<AddressProvider>(context, listen: false);
-      final municipalities = addressProvider.municipalities;
-      final matchedMunicipality = _bestMatch(contextText, municipalities);
 
       final streetCandidate = (address['road'] ??
               address['pedestrian'] ??
@@ -224,10 +351,25 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
               '')
           .toString()
           .trim();
+      final houseNumber = (address['house_number'] ?? '').toString().trim();
 
-      if (streetCandidate.isNotEmpty) {
+      if (overwriteStreet) {
+        _streetController.text = streetCandidate;
+      } else if (streetCandidate.isNotEmpty && _streetController.text.trim().isEmpty) {
         _streetController.text = streetCandidate;
       }
+
+      if (houseNumber.isNotEmpty && _buildingDetailsController.text.trim().isEmpty) {
+        _buildingDetailsController.text = houseNumber;
+      }
+
+      if (!syncArea) {
+        if (mounted) setState(() {});
+        return;
+      }
+
+      final municipalities = context.read<AddressProvider>().municipalities;
+      final matchedMunicipality = _bestMatch(contextText, municipalities);
 
       if (matchedMunicipality != null) {
         final municipalityChanged = matchedMunicipality != _selectedMunicipality;
@@ -236,26 +378,21 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
         if (municipalityChanged || _barangays.isEmpty) {
           await _loadBarangays(matchedMunicipality, moveMap: false);
         }
-
         if (!mounted) return;
+
         final matchedBarangay = _bestMatch(contextText, _barangays);
         if (matchedBarangay != null) {
           setState(() => _selectedBarangay = matchedBarangay);
         }
-      } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Pin set. Select municipality/barangay if they were not detected.'),
-          ),
-        );
       }
-
-      if (mounted) setState(() {});
     } catch (e) {
       if (kDebugMode) print('Reverse geocoding failed: $e');
+    } finally {
+      if (mounted) setState(() => _isReverseGeocoding = false);
     }
   }
 
+  /// Geocode barangay (like web handleBarangayChange) and move the pin.
   Future<void> _geocodeBarangay(String barangay) async {
     if (barangay.isEmpty || _selectedMunicipality == null) return;
 
@@ -270,10 +407,12 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
           'format': 'json',
           'limit': '1',
         },
-        options: Options(headers: {'User-Agent': 'eflowers-app'}),
+        options: Options(headers: {'User-Agent': 'eflora-app/1.0'}),
       );
 
-      if (response.statusCode == 200 && response.data is List && (response.data as List).isNotEmpty) {
+      if (response.statusCode == 200 &&
+          response.data is List &&
+          (response.data as List).isNotEmpty) {
         final feature = (response.data as List).first;
         final lat = double.tryParse(feature['lat']?.toString() ?? '');
         final lng = double.tryParse(feature['lon']?.toString() ?? '');
@@ -283,50 +422,76 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
             _selectedLatitude = lat;
             _selectedLongitude = lng;
           });
-          // Move map to barangay location with higher zoom
           WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (mounted) _mapController.move(LatLng(lat, lng), 15);
+            _moveMap(lat, lng, 15);
           });
+          await _reverseGeocodeAndFill(
+            lat,
+            lng,
+            syncArea: false,
+            overwriteStreet: true,
+          );
         }
       }
     } catch (e) {
-      // Silently fail - user can still select location manually
       if (kDebugMode) print('Barangay geocoding failed: $e');
     }
   }
 
-  Future<void> _goToMyLocation() async {
+  Future<void> _goToMyLocation({bool showErrors = true}) async {
     setState(() => _isLocating = true);
     try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (!mounted) return;
+        setState(() => _isLocating = false);
+        if (showErrors) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Turn on location services to use your current position')),
+          );
+        }
+        return;
+      }
+
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
       }
-      if (permission == LocationPermission.denied || permission == LocationPermission.deniedForever) {
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
         if (!mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Location permission is required to find your position')),
-        );
         setState(() => _isLocating = false);
+        if (showErrors) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location permission is required to find your position')),
+          );
+        }
         return;
       }
+
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.high,
       );
       if (!mounted) return;
+
       setState(() {
         _selectedLatitude = position.latitude;
         _selectedLongitude = position.longitude;
         _isLocating = false;
       });
-      _mapController.move(LatLng(position.latitude, position.longitude), 16);
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _moveMap(position.latitude, position.longitude, 17);
+      });
       await _reverseGeocodeAndFill(position.latitude, position.longitude);
     } catch (e) {
       if (!mounted) return;
       setState(() => _isLocating = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Could not get location: $e')),
-      );
+      if (showErrors) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not get location: $e')),
+        );
+      }
     }
   }
 
@@ -348,7 +513,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
           'limit': '5',
           'addressdetails': '1',
         },
-        options: Options(headers: {'User-Agent': 'eflowers-app'}),
+        options: Options(headers: {'User-Agent': 'eflora-app/1.0'}),
       );
 
       if (response.statusCode == 200) {
@@ -364,10 +529,10 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
               .toList();
         });
       }
-    } catch (e) {
+    } catch (_) {
       setState(() => _searchResults = []);
     } finally {
-      setState(() => _isSearching = false);
+      if (mounted) setState(() => _isSearching = false);
     }
   }
 
@@ -381,15 +546,13 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
       _searchController.clear();
     });
     _searchFocusNode.unfocus();
-    // Defer move so the layout settles after search suggestions collapse
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _mapController.move(LatLng(lat, lng), 16);
+      _moveMap(lat, lng, 16);
     });
     _reverseGeocodeAndFill(lat, lng);
   }
 
   Future<void> _saveAddress() async {
-    // Validate required fields
     if (_selectedMunicipality == null || _selectedBarangay == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Please select municipality and barangay')),
@@ -399,7 +562,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
 
     if (_selectedLatitude == null || _selectedLongitude == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select your exact location on the map')),
+        const SnackBar(content: Text('Please pin your exact location on the map')),
       );
       return;
     }
@@ -407,24 +570,24 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
     setState(() => _isSaving = true);
 
     final addressLine = _formatAddressLine();
-    final addressProvider = Provider.of<AddressProvider>(context, listen: false);
+    final addressProvider = context.read<AddressProvider>();
 
     try {
-      if (widget.address == null) {
-        // Adding new address
+      if (!_isEditing) {
         await addressProvider.addAddress(
           municipality: _selectedMunicipality!,
           barangay: _selectedBarangay!,
           latitude: _selectedLatitude!,
           longitude: _selectedLongitude!,
           street: _streetController.text.isNotEmpty ? _streetController.text : null,
-          buildingDetails: _buildingDetailsController.text.isNotEmpty ? _buildingDetailsController.text : null,
+          buildingDetails: _buildingDetailsController.text.isNotEmpty
+              ? _buildingDetailsController.text
+              : null,
           addressLabel: _addressLabel,
           isDefault: _isDefault,
           placeId: _selectedPlaceId,
         );
       } else {
-        // Updating existing address
         await addressProvider.updateAddress(
           widget.address!.id!,
           municipality: _selectedMunicipality!,
@@ -432,7 +595,9 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
           latitude: _selectedLatitude!,
           longitude: _selectedLongitude!,
           street: _streetController.text.isNotEmpty ? _streetController.text : null,
-          buildingDetails: _buildingDetailsController.text.isNotEmpty ? _buildingDetailsController.text : null,
+          buildingDetails: _buildingDetailsController.text.isNotEmpty
+              ? _buildingDetailsController.text
+              : null,
           addressLabel: _addressLabel,
           isDefault: _isDefault,
           placeId: _selectedPlaceId,
@@ -444,12 +609,11 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(widget.address == null ? 'Address added' : 'Address updated'),
+          content: Text(!_isEditing ? 'Address added' : 'Address updated'),
           backgroundColor: AppColors.successGreen,
         ),
       );
 
-      // Return the saved address
       Navigator.of(context).pop(
         Address(
           id: widget.address?.id,
@@ -459,411 +623,914 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
           latitude: _selectedLatitude!,
           longitude: _selectedLongitude!,
           street: _streetController.text.isNotEmpty ? _streetController.text : null,
-          buildingDetails: _buildingDetailsController.text.isNotEmpty ? _buildingDetailsController.text : null,
+          buildingDetails: _buildingDetailsController.text.isNotEmpty
+              ? _buildingDetailsController.text
+              : null,
           addressLabel: _addressLabel,
           isDefault: _isDefault,
           placeId: _selectedPlaceId,
         ),
       );
     } catch (e) {
-      setState(() => _isSaving = false);
       if (!mounted) return;
+      setState(() => _isSaving = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
+        SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
       );
     }
   }
 
-  Widget _buildSectionLabel(String text, {bool required = false}) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Text.rich(
-        TextSpan(
-          text: text,
-          style: GoogleFonts.dmSans(
+  Future<void> _openPicker({
+    required String title,
+    required List<String> options,
+    required String? selected,
+    required ValueChanged<String> onSelected,
+  }) async {
+    if (options.isEmpty || !mounted) return;
+
+    // Let the tap gesture finish before pushing a route (avoids wrong build scope).
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+
+    final items = List<String>.from(options);
+    final current = selected;
+
+    final result = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      // Fixed-height sheet; avoids unbounded flex overflow with isScrollControlled.
+      backgroundColor: AppColors.warmWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: SizedBox(
+            height: 440,
+            child: _AddressPickerSheet(
+              title: title,
+              options: items,
+              selected: current,
+            ),
+          ),
+        );
+      },
+    );
+
+    if (!mounted || result == null) return;
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+    onSelected(result);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bottomInset = MediaQuery.of(context).viewPadding.bottom;
+
+    return Scaffold(
+      backgroundColor: AppColors.pageCream,
+      extendBodyBehindAppBar: false,
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: Text(
+          _isEditing ? 'Edit Address' : 'Add Address',
+          style: GoogleFonts.cormorantGaramond(
+            fontSize: 24,
             fontWeight: FontWeight.w600,
-            fontSize: 13,
             color: AppColors.charcoal,
           ),
-          children: required
-              ? [TextSpan(text: ' *', style: TextStyle(color: AppColors.deepRose))]
-              : null,
+        ),
+      ),
+      body: AppBackground(
+        showFlowers: false,
+        child: Column(
+          children: [
+            // Sibling of Consumer — Provider updates must not rebuild the map.
+            _PinnedMapBox(
+              latitude: _selectedLatitude,
+              longitude: _selectedLongitude,
+              isLocating: _isLocating,
+              isReverseGeocoding: _isReverseGeocoding,
+              searchController: _searchController,
+              searchFocusNode: _searchFocusNode,
+              searchResults: _searchResults,
+              isSearching: _isSearching,
+              onSearchChanged: (query) {
+                setState(() {});
+                _searchDebouncer.value = query;
+              },
+              onClearSearch: () {
+                _searchController.clear();
+                setState(() => _searchResults = []);
+              },
+              onSelectPlace: _selectPlace,
+              onUseMyLocation: () => _goToMyLocation(),
+              mapController: _mapController,
+              mapOptions: _mapOptions,
+            ),
+            Expanded(
+              child: Consumer<AddressProvider>(
+                builder: (context, addressProvider, _) {
+                  if (addressProvider.isMunicipalitiesLoading &&
+                      addressProvider.municipalities.isEmpty) {
+                    return const Center(
+                      child: CircularProgressIndicator(color: AppColors.deepRose),
+                    );
+                  }
+
+                  return ListView(
+                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
+                    children: [
+                      _buildUseCurrentLocationButton(),
+                      const SizedBox(height: 14),
+                      _buildDetectedSummaryCard(),
+                      const SizedBox(height: 14),
+                      _buildLabelChips(),
+                      const SizedBox(height: 14),
+                      _buildCompactField(
+                        label: 'House / Unit / Landmark',
+                        controller: _buildingDetailsController,
+                        hint: 'e.g. Unit 3B, near sari-sari',
+                        icon: Icons.home_work_outlined,
+                      ),
+                      const SizedBox(height: 10),
+                      _buildCompactField(
+                        label: 'Street',
+                        controller: _streetController,
+                        hint: 'Street name',
+                        icon: Icons.signpost_outlined,
+                      ),
+                      const SizedBox(height: 10),
+                      _buildSelectRow(
+                        label: 'City / Municipality',
+                        value: _selectedMunicipality,
+                        placeholder: 'Select city',
+                        required: true,
+                        onTap: () => _openPicker(
+                          title: 'City / Municipality',
+                          options: List<String>.from(addressProvider.municipalities),
+                          selected: _selectedMunicipality,
+                          onSelected: (value) async {
+                            setState(() {
+                              _selectedMunicipality = value;
+                              _selectedBarangay = null;
+                              _barangays = [];
+                            });
+                            // Same as web loadBarangays(): recenter map on city coords.
+                            await _loadBarangays(value, moveMap: true);
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      _buildSelectRow(
+                        label: 'Barangay',
+                        value: _selectedBarangay,
+                        placeholder: _selectedMunicipality == null
+                            ? 'Select city first'
+                            : (_isLoadingBarangays ? 'Loading…' : 'Select barangay'),
+                        required: true,
+                        loading: _isLoadingBarangays,
+                        enabled: _selectedMunicipality != null &&
+                            !_isLoadingBarangays &&
+                            _barangays.isNotEmpty,
+                        onTap: () => _openPicker(
+                          title: 'Barangay',
+                          options: List<String>.from(_barangays),
+                          selected: _selectedBarangay,
+                          onSelected: (value) {
+                            setState(() => _selectedBarangay = value);
+                            // Same as web handleBarangayChange(): geocode + move pin.
+                            _geocodeBarangay(value);
+                          },
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _buildDefaultToggle(),
+                      const SizedBox(height: 24),
+                    ],
+                  );
+                },
+              ),
+            ),
+            _buildBottomBar(bottomInset),
+          ],
         ),
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.cream,
-      appBar: AppBar(
-        title: Text(widget.address == null ? 'Add Address' : 'Edit Address'),
+  Widget _buildUseCurrentLocationButton() {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _isLocating ? null : () => _goToMyLocation(),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        child: Ink(
+          decoration: BoxDecoration(
+            gradient: AppColors.brandGradient,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            boxShadow: AppShadows.roseButton,
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                if (_isLocating)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                else
+                  const Icon(Icons.gps_fixed_rounded, color: Colors.white, size: 18),
+                const SizedBox(width: 10),
+                Text(
+                  _isLocating ? 'Getting your location…' : 'Use my current location',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
       ),
-      body: Consumer<AddressProvider>(
-        builder: (context, addressProvider, _) {
-          if (addressProvider.isMunicipalitiesLoading) {
-            return const Center(
-              child: CircularProgressIndicator(color: AppColors.deepRose),
-            );
-          }
+    );
+  }
 
-          return ListView(
-            padding: const EdgeInsets.all(20),
-            children: [
-              // Address Label Selection
-              _buildSectionLabel('Address Label'),
-              Wrap(
-                spacing: 8,
-                children: ['Home', 'Work', 'Other'].map((label) {
-                  final selected = _addressLabel == label;
-                  final IconData icon = label == 'Home'
-                      ? Icons.home_rounded
-                      : label == 'Work'
-                          ? Icons.work_rounded
-                          : Icons.location_on_rounded;
-                  return FilterChip(
-                    avatar: Icon(icon, size: 16, color: selected ? Colors.white : AppColors.muted),
-                    label: Text(label),
-                    selected: selected,
-                    onSelected: (_) => setState(() => _addressLabel = label),
-                    selectedColor: AppColors.deepRose,
-                    checkmarkColor: Colors.white,
-                    labelStyle: GoogleFonts.dmSans(
-                      color: selected ? Colors.white : AppColors.charcoal,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
-                    ),
-                    side: BorderSide(
-                      color: selected ? AppColors.deepRose : AppColors.borderStrong,
-                      width: 1.5,
-                    ),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
-                  );
-                }).toList(),
-              ),
-              const SizedBox(height: 24),
+  Widget _buildDetectedSummaryCard() {
+    final hasArea = _selectedMunicipality != null || _selectedBarangay != null;
+    final line = _formatAddressLine();
 
-              // Municipality Dropdown
-              _buildSectionLabel('Municipality / City', required: true),
-              DropdownButtonFormField<String>(
-                value: _selectedMunicipality,
-                hint: Text('Select Municipality/City',
-                    style: GoogleFonts.dmSans(color: AppColors.muted.withOpacity(0.55), fontSize: 13.5)),
-                icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.muted),
-                decoration: const InputDecoration(),
-                items: addressProvider.municipalities.map((m) {
-                  return DropdownMenuItem(value: m, child: Text(m, style: GoogleFonts.dmSans(fontSize: 13.5)));
-                }).toList(),
-                onChanged: (value) {
-                  if (value != null) {
-                    setState(() {
-                      _selectedMunicipality = value;
-                      _selectedBarangay = null;
-                      _barangays = [];
-                    });
-                    _loadBarangays(value);
-                  }
-                },
-              ),
-              const SizedBox(height: 20),
-
-              // Barangay Dropdown
-              _buildSectionLabel('Barangay', required: true),
-              if (_isLoading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 16),
-                  child: Center(child: CircularProgressIndicator(color: AppColors.deepRose, strokeWidth: 2)),
-                )
-              else
-                DropdownButtonFormField<String>(
-                  value: _selectedBarangay,
-                  hint: Text('Select Barangay',
-                      style: GoogleFonts.dmSans(color: AppColors.muted.withOpacity(0.55), fontSize: 13.5)),
-                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.muted),
-                  decoration: const InputDecoration(),
-                  items: _barangays.map((b) {
-                    return DropdownMenuItem(value: b, child: Text(b, style: GoogleFonts.dmSans(fontSize: 13.5)));
-                  }).toList(),
-                  onChanged: (value) {
-                    if (value != null) {
-                      setState(() => _selectedBarangay = value);
-                      _geocodeBarangay(value);
-                    }
-                  },
+    return GlassCard(
+      padding: const EdgeInsets.all(14),
+      radius: AppRadius.md,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Container(
+            width: 36,
+            height: 36,
+            decoration: BoxDecoration(
+              color: AppColors.deepRose.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: const Icon(Icons.place_rounded, color: AppColors.deepRose, size: 20),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  hasArea
+                      ? [
+                          if (_selectedBarangay != null) _selectedBarangay!,
+                          if (_selectedMunicipality != null) _selectedMunicipality!,
+                        ].join(', ')
+                      : 'Move the pin or use current location',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.charcoal,
+                  ),
                 ),
-              const SizedBox(height: 20),
-
-              // Street Input
-              _buildSectionLabel('Street'),
-              TextField(
-                controller: _streetController,
-                decoration: const InputDecoration(
-                  hintText: 'e.g., Main Street, J.P. Rizal Ave',
+                const SizedBox(height: 3),
+                Text(
+                  line.isNotEmpty
+                      ? line
+                      : 'Street and house details will fill in automatically when possible',
+                  style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted, height: 1.35),
                 ),
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 20),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
-              // Building Details Input
-              _buildSectionLabel('House / Unit Details'),
-              TextField(
-                controller: _buildingDetailsController,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  hintText: 'e.g., Bldg 5, Unit 301, near Sari-Sari Store',
-                ),
-                onChanged: (_) => setState(() {}),
-              ),
-              const SizedBox(height: 24),
+  Widget _buildLabelChips() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'LABEL',
+          style: GoogleFonts.dmSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.4,
+            color: AppColors.muted,
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            for (final label in const ['Home', 'Work', 'Other']) ...[
+              Expanded(child: _labelChip(label)),
+              if (label != 'Other') const SizedBox(width: 8),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
 
-              // Place Search
-              _buildSectionLabel('Search Location'),
-              TextField(
-                controller: _searchController,
-                focusNode: _searchFocusNode,
-                onChanged: (query) => _searchDebouncer.value = query,
-                decoration: InputDecoration(
-                  hintText: 'Search for places, streets, landmarks...',
-                  prefixIcon: const Icon(Icons.search_rounded, color: AppColors.muted),
-                  suffixIcon: _isSearching
-                      ? const Padding(
-                          padding: EdgeInsets.all(12),
-                          child: SizedBox(
-                            width: 20, height: 20,
-                            child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.deepRose),
+  Widget _labelChip(String label) {
+    final selected = _addressLabel == label;
+    final icon = label == 'Home'
+        ? Icons.home_rounded
+        : label == 'Work'
+            ? Icons.work_rounded
+            : Icons.bookmark_rounded;
+
+    return GestureDetector(
+      onTap: () => setState(() => _addressLabel = label),
+      child: AnimatedContainer(
+        duration: AppMotion.fast,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          gradient: selected ? AppColors.brandGradient : null,
+          color: selected ? null : AppColors.glassFill,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          border: Border.all(
+            color: selected ? Colors.transparent : AppColors.borderStrong,
+          ),
+          boxShadow: selected ? AppShadows.roseButton : null,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 15, color: selected ? Colors.white : AppColors.muted),
+            const SizedBox(width: 6),
+            Text(
+              label,
+              style: GoogleFonts.dmSans(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w600,
+                color: selected ? Colors.white : AppColors.charcoal,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildCompactField({
+    required String label,
+    required TextEditingController controller,
+    required String hint,
+    required IconData icon,
+  }) {
+    return GlassCard(
+      padding: const EdgeInsets.fromLTRB(12, 10, 12, 6),
+      radius: AppRadius.md,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            label.toUpperCase(),
+            style: GoogleFonts.dmSans(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 1.2,
+              color: AppColors.muted,
+            ),
+          ),
+          TextField(
+            controller: controller,
+            onChanged: (_) => setState(() {}),
+            style: GoogleFonts.dmSans(fontSize: 14, color: AppColors.charcoal),
+            decoration: InputDecoration(
+              hintText: hint,
+              hintStyle: GoogleFonts.dmSans(fontSize: 13.5, color: AppColors.muted.withValues(alpha: 0.7)),
+              prefixIcon: Icon(icon, size: 18, color: AppColors.muted),
+              prefixIconConstraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              border: InputBorder.none,
+              isDense: true,
+              contentPadding: const EdgeInsets.symmetric(vertical: 8),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSelectRow({
+    required String label,
+    required String? value,
+    required String placeholder,
+    required VoidCallback onTap,
+    bool required = false,
+    bool enabled = true,
+    bool loading = false,
+  }) {
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(AppRadius.md),
+          child: GlassCard(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            radius: AppRadius.md,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text.rich(
+                        TextSpan(
+                          text: label.toUpperCase(),
+                          style: GoogleFonts.dmSans(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.2,
+                            color: AppColors.muted,
                           ),
-                        )
-                      : _searchController.text.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(Icons.clear_rounded, size: 18, color: AppColors.muted),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() => _searchResults = []);
-                              },
-                            )
-                          : null,
-                ),
-              ),
-              // Search Suggestions
-              if (_searchResults.isNotEmpty)
-                Container(
-                  margin: const EdgeInsets.only(top: 4),
-                  constraints: const BoxConstraints(maxHeight: 220),
-                  decoration: BoxDecoration(
-                    color: AppColors.warmWhite,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.border),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.06),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+                          children: required
+                              ? [
+                                  TextSpan(
+                                    text: ' *',
+                                    style: GoogleFonts.dmSans(
+                                      color: AppColors.deepRose,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                                ]
+                              : null,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        value ?? placeholder,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14.5,
+                          fontWeight: value != null ? FontWeight.w600 : FontWeight.w500,
+                          color: value != null ? AppColors.charcoal : AppColors.muted,
+                        ),
                       ),
                     ],
                   ),
-                  child: ListView.separated(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.symmetric(vertical: 4),
-                    itemCount: _searchResults.length,
-                    separatorBuilder: (_, __) => const Divider(height: 1, indent: 48),
-                    itemBuilder: (context, index) {
-                      final place = _searchResults[index];
-                      return ListTile(
-                        dense: true,
-                        leading: Container(
-                          width: 32, height: 32,
-                          decoration: BoxDecoration(
-                            color: AppColors.deepRose.withOpacity(0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: const Icon(Icons.location_on_rounded, color: AppColors.deepRose, size: 18),
-                        ),
-                        title: Text(
-                          place['name'],
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.dmSans(fontSize: 12.5, color: AppColors.charcoal),
-                        ),
-                        onTap: () => _selectPlace(place),
-                      );
-                    },
-                  ),
                 ),
-              if (_searchController.text.isNotEmpty && _searchResults.isEmpty && !_isSearching)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Text(
-                    'No locations found. Try a different search term.',
-                    style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
-                  ),
-                ),
-              const SizedBox(height: 24),
+                if (loading)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.deepRose),
+                  )
+                else
+                  const Icon(Icons.keyboard_arrow_down_rounded, color: AppColors.muted),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 
-              // Map Section
-              _buildSectionLabel('Pin Your Exact Location', required: true),
-              Text(
-                'Tap on the map to place the pin at your exact address',
-                style: GoogleFonts.dmSans(color: AppColors.muted, fontSize: 12),
+  Widget _buildDefaultToggle() {
+    return GlassCard(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      radius: AppRadius.md,
+      child: SwitchListTile.adaptive(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 8),
+        value: _isDefault,
+        onChanged: (v) => setState(() => _isDefault = v),
+        activeTrackColor: AppColors.deepRose.withValues(alpha: 0.45),
+        activeThumbColor: AppColors.deepRose,
+        title: Text(
+          'Set as default address',
+          style: GoogleFonts.dmSans(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.charcoal),
+        ),
+        subtitle: Text(
+          'Used first at checkout',
+          style: GoogleFonts.dmSans(fontSize: 11.5, color: AppColors.muted),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBottomBar(double bottomInset) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomInset),
+      decoration: BoxDecoration(
+        color: AppColors.warmWhite.withValues(alpha: 0.94),
+        border: const Border(top: BorderSide(color: AppColors.border)),
+        boxShadow: const [
+          BoxShadow(color: Color(0x14000000), blurRadius: 12, offset: Offset(0, -2)),
+        ],
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        height: 50,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: AppColors.brandGradient,
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            boxShadow: AppShadows.roseButton,
+          ),
+          child: ElevatedButton(
+            onPressed: _isSaving ? null : _saveAddress,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.transparent,
+              shadowColor: Colors.transparent,
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.md)),
+            ),
+            child: _isSaving
+                ? const SizedBox(
+                    height: 20,
+                    width: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                  )
+                : Text(
+                    _isEditing ? 'Update Address' : 'Save Address',
+                    style: GoogleFonts.dmSans(fontWeight: FontWeight.w700, fontSize: 15),
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Map + search chrome. Owns a stable [FlutterMap] configuration so parent
+/// rebuilds (sheets / Provider) do not recreate MapOptions.
+class _PinnedMapBox extends StatelessWidget {
+  const _PinnedMapBox({
+    required this.latitude,
+    required this.longitude,
+    required this.isLocating,
+    required this.isReverseGeocoding,
+    required this.searchController,
+    required this.searchFocusNode,
+    required this.searchResults,
+    required this.isSearching,
+    required this.onSearchChanged,
+    required this.onClearSearch,
+    required this.onSelectPlace,
+    required this.onUseMyLocation,
+    required this.mapController,
+    required this.mapOptions,
+  });
+
+  final double? latitude;
+  final double? longitude;
+  final bool isLocating;
+  final bool isReverseGeocoding;
+  final TextEditingController searchController;
+  final FocusNode searchFocusNode;
+  final List<Map<String, dynamic>> searchResults;
+  final bool isSearching;
+  final ValueChanged<String> onSearchChanged;
+  final VoidCallback onClearSearch;
+  final ValueChanged<Map<String, dynamic>> onSelectPlace;
+  final VoidCallback onUseMyLocation;
+  final MapController mapController;
+  final MapOptions mapOptions;
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 280,
+      child: Stack(
+        children: [
+          FlutterMap(
+            mapController: mapController,
+            options: mapOptions,
+            children: [
+              TileLayer(
+                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.seanlazala.eflora',
+                maxZoom: 19,
               ),
-              const SizedBox(height: 10),
-              Container(
-                width: double.infinity,
-                height: 280,
-                decoration: BoxDecoration(
-                  border: Border.all(color: AppColors.border),
-                  borderRadius: BorderRadius.circular(16),
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
-                  children: [
-                    FlutterMap(
-                      mapController: _mapController,
-                      options: MapOptions(
-                        initialCenter: LatLng(
-                          _selectedLatitude ?? 14.1694,
-                          _selectedLongitude ?? 121.2934,
-                        ),
-                        initialZoom: _selectedLatitude != null ? 16 : 12,
-                        onTap: (tapPosition, point) {
-                          setState(() {
-                            _selectedLatitude = point.latitude;
-                            _selectedLongitude = point.longitude;
-                          });
-                          _reverseGeocodeAndFill(point.latitude, point.longitude);
-                        },
-                      ),
-                      children: [
-                        TileLayer(
-                          urlTemplate:
-                              'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                          userAgentPackageName: 'com.eflowers.app',
-                          maxZoom: 19,
-                        ),
-                        if (_selectedLatitude != null && _selectedLongitude != null)
-                          MarkerLayer(
-                            markers: [
-                              Marker(
-                                point: LatLng(_selectedLatitude!, _selectedLongitude!),
-                                width: 40,
-                                height: 40,
-                                alignment: Alignment.topCenter,
-                                child: const Icon(
-                                  Icons.location_pin,
-                                  color: AppColors.deepRose,
-                                  size: 40,
-                                ),
-                              ),
-                            ],
-                          ),
-                      ],
-                    ),
-                    // My Location FAB
-                    Positioned(
-                      right: 10,
-                      bottom: 10,
-                      child: FloatingActionButton.small(
-                        heroTag: 'myLocationBtn',
-                        backgroundColor: AppColors.warmWhite,
-                        elevation: 2,
-                        onPressed: _isLocating ? null : _goToMyLocation,
-                        child: _isLocating
-                            ? const SizedBox(
-                                width: 18, height: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.deepRose),
-                              )
-                            : const Icon(Icons.my_location_rounded, color: AppColors.deepRose, size: 20),
+              if (latitude != null && longitude != null)
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: LatLng(latitude!, longitude!),
+                      width: 44,
+                      height: 44,
+                      alignment: Alignment.topCenter,
+                      child: const Icon(
+                        Icons.location_pin,
+                        color: AppColors.deepRose,
+                        size: 44,
                       ),
                     ),
                   ],
                 ),
-              ),
-              if (_selectedLatitude != null && _selectedLongitude != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    '${_selectedLatitude!.toStringAsFixed(6)}, ${_selectedLongitude!.toStringAsFixed(6)}',
-                    style: GoogleFonts.dmSans(color: AppColors.muted, fontSize: 11),
-                  ),
-                ),
-              const SizedBox(height: 24),
-
-              // Address Preview
-              if (_formatAddressLine().isNotEmpty) ...[
-                _buildSectionLabel('Address Preview'),
-                Container(
-                  padding: const EdgeInsets.all(14),
-                  decoration: BoxDecoration(
-                    color: AppColors.deepRose.withOpacity(0.06),
-                    border: Border.all(color: AppColors.dustyRose.withOpacity(0.3)),
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Row(
-                    children: [
-                      const Icon(Icons.pin_drop_rounded, color: AppColors.deepRose, size: 18),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(
-                          _formatAddressLine(),
-                          style: GoogleFonts.dmSans(fontSize: 13, color: AppColors.charcoal),
-                        ),
-                      ),
+            ],
+          ),
+          Positioned(
+            left: 0,
+            right: 0,
+            bottom: 0,
+            child: IgnorePointer(
+              child: Container(
+                height: 36,
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      AppColors.pageCream.withValues(alpha: 0),
+                      AppColors.pageCream,
                     ],
                   ),
                 ),
-                const SizedBox(height: 20),
-              ],
-
-              // Set as Default Checkbox
-              Container(
-                decoration: BoxDecoration(
-                  color: AppColors.warmWhite,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: AppColors.border),
-                ),
-                child: CheckboxListTile(
-                  value: _isDefault,
-                  onChanged: (value) => setState(() => _isDefault = value ?? false),
-                  title: Text('Set as default delivery address',
-                      style: GoogleFonts.dmSans(fontSize: 13.5, color: AppColors.charcoal)),
-                  controlAffinity: ListTileControlAffinity.leading,
-                  activeColor: AppColors.deepRose,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                ),
               ),
-              const SizedBox(height: 28),
-
-              // Save Button
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: _isSaving ? null : _saveAddress,
-                  child: _isSaving
-                      ? const SizedBox(
-                          height: 20, width: 20,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+            ),
+          ),
+          Positioned(
+            top: 12,
+            left: 12,
+            right: 12,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Material(
+                  elevation: 2,
+                  shadowColor: const Color(0x33000000),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  color: AppColors.warmWhite.withValues(alpha: 0.96),
+                  child: TextField(
+                    controller: searchController,
+                    focusNode: searchFocusNode,
+                    onChanged: onSearchChanged,
+                    style: GoogleFonts.dmSans(fontSize: 13.5, color: AppColors.charcoal),
+                    decoration: InputDecoration(
+                      hintText: 'Search street, landmark…',
+                      hintStyle: GoogleFonts.dmSans(color: AppColors.muted, fontSize: 13.5),
+                      prefixIcon:
+                          const Icon(Icons.search_rounded, color: AppColors.muted, size: 20),
+                      suffixIcon: isSearching
+                          ? const Padding(
+                              padding: EdgeInsets.all(12),
+                              child: SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.deepRose,
+                                ),
+                              ),
+                            )
+                          : searchController.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear_rounded,
+                                      size: 18, color: AppColors.muted),
+                                  onPressed: onClearSearch,
+                                )
+                              : null,
+                      border: InputBorder.none,
+                      contentPadding:
+                          const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                    ),
+                  ),
+                ),
+                if (searchResults.isNotEmpty)
+                  Container(
+                    margin: const EdgeInsets.only(top: 6),
+                    constraints: const BoxConstraints(maxHeight: 160),
+                    decoration: BoxDecoration(
+                      color: AppColors.warmWhite,
+                      borderRadius: BorderRadius.circular(AppRadius.md),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x22000000),
+                          blurRadius: 12,
+                          offset: Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: ListView.separated(
+                      shrinkWrap: true,
+                      padding: const EdgeInsets.symmetric(vertical: 4),
+                      itemCount: searchResults.length,
+                      separatorBuilder: (_, __) =>
+                          const Divider(height: 1, indent: 48),
+                      itemBuilder: (context, index) {
+                        final place = searchResults[index];
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.place_outlined,
+                              color: AppColors.deepRose, size: 20),
+                          title: Text(
+                            place['name'],
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.dmSans(
+                                fontSize: 12.5, color: AppColors.charcoal),
                           ),
-                        )
-                      : Text(widget.address == null ? 'Save Address' : 'Update Address'),
+                          onTap: () => onSelectPlace(place),
+                        );
+                      },
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          Positioned(
+            right: 12,
+            bottom: 28,
+            child: Material(
+              color: AppColors.warmWhite,
+              elevation: 3,
+              shadowColor: const Color(0x33000000),
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: isLocating ? null : onUseMyLocation,
+                child: SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Center(
+                    child: isLocating
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.deepRose,
+                            ),
+                          )
+                        : const Icon(Icons.my_location_rounded,
+                            color: AppColors.deepRose, size: 22),
+                  ),
                 ),
               ),
-              const SizedBox(height: 12),
-
-              // Cancel Button
-              SizedBox(
-                width: double.infinity,
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(context),
-                  child: const Text('Cancel'),
+            ),
+          ),
+          if (isReverseGeocoding)
+            Positioned(
+              left: 12,
+              bottom: 28,
+              child: GlassCard(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                radius: AppRadius.pill,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: AppColors.deepRose),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Detecting address…',
+                      style: GoogleFonts.dmSans(
+                          fontSize: 11.5, color: AppColors.charcoal),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 20),
-            ],
-          );
-        },
+            ),
+        ],
       ),
+    );
+  }
+}
+
+/// Searchable list sheet used for city / barangay selection.
+class _AddressPickerSheet extends StatefulWidget {
+  const _AddressPickerSheet({
+    required this.title,
+    required this.options,
+    required this.selected,
+  });
+
+  final String title;
+  final List<String> options;
+  final String? selected;
+
+  @override
+  State<_AddressPickerSheet> createState() => _AddressPickerSheetState();
+}
+
+class _AddressPickerSheetState extends State<_AddressPickerSheet> {
+  late final TextEditingController _queryController;
+  late List<String> _filtered;
+
+  @override
+  void initState() {
+    super.initState();
+    _queryController = TextEditingController();
+    _filtered = List<String>.from(widget.options);
+  }
+
+  @override
+  void dispose() {
+    _queryController.dispose();
+    super.dispose();
+  }
+
+  void _onQueryChanged(String q) {
+    final n = q.trim().toLowerCase();
+    setState(() {
+      _filtered = n.isEmpty
+          ? List<String>.from(widget.options)
+          : widget.options.where((o) => o.toLowerCase().contains(n)).toList();
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        const SizedBox(height: 10),
+        Container(
+          width: 40,
+          height: 4,
+          decoration: BoxDecoration(
+            color: AppColors.borderStrong,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  widget.title,
+                  style: GoogleFonts.cormorantGaramond(
+                    fontSize: 24,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.charcoal,
+                  ),
+                ),
+              ),
+              IconButton(
+                onPressed: () => Navigator.pop(context),
+                icon: const Icon(Icons.close_rounded, color: AppColors.muted),
+              ),
+            ],
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextField(
+            controller: _queryController,
+            onChanged: _onQueryChanged,
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Search…',
+              prefixIcon: const Icon(Icons.search_rounded, color: AppColors.muted),
+              filled: true,
+              fillColor: AppColors.cream,
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                borderSide: BorderSide.none,
+              ),
+              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: _filtered.isEmpty
+              ? Center(
+                  child: Text(
+                    'No matches',
+                    style: GoogleFonts.dmSans(color: AppColors.muted),
+                  ),
+                )
+              : ListView.separated(
+                  itemCount: _filtered.length,
+                  separatorBuilder: (_, __) =>
+                      const Divider(height: 1, indent: 20, endIndent: 20),
+                  itemBuilder: (_, i) {
+                    final item = _filtered[i];
+                    final isSelected = item == widget.selected;
+                    return ListTile(
+                      title: Text(
+                        item,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14.5,
+                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                          color: AppColors.charcoal,
+                        ),
+                      ),
+                      trailing: isSelected
+                          ? const Icon(Icons.check_circle_rounded, color: AppColors.deepRose)
+                          : null,
+                      onTap: () => Navigator.pop(context, item),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 }

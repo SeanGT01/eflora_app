@@ -1,7 +1,7 @@
 name: eflowers
 description: E-FLOWERS — Luxury Floral Marketplace
 publish_to: 'none'
-version: 1.0.3+7
+version: 1.0.4+8
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
