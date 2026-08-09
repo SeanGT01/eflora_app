@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/product.dart';
 import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
 import 'glass.dart';
 import 'package:google_fonts/google_fonts.dart';
 
@@ -94,12 +95,12 @@ class ProductCard extends StatelessWidget {
                 Text(
                   product.name,
                   style: GoogleFonts.cormorantGaramond(
-                    fontSize: 15,
+                    fontSize: context.sp(15),
                     fontWeight: FontWeight.w500,
                     color: AppColors.charcoal,
                     height: 1.15,
                   ),
-                  maxLines: 1,
+                  maxLines: context.responsive.isCompact ? 2 : 1,
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (product.storeName != null) ...[
@@ -128,7 +129,7 @@ class ProductCard extends StatelessWidget {
                           Text(
                             '₱${product.effectivePrice.toStringAsFixed(2)}',
                             style: GoogleFonts.cormorantGaramond(
-                              fontSize: 17,
+                              fontSize: context.sp(17),
                               fontWeight: FontWeight.w600,
                               color: AppColors.deepRose,
                               height: 1.1,
@@ -175,7 +176,7 @@ class ProductCard extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(width: 6),
-                    _buildActionButton(product),
+                    _buildActionButton(context, product),
                   ],
                 ),
               ],
@@ -257,7 +258,9 @@ class ProductCard extends StatelessWidget {
 
   /// Build action button based on product stock status
   /// Matches web logic: Add to Basket → Select Variant → Out of Stock
-  Widget _buildActionButton(Product product) {
+  Widget _buildActionButton(BuildContext context, Product product) {
+    final btn = context.s(28).clamp(26.0, 34.0);
+    final icon = context.s(15).clamp(13.0, 18.0);
     final mainProductHasStock = product.stockQuantity > 0 && product.isAvailable;
     final hasVariantStock =
         product.variants.any((v) => v.isAvailable && v.stockQuantity > 0);
@@ -265,31 +268,46 @@ class ProductCard extends StatelessWidget {
     if (mainProductHasStock) {
       return GradientCircleButton(
         icon: Icons.add,
-        size: 28,
-        iconSize: 15,
+        size: btn,
+        iconSize: icon,
         onPressed: onAddToCart,
       );
     }
 
     if (hasVariantStock) {
-      return _outlineAction(Icons.add, onTap: onTap);
+      return _outlineAction(context, Icons.add, onTap: onTap);
     }
 
-    return _outlineAction(Icons.arrow_forward, iconSize: 13, onTap: onTap);
+    return _outlineAction(
+      context,
+      Icons.arrow_forward,
+      iconSize: context.s(13),
+      onTap: onTap,
+    );
   }
 
-  Widget _outlineAction(IconData icon, {double iconSize = 15, VoidCallback? onTap}) {
+  Widget _outlineAction(
+    BuildContext context,
+    IconData icon, {
+    double? iconSize,
+    VoidCallback? onTap,
+  }) {
+    final size = context.s(28).clamp(26.0, 34.0);
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        width: 28,
-        height: 28,
+        width: size,
+        height: size,
         decoration: BoxDecoration(
           color: Colors.white.withValues(alpha: 0.7),
           shape: BoxShape.circle,
           border: Border.all(color: AppColors.glassBorder),
         ),
-        child: Icon(icon, color: AppColors.dustyRose, size: iconSize),
+        child: Icon(
+          icon,
+          color: AppColors.dustyRose,
+          size: iconSize ?? context.s(15),
+        ),
       ),
     );
   }

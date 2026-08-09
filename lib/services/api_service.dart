@@ -66,7 +66,7 @@ class ApiService {
       final res = await http.post(
         Uri.parse('$_api/auth/login'),
         headers: await _headers(),
-        body: jsonEncode({'email': email, 'password': password}),
+        body: jsonEncode({'identifier': email, 'email': email, 'password': password}),
       ).timeout(const Duration(seconds: 15));
       
       print('📡 Response status: ${res.statusCode}');
@@ -129,12 +129,11 @@ class ApiService {
 
   // ── Customer OTP registration ─────────────────────────────────────────────
 
-  /// Step 1 — send a 6-digit OTP to the customer's email.
+  /// Step 1 — send a 6-digit OTP via email or SMS from a single identifier.
   static Future<ApiResult> sendCustomerOtp({
     required String fullName,
-    required String email,
+    required String identifier,
     required String password,
-    String? phone,
   }) async {
     try {
       final res = await http.post(
@@ -142,9 +141,8 @@ class ApiService {
         headers: await _headers(),
         body: jsonEncode({
           'full_name': fullName,
-          'email': email,
+          'identifier': identifier,
           'password': password,
-          if (phone != null && phone.isNotEmpty) 'phone': phone,
         }),
       ).timeout(const Duration(seconds: 15));
       return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
@@ -202,6 +200,79 @@ class ApiService {
     }
   }
 
+  // ── Forgot password (email → Gmail OTP, phone → SMS OTP) ───────────────────
+
+  static Future<ApiResult> sendForgotPasswordOtp({
+    String? email,
+    String? identifier,
+  }) async {
+    try {
+      final id = (identifier ?? email ?? '').trim();
+      final res = await http.post(
+        Uri.parse('$_api/auth/forgot-password/send-otp'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'identifier': id,
+          // Back-compat for older servers
+          if (id.contains('@')) 'email': id.toLowerCase(),
+        }),
+      ).timeout(const Duration(seconds: 15));
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  static Future<ApiResult> resendForgotPasswordOtp({required String email}) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_api/auth/forgot-password/resend-otp'),
+        headers: await _headers(),
+        body: jsonEncode({'email': email}),
+      ).timeout(const Duration(seconds: 15));
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  static Future<ApiResult> verifyForgotPasswordOtp({
+    required String email,
+    required String otpCode,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_api/auth/forgot-password/verify-otp'),
+        headers: await _headers(),
+        body: jsonEncode({'email': email, 'otp_code': otpCode}),
+      ).timeout(const Duration(seconds: 15));
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  static Future<ApiResult> resetPasswordAfterOtp({
+    required String email,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_api/auth/forgot-password/reset'),
+        headers: await _headers(),
+        body: jsonEncode({
+          'email': email,
+          'new_password': newPassword,
+          'confirm_password': confirmPassword,
+        }),
+      ).timeout(const Duration(seconds: 15));
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
   // ──────────────────────────────────────────────────────────────────────────
 
   static Future<ApiResult> getMe() async {
@@ -221,7 +292,6 @@ class ApiService {
   static Future<ApiResult> updateProfile({
     required String firstName,
     required String lastName,
-    String? phone,
     String? birthday,
     String? gender,
   }) async {
@@ -233,7 +303,6 @@ class ApiService {
         body: jsonEncode({
           'first_name': firstName,
           'last_name': lastName,
-          if (phone != null) 'phone': phone,
           if (birthday != null) 'birthday': birthday,
           if (gender != null) 'gender': gender,
         }),

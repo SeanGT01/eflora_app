@@ -14,6 +14,7 @@ import '../product/product_detail_screen.dart';
 import '../main_shell.dart';
 import '../../widgets/auth_required_sheet.dart';
 import '../../widgets/quick_add_variant_sheet.dart';
+import '../../utils/responsive.dart';
 
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
@@ -27,12 +28,16 @@ class _SearchScreenState extends State<SearchScreen> {
   bool _loading = false;
   bool _searched = false;
 
-  Future<void> _search(String q) async {
-    if (q.trim().isEmpty) { setState(() { _results = []; _searched = false; }); return; }
+  Future<void> _search(String q, {String? categorySlug}) async {
+    if (q.trim().isEmpty && (categorySlug == null || categorySlug.isEmpty)) {
+      setState(() { _results = []; _searched = false; });
+      return;
+    }
     setState(() { _loading = true; _searched = true; });
     final isLoggedIn = context.read<AuthProvider>().isLoggedIn;
     final result = await ApiService.getProducts(
-      search: q.trim(),
+      search: categorySlug == null || categorySlug.isEmpty ? q.trim() : null,
+      category: categorySlug,
       // Match home: filter to default-address coverage when signed in
       includeOutsideLocation: isLoggedIn ? false : true,
     );
@@ -82,19 +87,38 @@ class _SearchScreenState extends State<SearchScreen> {
                         ? _buildSuggestions()
                         : _results.isEmpty
                             ? _buildNoResults()
-                            : GridView.builder(
-                                padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-                                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                                  crossAxisCount: 2, crossAxisSpacing: 12, mainAxisSpacing: 12, childAspectRatio: 0.68,
-                                ),
-                                itemCount: _results.length,
-                                itemBuilder: (_, i) => ProductCard(
-                                  product: _results[i],
-                                  onTap: () => Navigator.push(context, MaterialPageRoute(
-                                    builder: (_) => ProductDetailScreen(productId: _results[i].id),
-                                  )),
-                                  onAddToCart: () => _addToCart(_results[i]),
-                                ),
+                            : Builder(
+                                builder: (context) {
+                                  final r = context.responsive;
+                                  return GridView.builder(
+                                    padding: EdgeInsets.fromLTRB(
+                                      context.pageGutter,
+                                      context.s(4),
+                                      context.pageGutter,
+                                      context.s(24),
+                                    ),
+                                    gridDelegate:
+                                        SliverGridDelegateWithFixedCrossAxisCount(
+                                      crossAxisCount: r.productCrossAxisCount,
+                                      crossAxisSpacing: r.productCrossSpacing,
+                                      mainAxisSpacing: r.productMainSpacing,
+                                      childAspectRatio: r.productAspectRatio,
+                                    ),
+                                    itemCount: _results.length,
+                                    itemBuilder: (_, i) => ProductCard(
+                                      product: _results[i],
+                                      onTap: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (_) => ProductDetailScreen(
+                                            productId: _results[i].id,
+                                          ),
+                                        ),
+                                      ),
+                                      onAddToCart: () => _addToCart(_results[i]),
+                                    ),
+                                  );
+                                },
                               ),
               ),
             ],
@@ -140,7 +164,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       cursorColor: AppColors.roseCta,
                       decoration: InputDecoration(
                         isDense: true,
-                        hintText: 'Search flowers, plants…',
+                        hintText: 'Search flowers, plants, categories…',
                         filled: false,
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
@@ -197,7 +221,10 @@ class _SearchScreenState extends State<SearchScreen> {
               Wrap(
                 spacing: 8, runSpacing: 8,
                 children: categories.map((cat) => GestureDetector(
-                  onTap: () { _ctrl.text = cat.name; _search(cat.name); },
+                  onTap: () {
+                    _ctrl.text = cat.name;
+                    _search(cat.name, categorySlug: cat.slug);
+                  },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
                     decoration: BoxDecoration(

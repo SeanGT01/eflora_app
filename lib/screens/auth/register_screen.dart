@@ -21,10 +21,10 @@ class RegisterScreen extends StatefulWidget {
 
 class _RegisterScreenState extends State<RegisterScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _nameCtrl     = TextEditingController();
-  final _emailCtrl    = TextEditingController();
+  final _nameCtrl = TextEditingController();
+  final _identifierCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
-  final _confirmCtrl  = TextEditingController();
+  final _confirmCtrl = TextEditingController();
   bool _obscure = true;
   bool _obscureConfirm = true;
 
@@ -34,11 +34,40 @@ class _RegisterScreenState extends State<RegisterScreen> {
     if (value.length < 8) return 'Must be at least 8 characters';
     if (!RegExp(r'[a-z]').hasMatch(value)) return 'Must include lowercase letter';
     if (!RegExp(r'[A-Z]').hasMatch(value)) return 'Must include uppercase letter';
-    if (!RegExp(r'[^A-Za-z0-9]').hasMatch(value)) return 'Must include special character';
+    if (!RegExp(r'[^A-Za-z0-9]').hasMatch(value)) {
+      return 'Must include special character';
+    }
     return null;
   }
 
-  void _goToLogin() {
+  String? _normalizePhMobile(String? raw) {
+    var compact = (raw ?? '').trim().replaceAll(RegExp(r'[\s\-()]'), '');
+    if (compact.isEmpty) return null;
+    if (compact.startsWith('+63')) {
+      compact = '0${compact.substring(3)}';
+    } else if (compact.startsWith('63') && compact.length == 12) {
+      compact = '0${compact.substring(2)}';
+    }
+    if (!RegExp(r'^09\d{9}$').hasMatch(compact)) return null;
+    return compact;
+  }
+
+  String? _validateIdentifier(String? v) {
+    final raw = (v ?? '').trim();
+    if (raw.isEmpty) return 'Email or phone is required';
+    if (raw.contains('@')) {
+      if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(raw.toLowerCase())) {
+        return 'Enter a valid email';
+      }
+      return null;
+    }
+    if (_normalizePhMobile(raw) == null) {
+      return 'Enter a valid email or PH mobile (09XXXXXXXXX)';
+    }
+    return null;
+  }
+
+  void _goToLogin({String? loginId}) {
     if (!mounted) return;
 
     if (widget.onLoginTap != null) {
@@ -49,23 +78,24 @@ class _RegisterScreenState extends State<RegisterScreen> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => LoginScreen(
-          initialEmail: _emailCtrl.text.trim().toLowerCase(),
+          initialEmail: loginId ?? _identifierCtrl.text.trim(),
         ),
       ),
     );
   }
 
-  /// Sends the OTP to the user's email, then navigates to the OTP verification
-  /// screen. Account creation happens there after the code is confirmed.
   Future<void> _sendOtpAndContinue() async {
     if (!_formKey.currentState!.validate()) return;
 
     final auth = context.read<AuthProvider>();
-    final email = _emailCtrl.text.trim().toLowerCase();
+    var identifier = _identifierCtrl.text.trim();
+    if (identifier.contains('@')) {
+      identifier = identifier.toLowerCase();
+    }
 
     final error = await auth.sendOtp(
       fullName: _nameCtrl.text.trim(),
-      email: email,
+      identifier: identifier,
       password: _passwordCtrl.text,
     );
 
@@ -80,23 +110,39 @@ class _RegisterScreenState extends State<RegisterScreen> {
       return;
     }
 
-    // OTP sent — push the verification screen.
+    final meta = auth.lastSendOtpMeta;
+    final accountEmail = (meta?['email'] as String?)?.trim().toLowerCase() ?? '';
+    final channel = (meta?['otp_channel'] as String?) ??
+        (identifier.contains('@') ? 'email' : 'sms');
+    final dest = (meta?['destination_masked'] as String?) ?? identifier;
+    final loginId =
+        (meta?['login_id'] as String?)?.trim() ?? identifier;
+
+    if (accountEmail.isEmpty) {
+      showToast(context, 'Could not start verification. Try again.', isError: true);
+      return;
+    }
+
     final verified = await Navigator.of(context).push<bool>(
       MaterialPageRoute(
         builder: (_) => OtpVerificationScreen(
-          email: email,
+          email: accountEmail,
+          otpChannel: channel,
+          destinationMasked: dest,
         ),
       ),
     );
 
     if (!mounted) return;
-    if (verified == true) _goToLogin();
+    if (verified == true) _goToLogin(loginId: loginId);
   }
 
   @override
   void dispose() {
-    _nameCtrl.dispose(); _emailCtrl.dispose();
-    _passwordCtrl.dispose(); _confirmCtrl.dispose();
+    _nameCtrl.dispose();
+    _identifierCtrl.dispose();
+    _passwordCtrl.dispose();
+    _confirmCtrl.dispose();
     super.dispose();
   }
 
@@ -132,25 +178,22 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     hint: 'Juana Dela Cruz',
                     prefixIcon: Icons.person_outline,
                   ),
-                  validator: (v) => (v == null || v.trim().isEmpty) ? 'Full name is required' : null,
+                  validator: (v) =>
+                      (v == null || v.trim().isEmpty) ? 'Full name is required' : null,
                 ),
                 const SizedBox(height: 18),
-                const AuthFieldLabel('Email address'),
+                const AuthFieldLabel('Email or mobile number'),
                 TextFormField(
-                  controller: _emailCtrl,
-                  keyboardType: TextInputType.emailAddress,
+                  controller: _identifierCtrl,
+                  keyboardType: TextInputType.text,
                   textInputAction: TextInputAction.next,
                   inputFormatters: const [LowercaseEmailInputFormatter()],
                   style: fieldStyle,
                   decoration: authInputDecoration(
-                    hint: 'you@example.com',
-                    prefixIcon: Icons.mail_outline,
+                    hint: 'you@example.com or 09171234567',
+                    prefixIcon: Icons.person_outline,
                   ),
-                  validator: (v) {
-                    if (v == null || v.isEmpty) return 'Email is required';
-                    if (!v.contains('@')) return 'Enter a valid email';
-                    return null;
-                  },
+                  validator: _validateIdentifier,
                 ),
                 const SizedBox(height: 18),
                 const AuthFieldLabel('Password'),
@@ -164,16 +207,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     prefixIcon: Icons.lock_outline,
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscure ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                        _obscure
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
                         size: 19,
                         color: AppColors.muted,
                       ),
                       onPressed: () => setState(() => _obscure = !_obscure),
                     ),
                   ),
-                  validator: (v) {
-                    return _validatePassword(v);
-                  },
+                  validator: _validatePassword,
                 ),
                 const SizedBox(height: 18),
                 const AuthFieldLabel('Confirm password'),
@@ -188,11 +231,14 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     prefixIcon: Icons.lock_outline,
                     suffixIcon: IconButton(
                       icon: Icon(
-                        _obscureConfirm ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                        _obscureConfirm
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
                         size: 19,
                         color: AppColors.muted,
                       ),
-                      onPressed: () => setState(() => _obscureConfirm = !_obscureConfirm),
+                      onPressed: () =>
+                          setState(() => _obscureConfirm = !_obscureConfirm),
                     ),
                   ),
                   validator: (v) {
@@ -210,7 +256,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 ),
                 const SizedBox(height: 12),
                 Text(
-                  'We\'ll send a verification code to your email.',
+                  'Use one contact — email gets a Gmail code, mobile gets an SMS code. That same value is your login.',
                   textAlign: TextAlign.center,
                   style: GoogleFonts.dmSans(
                     fontSize: 12,
@@ -223,7 +269,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 Center(
                   child: AuthTextLink(
                     label: 'Sign in instead',
-                    onTap: _goToLogin,
+                    onTap: () => _goToLogin(),
                   ),
                 ),
               ],

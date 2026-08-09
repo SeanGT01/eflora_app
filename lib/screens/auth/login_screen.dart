@@ -8,6 +8,7 @@ import '../../utils/lowercase_email_formatter.dart';
 import '../../widgets/auth_chrome.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
+import 'forgot_password_otp_screen.dart';
 import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -20,16 +21,16 @@ class LoginScreen extends StatefulWidget {
 }
 
 class _LoginScreenState extends State<LoginScreen> {
-  final _formKey    = GlobalKey<FormState>();
-  final _emailCtrl    = TextEditingController();
+  final _formKey = GlobalKey<FormState>();
+  final _emailCtrl = TextEditingController();
   final _passwordCtrl = TextEditingController();
   bool _obscure = true;
+  bool _sendingReset = false;
 
   @override
   void initState() {
     super.initState();
-    _emailCtrl.text =
-        (widget.initialEmail ?? '').trim().toLowerCase();
+    _emailCtrl.text = (widget.initialEmail ?? '').trim().toLowerCase();
   }
 
   void _goToRegister() {
@@ -47,31 +48,90 @@ class _LoginScreenState extends State<LoginScreen> {
     );
   }
 
+  Future<void> _forgotPassword() async {
+    final raw = _emailCtrl.text.trim();
+    if (raw.isEmpty) {
+      showToast(context, 'Enter your email or phone number first', isError: true);
+      return;
+    }
+
+    final isEmail = raw.contains('@');
+    final isPhone = RegExp(r'^(?:\+63|0)?9\d{9}$').hasMatch(
+      raw.replaceAll(RegExp(r'[\s\-()]'), ''),
+    );
+    if (!isEmail && !isPhone) {
+      showToast(
+        context,
+        'Enter a valid email or PH mobile number',
+        isError: true,
+      );
+      return;
+    }
+
+    setState(() => _sendingReset = true);
+    final auth = context.read<AuthProvider>();
+    final error = await auth.sendForgotPasswordOtp(identifier: raw);
+    if (!mounted) return;
+    setState(() => _sendingReset = false);
+
+    if (error != null) {
+      final code = auth.lastErrorCode;
+      if (isEmailServiceUnavailableError(error, errorCode: code)) {
+        await showEmailServiceUnavailableDialog(context);
+      } else {
+        showToast(context, error, isError: true);
+      }
+      return;
+    }
+
+    final meta = auth.lastForgotPasswordMeta;
+    final accountEmail =
+        (meta?['email'] as String?)?.trim().toLowerCase() ??
+            (isEmail ? raw.toLowerCase() : '');
+    final channel = (meta?['otp_channel'] as String?) ?? (isEmail ? 'email' : 'sms');
+    final dest = (meta?['destination_masked'] as String?) ?? raw;
+    final loginId = (meta?['login_id'] as String?)?.trim().isNotEmpty == true
+        ? (meta!['login_id'] as String).trim()
+        : raw;
+
+    if (accountEmail.isEmpty) {
+      showToast(context, 'Could not start password reset. Try again.', isError: true);
+      return;
+    }
+
+    showToast(context, 'Verification code sent to $dest');
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ForgotPasswordOtpScreen(
+          email: accountEmail,
+          loginId: loginId,
+          otpChannel: channel,
+          destinationMasked: dest,
+        ),
+      ),
+    );
+  }
+
   Future<void> _login() async {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
-    final error = await auth.login(
-      _emailCtrl.text.trim().toLowerCase(),
-      _passwordCtrl.text,
-    );
+    var id = _emailCtrl.text.trim();
+    if (id.contains('@')) id = id.toLowerCase();
+    final error = await auth.login(id, _passwordCtrl.text);
     if (!mounted) return;
     if (error != null) {
       showToast(context, error, isError: true);
     } else {
-      // Route based on user role
       if (auth.user?.role == 'rider') {
-        // Pop login screen - _buildHomeForRole watches AuthProvider
-        // and will automatically switch to RiderShell
         if (mounted) {
           Navigator.of(context).pop();
         }
       } else {
-        // Pop login screen FIRST, then load cart in background
         if (mounted) {
           Navigator.of(context).pop();
         }
 
-        // Load cart in background (non-blocking)
         try {
           await context.read<CartProvider>().load();
         } catch (e) {
@@ -91,6 +151,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
+    final busy = auth.loading || _sendingReset;
     return AuthScaffold(
       onLeadingTap: () => Navigator.pop(context),
       children: [
@@ -108,10 +169,10 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const AuthFieldLabel('Email address'),
+                const AuthFieldLabel('Email or mobile number'),
                 TextFormField(
                   controller: _emailCtrl,
-                  keyboardType: TextInputType.emailAddress,
+                  keyboardType: TextInputType.text,
                   textInputAction: TextInputAction.next,
                   inputFormatters: const [LowercaseEmailInputFormatter()],
                   style: GoogleFonts.dmSans(
@@ -119,12 +180,29 @@ class _LoginScreenState extends State<LoginScreen> {
                     color: AppColors.charcoal,
                   ),
                   decoration: authInputDecoration(
-                    hint: 'you@example.com',
-                    prefixIcon: Icons.mail_outline,
+                    hint: 'you@example.com or 09171234567',
+                    prefixIcon: Icons.person_outline,
                   ),
                   validator: (v) {
-                    if (v == null || v.isEmpty) return 'Email is required';
-                    if (!v.contains('@')) return 'Enter a valid email';
+                    final raw = (v ?? '').trim();
+                    if (raw.isEmpty) return 'Email or phone is required';
+                    if (raw.contains('@')) {
+                      if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$')
+                          .hasMatch(raw.toLowerCase())) {
+                        return 'Enter a valid email';
+                      }
+                      return null;
+                    }
+                    final compact = raw.replaceAll(RegExp(r'[\s\-()]'), '');
+                    var n = compact;
+                    if (n.startsWith('+63')) {
+                      n = '0${n.substring(3)}';
+                    } else if (n.startsWith('63') && n.length == 12) {
+                      n = '0${n.substring(2)}';
+                    }
+                    if (!RegExp(r'^09\d{9}$').hasMatch(n)) {
+                      return 'Enter a valid email or PH mobile';
+                    }
                     return null;
                   },
                 ),
@@ -156,7 +234,34 @@ class _LoginScreenState extends State<LoginScreen> {
                   validator: (v) =>
                       (v == null || v.isEmpty) ? 'Password is required' : null,
                 ),
-                const SizedBox(height: 24),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: TextButton(
+                    onPressed: busy ? null : _forgotPassword,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AppColors.roseCta,
+                      padding: const EdgeInsets.symmetric(vertical: 6),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
+                    child: Text(
+                      _sendingReset ? 'Sending code…' : 'Forgot password?',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ),
+                Text(
+                  'Sign in with the same email or mobile you used to register.',
+                  textAlign: TextAlign.right,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11,
+                    color: AppColors.muted.withValues(alpha: 0.85),
+                  ),
+                ),
+                const SizedBox(height: 16),
                 GradientButton(
                   label: 'Sign In',
                   onPressed: _login,

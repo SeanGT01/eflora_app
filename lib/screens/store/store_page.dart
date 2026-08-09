@@ -18,18 +18,7 @@ import '../product/product_detail_screen.dart';
 import '../cart/cart_screen.dart';
 import '../../widgets/chat_drawer.dart';
 import 'store_detail_sheet.dart';
-
-/// Store hero panel gradient, mirroring the website's store banner.
-const LinearGradient _storeHeroGradient = LinearGradient(
-  begin: Alignment.topLeft,
-  end: Alignment.bottomRight,
-  colors: [AppColors.roseCta, AppColors.pinkMid, Color(0xFFB888D0)],
-  stops: [0.0, 0.45, 1.0],
-);
-
-const List<BoxShadow> _storeHeroShadow = [
-  BoxShadow(color: Color(0x3D6E2A4C), blurRadius: 32, offset: Offset(0, 14)),
-];
+import '../../utils/responsive.dart';
 
 class StorePage extends StatefulWidget {
   final int storeId;
@@ -196,17 +185,18 @@ class _StorePageState extends State<StorePage>
         flowerCount: 6,
         child: NestedScrollView(
           headerSliverBuilder: (context, innerBoxIsScrolled) => [
-            // ── Back button app bar ──
+            // ── Top actions (always pinned) ──
             SliverAppBar(
               pinned: true,
               floating: false,
               snap: false,
-              expandedHeight: 0,
               toolbarHeight: 56,
-              backgroundColor: Colors.transparent,
+              backgroundColor: AppColors.pageCream,
               surfaceTintColor: Colors.transparent,
               elevation: 0,
               scrolledUnderElevation: 0,
+              forceElevated: false,
+              forceMaterialTransparency: false,
               leadingWidth: 60,
               leading: Padding(
                 padding: const EdgeInsets.only(left: 12),
@@ -222,18 +212,15 @@ class _StorePageState extends State<StorePage>
                 const SizedBox(width: 12),
               ],
             ),
-            // ── Store header (logo + name) ──
+            // ── Store identity (scrolls away with content) ──
             SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
-                child: _buildStoreHeader(store),
-              ),
+              child: _buildStoreHeader(store),
             ),
-            // ── Segmented switcher (scrolls away with the header) ──
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                child: _buildTabBar(),
+            // ── Tabs stick under the app bar while scrolling ──
+            SliverPersistentHeader(
+              pinned: true,
+              delegate: _StoreTabBarDelegate(
+                tabController: _tabController,
               ),
             ),
           ],
@@ -250,48 +237,63 @@ class _StorePageState extends State<StorePage>
     );
   }
 
-  // ── Store Header (gradient hero panel) ──
+  // ── Store Header (logo + name + meta, sits above sticky tabs) ──
   Widget _buildStoreHeader(Store? store) {
     if (store == null && _loadingStore) {
       return const SizedBox(
-        height: 92,
+        height: 72,
         child: Center(
-            child: CircularProgressIndicator(
-                strokeWidth: 2, color: AppColors.roseCta)),
+          child: CircularProgressIndicator(
+            strokeWidth: 2,
+            color: AppColors.roseCta,
+          ),
+        ),
       );
     }
-    if (store == null) return const SizedBox(height: 92);
+    if (store == null) return const SizedBox(height: 16);
+
+    final metaParts = <String>[];
+    if (store.productCount != null) {
+      metaParts.add('${store.productCount} products');
+    }
+    if (store.deliveryRadiusKm != null) {
+      metaParts.add(
+        '${store.deliveryRadiusKm!.toStringAsFixed(0)}km delivery',
+      );
+    }
+    if (store.avgRating != null && store.avgRating! > 0) {
+      metaParts.add('${store.avgRating!.toStringAsFixed(1)}★');
+    }
 
     return GestureDetector(
       onTap: _openStoreDetails,
-      child: Container(
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          gradient: _storeHeroGradient,
-          borderRadius: BorderRadius.circular(28),
-          boxShadow: _storeHeroShadow,
-        ),
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
         child: Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            // Logo
             Container(
-              width: 54,
-              height: 54,
+              width: 52,
+              height: 52,
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.22),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(
-                  color: Colors.white.withValues(alpha: 0.55),
-                  width: 1,
-                ),
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.glassBorder),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x14000000),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
               ),
               child: ClipRRect(
-                borderRadius: BorderRadius.circular(15),
-                child: _buildLogo(store, 54),
+                borderRadius: BorderRadius.circular(11),
+                child: _buildLogo(store, 52),
               ),
             ),
-            const SizedBox(width: 13),
-            // Name + meta
+            const SizedBox(width: 12),
             Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -303,77 +305,42 @@ class _StorePageState extends State<StorePage>
                         child: Text(
                           store.name,
                           style: GoogleFonts.cormorantGaramond(
-                            fontSize: 23,
+                            fontSize: 24,
                             fontWeight: FontWeight.w600,
-                            color: Colors.white,
-                            height: 1.15,
+                            color: AppColors.charcoal,
+                            height: 1.1,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                      const SizedBox(width: 4),
-                      Icon(
+                      const SizedBox(width: 2),
+                      const Icon(
                         Icons.chevron_right,
-                        size: 20,
-                        color: Colors.white.withValues(alpha: 0.85),
+                        size: 22,
+                        color: AppColors.charcoal,
                       ),
                     ],
                   ),
-                  const SizedBox(height: 7),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    children: [
-                      if (store.avgRating != null && store.avgRating! > 0)
-                        _metaChip(
-                          store.avgRating!.toStringAsFixed(1),
-                          icon: Icons.star_rounded,
-                        ),
-                      if (store.productCount != null)
-                        _metaChip('${store.productCount} products'),
-                      if (store.deliveryRadiusKm != null)
-                        _metaChip(
-                          '${store.deliveryRadiusKm!.toStringAsFixed(0)}km delivery',
-                        ),
-                    ],
-                  ),
+                  if (metaParts.isNotEmpty) ...[
+                    const SizedBox(height: 4),
+                    Text(
+                      metaParts.join(' • '),
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w400,
+                        color: AppColors.muted,
+                        height: 1.2,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ],
               ),
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  /// White-translucent pill used for the hero's meta facts.
-  Widget _metaChip(String label, {IconData? icon}) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        border:
-            Border.all(color: Colors.white.withValues(alpha: 0.38), width: 1),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          if (icon != null) ...[
-            Icon(icon, size: 12, color: const Color(0xFFFFE9A8)),
-            const SizedBox(width: 3),
-          ],
-          Text(
-            label,
-            style: GoogleFonts.dmSans(
-              fontSize: 10.5,
-              fontWeight: FontWeight.w600,
-              color: Colors.white,
-              letterSpacing: 0.2,
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -411,57 +378,6 @@ class _StorePageState extends State<StorePage>
     );
   }
 
-  // ── Tab Bar ──
-  Widget _buildTabBar() {
-    const labels = ['HOME', 'PRODUCTS', 'CATEGORIES'];
-    return GlassCard(
-      radius: AppRadius.pill,
-      padding: const EdgeInsets.all(4),
-      child: AnimatedBuilder(
-        animation: _tabController.animation ?? _tabController,
-        builder: (context, _) {
-          return Row(
-            children: [
-              for (var i = 0; i < labels.length; i++)
-                Expanded(
-                  child: GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: () => _tabController.animateTo(i),
-                    child: AnimatedContainer(
-                      duration: AppMotion.fast,
-                      curve: Curves.easeOut,
-                      height: 36,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        gradient: _tabController.index == i
-                            ? AppColors.brandGradient
-                            : null,
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        boxShadow: _tabController.index == i
-                            ? AppShadows.roseButton
-                            : null,
-                      ),
-                      child: Text(
-                        labels[i],
-                        style: GoogleFonts.dmSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 1,
-                          color: _tabController.index == i
-                              ? Colors.white
-                              : AppColors.muted,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
-    );
-  }
-
   // ══════════════════════════════════════════════════════════════════════════
   // TAB 1 — HOME (grid like homepage)
   // ══════════════════════════════════════════════════════════════════════════
@@ -478,21 +394,31 @@ class _StorePageState extends State<StorePage>
       color: AppColors.roseCta,
       backgroundColor: AppColors.warmWhite,
       onRefresh: _loadProducts,
-      child: GridView.builder(
-        padding: const EdgeInsets.fromLTRB(12, 12, 12, 24),
-        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-          crossAxisCount: 2,
-          mainAxisSpacing: 12,
-          crossAxisSpacing: 12,
-          childAspectRatio: 0.68,
-        ),
-        itemCount: _products.length,
-        itemBuilder: (context, i) {
-          final product = _products[i];
-          return ProductCard(
-            product: product,
-            onTap: () => _openProduct(product),
-            onAddToCart: () => _addToCart(product),
+      child: Builder(
+        builder: (context) {
+          final r = context.responsive;
+          return GridView.builder(
+            padding: EdgeInsets.fromLTRB(
+              context.pageGutter * 0.7,
+              context.s(12),
+              context.pageGutter * 0.7,
+              context.s(24),
+            ),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: r.productCrossAxisCount,
+              mainAxisSpacing: r.productMainSpacing,
+              crossAxisSpacing: r.productCrossSpacing,
+              childAspectRatio: r.productAspectRatio,
+            ),
+            itemCount: _products.length,
+            itemBuilder: (context, i) {
+              final product = _products[i];
+              return ProductCard(
+                product: product,
+                onTap: () => _openProduct(product),
+                onAddToCart: () => _addToCart(product),
+              );
+            },
           );
         },
       ),
@@ -595,6 +521,111 @@ class _StorePageState extends State<StorePage>
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Sticky Home / Products / Categories bar — sits flush under the store header,
+/// then pins under the app bar once the header scrolls away.
+class _StoreTabBarDelegate extends SliverPersistentHeaderDelegate {
+  _StoreTabBarDelegate({required this.tabController});
+
+  final TabController tabController;
+
+  static const double _height = 48;
+
+  @override
+  double get minExtent => _height;
+
+  @override
+  double get maxExtent => _height;
+
+  @override
+  Widget build(
+    BuildContext context,
+    double shrinkOffset,
+    bool overlapsContent,
+  ) {
+    return Material(
+      color: AppColors.pageCream,
+      elevation: 0,
+      shadowColor: Colors.transparent,
+      child: AnimatedBuilder(
+        animation: tabController.animation ?? tabController,
+        builder: (context, _) {
+          return Container(
+            height: _height,
+            decoration: const BoxDecoration(
+              border: Border(
+                bottom: BorderSide(color: Color(0x1A2C2520), width: 1),
+              ),
+            ),
+            child: Row(
+              children: [
+                for (var i = 0; i < 3; i++)
+                  Expanded(
+                    child: _StoreTabLabel(
+                      label: const ['Home', 'Products', 'Categories'][i],
+                      selected: tabController.index == i,
+                      onTap: () => tabController.animateTo(i),
+                    ),
+                  ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  @override
+  bool shouldRebuild(covariant _StoreTabBarDelegate oldDelegate) {
+    return oldDelegate.tabController != tabController;
+  }
+}
+
+class _StoreTabLabel extends StatelessWidget {
+  const _StoreTabLabel({
+    required this.label,
+    required this.selected,
+    required this.onTap,
+  });
+
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: onTap,
+      child: Column(
+        children: [
+          Expanded(
+            child: Center(
+              child: Text(
+                label,
+                style: GoogleFonts.dmSans(
+                  fontSize: 14.5,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  color: selected ? AppColors.roseCta : AppColors.muted,
+                ),
+              ),
+            ),
+          ),
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
+            height: 2.5,
+            width: selected ? 56 : 0,
+            decoration: BoxDecoration(
+              color: AppColors.roseCta,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+        ],
       ),
     );
   }

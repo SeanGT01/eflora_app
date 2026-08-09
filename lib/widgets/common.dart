@@ -296,13 +296,22 @@ Future<void> showEmailServiceUnavailableDialog(BuildContext context) {
 }
 
 bool isEmailServiceUnavailableError(String? message, {String? errorCode}) {
-  if (errorCode == 'email_service_unavailable') return true;
+  if (errorCode == 'email_service_unavailable' ||
+      errorCode == 'sms_service_unavailable') {
+    return true;
+  }
   final m = (message ?? '').toLowerCase();
-  return m.contains('verification email') &&
-      (m.contains('couldn\'t send') ||
-          m.contains('could not send') ||
-          m.contains('temporary system issue') ||
-          m.contains('contact the developer'));
+  return (m.contains('verification email') && m.contains('unavailable')) ||
+      m.contains("couldn't send your verification email") ||
+      m.contains("couldn't send your verification sms") ||
+      m.contains('sms_service_unavailable');
+}
+
+bool isSmsServiceUnavailableError(String? message, {String? errorCode}) {
+  if (errorCode == 'sms_service_unavailable') return true;
+  final m = (message ?? '').toLowerCase();
+  return m.contains('verification sms') ||
+      m.contains("couldn't send your verification sms");
 }
 
 // Divider with label

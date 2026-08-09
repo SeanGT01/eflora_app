@@ -26,6 +26,8 @@ import '../auth/register_screen.dart';
 import '../search/search_screen.dart';
 import '../cart/cart_screen.dart';
 import '../store/store_page.dart';
+import '../../widgets/profile_onboarding_flow.dart';
+import '../../utils/responsive.dart';
 
 /// Web hero slides use a 145° linear gradient; this diagonal reads the same in
 /// Flutter's alignment space.
@@ -53,23 +55,20 @@ const Map<String, int> _kCategoryRampBySlug = {
   'succulents': 3,
 };
 
-/// Mirrors the icon fallbacks used by the web category tiles in `index.html`
-/// (plant / heart / seedling), with a grid glyph for the "All" chip.
-const Map<String, IconData> _kCategoryIconBySlug = {
-  'all': Icons.grid_view_rounded,
-  'fresh-flowers': Icons.local_florist_rounded,
-  'potted-plants': Icons.spa_rounded,
-  'bouquets': Icons.favorite_rounded,
-  'succulents': Icons.eco_rounded,
+/// Same PNGs as the promotional banner / web category tiles.
+const Map<String, String> _kCategoryImageBySlug = {
+  'fresh-flowers': '/static/images/category_images/fresh_flowers.png',
+  'potted-plants': '/static/images/category_images/potted_plants.png',
+  'bouquets': '/static/images/category_images/bouquets.png',
+  'succulents': '/static/images/category_images/succulents.png',
 };
 
-/// Mirrors the web `index.html` hero slides (gradients, copy, category URLs).
+/// Mirrors the web `index.html` hero slides (gradients, copy, imagery).
 class _LandingHeroSlide {
   final String eyebrow;
   final String titleUpper;
   final String titleItalic;
   final String subtitle;
-  final String categorySlug;
   final String imageUrl;
   final LinearGradient gradient;
 
@@ -78,7 +77,6 @@ class _LandingHeroSlide {
     required this.titleUpper,
     required this.titleItalic,
     required this.subtitle,
-    required this.categorySlug,
     required this.imageUrl,
     required this.gradient,
   });
@@ -165,14 +163,16 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   /// Horizontal inset for banner, categories, and main sections (aligned rhythm).
+  /// Prefer [context.pageGutter] at build time; this is the design-token fallback.
   static const double _kHomeGutter = 20;
   static const double _kBannerTop = 10;
-  static const double _kBannerToCategories = 24;
+  static const double _kBannerToCategories = 14;
 
   List<Product> _products = [];
   List<Store> _stores = [];
   bool _loadingProducts = true;
   bool _loadingStores = true;
+  bool _onboardingChecked = false;
   String _selectedCategorySlug = 'all'; // Using slug from CategoryProvider
   bool _browseOutsideLocation = false;
   bool _browseLimitationsDismissed =
@@ -191,8 +191,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   int _heroAnimTo = 0;
   bool _heroSlideAnimating = false;
   late final List<_LandingHeroSlide> _heroSlides;
-  final GlobalKey _productsSectionKey = GlobalKey();
-  final GlobalKey _storesSectionKey = GlobalKey();
 
   @override
   void initState() {
@@ -219,7 +217,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         titleItalic: 'Must Haves',
         subtitle:
             'Roses, tulips, lilies & more — handpicked from local farms, delivered fresh to your door.',
-        categorySlug: 'fresh-flowers',
         imageUrl: ApiService.assetUrl(
             '/static/images/category_images/fresh_flowers.png'),
         gradient: _heroGradient(
@@ -237,7 +234,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         titleItalic: 'Indoors',
         subtitle:
             'Indoor & outdoor beauties that transform any space into a green sanctuary.',
-        categorySlug: 'potted-plants',
         imageUrl: ApiService.assetUrl(
             '/static/images/category_images/potted_plants.png'),
         gradient: _heroGradient(
@@ -255,7 +251,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         titleItalic: 'Every Moment',
         subtitle:
             'Curated arrangements for birthdays, anniversaries, and every occasion worth celebrating.',
-        categorySlug: 'bouquets',
         imageUrl:
             ApiService.assetUrl('/static/images/category_images/bouquets.png'),
         gradient: _heroGradient(
@@ -273,7 +268,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         titleItalic: 'High Beauty',
         subtitle:
             'Resilient, stylish, and endlessly charming — perfect for busy plant lovers.',
-        categorySlug: 'succulents',
         imageUrl: ApiService.assetUrl(
             '/static/images/category_images/succulents.png'),
         gradient: _heroGradient(
@@ -307,10 +301,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       _lastAuthUserId = userId;
       if (shouldReload) {
         _browseOutsideLocation = false;
+        _onboardingChecked = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _loadData();
         });
       }
+    }
+    if (!_onboardingChecked && context.read<AuthProvider>().isLoggedIn) {
+      _onboardingChecked = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) maybeRunProfileOnboarding(context);
+      });
     }
   }
 
@@ -376,31 +377,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void _heroNext() {
     final next = (_heroIndex + 1) % _heroSlides.length;
     _heroGoTo(next);
-  }
-
-  Future<void> _onHeroShopNow(String categorySlug) async {
-    setState(() => _selectedCategorySlug = categorySlug);
-    await _loadProducts(category: categorySlug);
-    if (!mounted) return;
-    final ctx = _productsSectionKey.currentContext;
-    if (ctx == null || !ctx.mounted) return;
-    await Scrollable.ensureVisible(
-      ctx,
-      duration: const Duration(milliseconds: 450),
-      curve: Curves.easeOutCubic,
-      alignment: 0.05,
-    );
-  }
-
-  Future<void> _onHeroBrowseStores() async {
-    final ctx = _storesSectionKey.currentContext;
-    if (ctx == null || !ctx.mounted) return;
-    await Scrollable.ensureVisible(
-      ctx,
-      duration: const Duration(milliseconds: 450),
-      curve: Curves.easeOutCubic,
-      alignment: 0.1,
-    );
   }
 
   @override
@@ -599,6 +575,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final gutter = context.pageGutter;
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: AppBackground(
@@ -612,10 +589,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               _buildAppBar(),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    _kHomeGutter,
-                    _kBannerTop,
-                    _kHomeGutter,
+                  padding: EdgeInsets.fromLTRB(
+                    gutter,
+                    context.s(_kBannerTop),
+                    gutter,
                     0,
                   ),
                   child: _buildHero(),
@@ -623,24 +600,27 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               SliverToBoxAdapter(
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(
-                    _kHomeGutter,
-                    _kBannerToCategories,
-                    _kHomeGutter,
+                  padding: EdgeInsets.fromLTRB(
+                    gutter,
+                    context.s(_kBannerToCategories),
+                    gutter,
                     0,
                   ),
                   child: _buildCategoryBar(),
                 ),
               ),
               SliverToBoxAdapter(
-                key: _productsSectionKey,
                 child: _buildProductsSection(),
               ),
               SliverToBoxAdapter(
-                key: _storesSectionKey,
                 child: _buildStoresSection(),
               ),
-              const SliverToBoxAdapter(child: SizedBox(height: 100)),
+              SliverToBoxAdapter(
+                child: SizedBox(
+                  // Clear bottom nav only — avoid a large empty scroll region.
+                  height: MediaQuery.paddingOf(context).bottom + context.s(72),
+                ),
+              ),
             ],
           ),
         ),
@@ -1131,248 +1111,95 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     required bool isWide,
     bool compact = false,
   }) {
-    if (compact) {
-      // Sizes tuned toward web hero (large headline + italic subline + readable body).
-      final titleSize = isWide ? 26.0 : 22.0;
-      final italicSize = titleSize * 0.75;
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(0, 12, 2, 0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Row(
-              children: [
-                Container(
-                  width: 18,
-                  height: 1,
-                  color: Colors.white.withValues(alpha: 0.55),
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    slide.eyebrow.toUpperCase(),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 2,
-                      color: Colors.white.withValues(alpha: 0.55),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 6),
-            Text(
-              slide.titleUpper.toUpperCase(),
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.dmSans(
-                fontSize: titleSize,
-                fontWeight: FontWeight.w900,
-                height: 0.95,
-                letterSpacing: -0.4,
-                color: Colors.white,
-              ),
-            ),
-            Text(
-              slide.titleItalic,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.cormorantGaramond(
-                fontSize: italicSize,
-                fontWeight: FontWeight.w400,
-                fontStyle: FontStyle.italic,
-                height: 1.15,
-                color: Colors.white70,
-              ),
-            ),
-            const SizedBox(height: 5),
-            Text(
-              slide.subtitle,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                height: 1.4,
-                color: Colors.white.withValues(alpha: 0.55),
-              ),
-            ),
-            const SizedBox(height: 6),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                Flexible(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child:
-                        _heroPrimaryButton(slide.categorySlug, compact: true),
-                  ),
-                ),
-                const SizedBox(width: 5),
-                Flexible(
-                  child: FittedBox(
-                    fit: BoxFit.scaleDown,
-                    alignment: Alignment.centerLeft,
-                    child: _heroGhostButton(compact: true),
-                  ),
-                ),
-              ],
-            ),
-          ],
-        ),
-      );
-    }
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxH = constraints.maxHeight.isFinite && constraints.maxHeight > 0
+            ? constraints.maxHeight
+            : (compact ? 180.0 : 260.0);
 
-    final titleSize = isWide ? 44.0 : 30.0;
-    final italicSize = titleSize * 0.75;
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(_kHomeGutter, 8, _kHomeGutter, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
+        // Scale type from banner height so copy fills the vacated button space.
+        final titleSize = (maxH * 0.195)
+            .clamp(compact ? 20.0 : 24.0, isWide ? 36.0 : 30.0);
+        final italicSize = titleSize * 0.78;
+        final subtitleSize = (maxH * 0.078).clamp(11.5, 15.5);
+        final eyebrowSize = (maxH * 0.058).clamp(9.0, 11.5);
+        final gapEyebrow = (maxH * 0.04).clamp(4.0, 10.0);
+        final gapBody = (maxH * 0.048).clamp(6.0, 14.0);
+
+        return Padding(
+          padding: EdgeInsets.fromLTRB(
+            compact ? 0 : _kHomeGutter,
+            compact ? 2 : 8,
+            compact ? 4 : _kHomeGutter,
+            compact ? 2 : 10,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Container(
-                width: 20,
-                height: 1,
-                color: Colors.white.withValues(alpha: 0.55),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  slide.eyebrow.toUpperCase(),
-                  style: GoogleFonts.dmSans(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 2,
+              Row(
+                children: [
+                  Container(
+                    width: compact ? 18 : 20,
+                    height: 1,
                     color: Colors.white.withValues(alpha: 0.55),
                   ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
-          Expanded(
-            child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    slide.titleUpper.toUpperCase(),
-                    style: GoogleFonts.dmSans(
-                      fontSize: titleSize,
-                      fontWeight: FontWeight.w900,
-                      height: 0.95,
-                      letterSpacing: -0.5,
-                      color: Colors.white,
+                  SizedBox(width: compact ? 6 : 8),
+                  Expanded(
+                    child: Text(
+                      slide.eyebrow.toUpperCase(),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.dmSans(
+                        fontSize: eyebrowSize,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 2,
+                        color: Colors.white.withValues(alpha: 0.55),
+                      ),
                     ),
-                  ),
-                  Text(
-                    slide.titleItalic,
-                    style: GoogleFonts.cormorantGaramond(
-                      fontSize: italicSize,
-                      fontWeight: FontWeight.w400,
-                      fontStyle: FontStyle.italic,
-                      height: 1.15,
-                      color: Colors.white70,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  Text(
-                    slide.subtitle,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13,
-                      height: 1.55,
-                      color: Colors.white.withValues(alpha: 0.55),
-                    ),
-                  ),
-                  const SizedBox(height: 18),
-                  Wrap(
-                    spacing: 10,
-                    runSpacing: 10,
-                    children: [
-                      _heroPrimaryButton(slide.categorySlug, compact: false),
-                      _heroGhostButton(compact: false),
-                    ],
                   ),
                 ],
               ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _heroPrimaryButton(String categorySlug, {bool compact = false}) {
-    final hPad = compact ? 8.0 : 22.0;
-    final vPad = compact ? 5.0 : 14.0;
-    final iconSize = compact ? 11.0 : 17.0;
-    final fontSize = compact ? 9.0 : 13.0;
-    return Material(
-      color: Colors.white,
-      borderRadius: BorderRadius.circular(AppRadius.pill),
-      elevation: 0,
-      child: InkWell(
-        onTap: () => _onHeroShopNow(categorySlug),
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        child: Padding(
-          padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(Icons.shopping_bag_outlined,
-                  size: iconSize, color: AppColors.charcoal),
-              SizedBox(width: compact ? 4 : 8),
+              SizedBox(height: gapEyebrow),
               Text(
-                'Shop Now',
+                slide.titleUpper.toUpperCase(),
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
                 style: GoogleFonts.dmSans(
-                  fontSize: fontSize,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.35,
-                  color: AppColors.charcoal,
+                  fontSize: titleSize,
+                  fontWeight: FontWeight.w900,
+                  height: 0.95,
+                  letterSpacing: -0.45,
+                  color: Colors.white,
+                ),
+              ),
+              Text(
+                slide.titleItalic,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.cormorantGaramond(
+                  fontSize: italicSize,
+                  fontWeight: FontWeight.w400,
+                  fontStyle: FontStyle.italic,
+                  height: 1.12,
+                  color: Colors.white70,
+                ),
+              ),
+              SizedBox(height: gapBody),
+              Text(
+                slide.subtitle,
+                maxLines: compact ? 3 : 4,
+                overflow: TextOverflow.ellipsis,
+                style: GoogleFonts.dmSans(
+                  fontSize: subtitleSize,
+                  height: 1.35,
+                  color: Colors.white.withValues(alpha: 0.6),
                 ),
               ),
             ],
           ),
-        ),
-      ),
-    );
-  }
-
-  Widget _heroGhostButton({bool compact = false}) {
-    final hPad = compact ? 8.0 : 22.0;
-    final vPad = compact ? 5.0 : 14.0;
-    final fontSize = compact ? 8.5 : 13.0;
-    return Material(
-      color: Colors.transparent,
-      borderRadius: BorderRadius.circular(AppRadius.pill),
-      child: InkWell(
-        onTap: _onHeroBrowseStores,
-        borderRadius: BorderRadius.circular(AppRadius.pill),
-        child: Container(
-          padding: EdgeInsets.symmetric(horizontal: hPad, vertical: vPad),
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(AppRadius.pill),
-            color: Colors.white.withValues(alpha: 0.14),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.4)),
-          ),
-          child: Text(
-            'Browse Stores',
-            style: GoogleFonts.dmSans(
-              fontSize: fontSize,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.04 * fontSize,
-              color: Colors.white.withValues(alpha: 0.9),
-            ),
-          ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1391,33 +1218,45 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         }
         return Column(
           children: [
-            SizedBox(
-              height: 108,
-              child: ListView.separated(
-                scrollDirection: Axis.horizontal,
-                padding: EdgeInsets.zero,
-                itemCount: categories.length,
-                separatorBuilder: (_, __) => const SizedBox(width: 14),
-                itemBuilder: (_, i) {
-                  final cat = categories[i];
-                  return _CategoryTile(
-                    label: cat.name,
-                    slug: cat.slug,
-                    index: i,
-                    selected: _selectedCategorySlug == cat.slug,
-                    onTap: () {
-                      setState(() => _selectedCategorySlug = cat.slug);
-                      final categoryParam = cat.slug == 'all' ? null : cat.slug;
-                      _loadProducts(category: categoryParam);
+            Builder(
+              builder: (context) {
+                final r = context.responsive;
+                final scale = r.scale;
+                final iconSize = (56 * scale).clamp(52.0, 64.0);
+                final fontSize = (14.5 * scale).clamp(13.0, 16.5);
+                final barHeight = iconSize + 8 + (fontSize * 2.4);
+                return SizedBox(
+                  height: barHeight,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    padding: EdgeInsets.zero,
+                    itemCount: categories.length,
+                    separatorBuilder: (_, __) =>
+                        SizedBox(width: (10 * scale).clamp(8.0, 14.0)),
+                    itemBuilder: (_, i) {
+                      final cat = categories[i];
+                      return _CategoryTile(
+                        label: cat.name,
+                        slug: cat.slug,
+                        index: i,
+                        selected: _selectedCategorySlug == cat.slug,
+                        scale: scale,
+                        onTap: () {
+                          setState(() => _selectedCategorySlug = cat.slug);
+                          final categoryParam =
+                              cat.slug == 'all' ? null : cat.slug;
+                          _loadProducts(category: categoryParam);
+                        },
+                      );
                     },
-                  );
-                },
-              ),
+                  ),
+                );
+              },
             ),
             // Browse outside location — signed-in users only
             if (context.watch<AuthProvider>().isLoggedIn)
               Padding(
-                padding: const EdgeInsets.only(top: 12),
+                padding: const EdgeInsets.only(top: 8),
                 child: GlassCard(
                   radius: AppRadius.pill,
                   padding: const EdgeInsets.fromLTRB(10, 4, 18, 4),
@@ -1476,8 +1315,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildProductsSection() {
+    final r = context.responsive;
+    final gutter = context.pageGutter;
+    final gridDelegate = SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: r.productCrossAxisCount,
+      crossAxisSpacing: r.productCrossSpacing,
+      mainAxisSpacing: r.productMainSpacing,
+      childAspectRatio: r.productAspectRatio,
+    );
     return Padding(
-      padding: const EdgeInsets.fromLTRB(_kHomeGutter, 32, _kHomeGutter, 0),
+      padding: EdgeInsets.fromLTRB(gutter, context.s(14), gutter, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1485,22 +1332,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             eyebrow: 'Featured',
             title: 'Our Collection',
           ),
-          const SizedBox(height: 4),
+          SizedBox(height: context.s(2)),
           Text(
             'Handpicked blooms from local florists',
             style: Theme.of(context).textTheme.bodySmall,
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: context.s(8)),
           if (_loadingProducts)
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 14,
-                mainAxisSpacing: 18,
-                childAspectRatio: 0.68,
-              ),
+              gridDelegate: gridDelegate,
               itemCount: 6,
               itemBuilder: (_, __) => const _GlassProductShimmer(),
             )
@@ -1516,12 +1358,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 2,
-                crossAxisSpacing: 14,
-                mainAxisSpacing: 18,
-                childAspectRatio: 0.68,
-              ),
+              gridDelegate: gridDelegate,
               itemCount: _products.length,
               itemBuilder: (_, i) => ProductCard(
                 product: _products[i],
@@ -1542,20 +1379,21 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Widget _buildStoresSection() {
     if (_stores.isEmpty) return const SizedBox();
 
+    final gutter = context.pageGutter;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(_kHomeGutter, 28, _kHomeGutter, 0),
+      padding: EdgeInsets.fromLTRB(gutter, context.s(12), gutter, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const GlassSectionTitle(eyebrow: 'Local Shops', title: 'Our Stores'),
-          const SizedBox(height: 14),
+          SizedBox(height: context.s(8)),
           SizedBox(
-            height: 136,
+            height: context.s(112).clamp(100.0, 124.0),
             child: ListView.separated(
               controller: _storesScrollController,
               scrollDirection: Axis.horizontal,
               itemCount: _stores.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 12),
+              separatorBuilder: (_, __) => SizedBox(width: context.s(12)),
               itemBuilder: (_, i) {
                 return _StoreChip(store: _stores[i]);
               },
@@ -1694,16 +1532,6 @@ class _StoreChip extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Local Shop'.toUpperCase(),
-              style: GoogleFonts.dmSans(
-                fontSize: 8,
-                fontWeight: FontWeight.w700,
-                letterSpacing: 1.4,
-                color: AppColors.labelPink,
-              ),
-            ),
-            const SizedBox(height: 2),
-            Text(
               store.name,
               style: GoogleFonts.cormorantGaramond(
                 fontSize: 15,
@@ -1752,6 +1580,7 @@ class _CategoryTile extends StatelessWidget {
   final String slug;
   final int index;
   final bool selected;
+  final double scale;
   final VoidCallback onTap;
 
   const _CategoryTile({
@@ -1759,6 +1588,7 @@ class _CategoryTile extends StatelessWidget {
     required this.slug,
     required this.index,
     required this.selected,
+    required this.scale,
     required this.onTap,
   });
 
@@ -1766,20 +1596,28 @@ class _CategoryTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final ramp = _kCategoryTileRamps[
         _kCategoryRampBySlug[slug] ?? index % _kCategoryTileRamps.length];
-    final icon = _kCategoryIconBySlug[slug] ?? Icons.local_florist_rounded;
+    final imagePath = _kCategoryImageBySlug[slug];
+    final imageUrl =
+        imagePath != null ? ApiService.assetUrl(imagePath) : null;
+
+    final iconSize = (56 * scale).clamp(52.0, 64.0);
+    // Wide enough for two-word labels like "Potted Plants" without ellipsis.
+    final tileWidth = (92 * scale).clamp(84.0, 112.0);
+    final fontSize = (14.5 * scale).clamp(13.0, 16.5);
+    final labelHeight = fontSize * 2.35;
 
     return GestureDetector(
       onTap: onTap,
       child: SizedBox(
-        width: 84,
+        width: tileWidth,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             AnimatedContainer(
               duration: AppMotion.fast,
               curve: AppMotion.curve,
-              width: 64,
-              height: 64,
+              width: iconSize,
+              height: iconSize,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(AppRadius.lg),
                 gradient: RadialGradient(
@@ -1797,24 +1635,57 @@ class _CategoryTile extends StatelessWidget {
                 boxShadow: [
                   BoxShadow(
                     color: ramp.first.withValues(alpha: selected ? 0.55 : 0.32),
-                    blurRadius: selected ? 22 : 14,
-                    offset: const Offset(0, 8),
+                    blurRadius: selected ? 18 : 12,
+                    offset: const Offset(0, 6),
                   ),
                 ],
               ),
-              child: Icon(icon, size: 28, color: Colors.white),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.lg - 1),
+                child: imageUrl != null
+                    ? Padding(
+                        padding: EdgeInsets.all(iconSize * 0.05),
+                        child: CachedNetworkImage(
+                          imageUrl: imageUrl,
+                          fit: BoxFit.contain,
+                          fadeInDuration: const Duration(milliseconds: 200),
+                          placeholder: (_, __) => const SizedBox.expand(),
+                          errorWidget: (_, __, ___) => Icon(
+                            Icons.local_florist_rounded,
+                            size: iconSize * 0.42,
+                            color: Colors.white,
+                          ),
+                        ),
+                      )
+                    : Icon(
+                        Icons.grid_view_rounded,
+                        size: iconSize * 0.42,
+                        color: Colors.white,
+                      ),
+              ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              label,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              textAlign: TextAlign.center,
-              style: GoogleFonts.cormorantGaramond(
-                fontSize: 18,
-                fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
-                height: 1.0,
-                color: selected ? AppColors.deepRose : AppColors.charcoal,
+            const SizedBox(height: 6),
+            SizedBox(
+              height: labelHeight,
+              width: tileWidth,
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.topCenter,
+                child: SizedBox(
+                  width: tileWidth,
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    softWrap: true,
+                    textAlign: TextAlign.center,
+                    style: GoogleFonts.cormorantGaramond(
+                      fontSize: fontSize,
+                      fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                      height: 1.15,
+                      color: selected ? AppColors.deepRose : AppColors.charcoal,
+                    ),
+                  ),
+                ),
               ),
             ),
           ],

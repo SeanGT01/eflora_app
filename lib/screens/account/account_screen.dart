@@ -276,11 +276,6 @@ class _LoggedInView extends StatelessWidget {
                     style: Theme.of(context).textTheme.titleLarge),
                 const SizedBox(height: 2),
                 Text(user.email, style: Theme.of(context).textTheme.bodySmall),
-                if (user.phone != null) ...[
-                  const SizedBox(height: 2),
-                  Text(user.phone,
-                      style: Theme.of(context).textTheme.bodySmall),
-                ],
               ],
             ),
           ),

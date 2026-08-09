@@ -109,19 +109,29 @@ class AuthProvider extends ChangeNotifier {
   //   Extra : resendOtp()            → POST /auth/customer/resend-otp
 
   /// Returns null on success, or an error string on failure.
+  /// On success, [lastSendOtpMeta] holds account email / channel / login_id.
+  Map<String, dynamic>? lastSendOtpMeta;
+
   Future<String?> sendOtp({
     required String fullName,
-    required String email,
+    required String identifier,
     required String password,
-    String? phone,
   }) async {
-    _loading = true; _error = null; _lastErrorCode = null; notifyListeners();
+    _loading = true; _error = null; _lastErrorCode = null;
+    lastSendOtpMeta = null;
+    notifyListeners();
     final result = await ApiService.sendCustomerOtp(
-      fullName: fullName, email: email, password: password, phone: phone,
+      fullName: fullName,
+      identifier: identifier,
+      password: password,
     );
     _loading = false;
-    if (result.statusCode == 200) { notifyListeners(); return null; }
     final data = result.data is Map ? result.data as Map<String, dynamic> : null;
+    if (result.statusCode == 200) {
+      lastSendOtpMeta = data;
+      notifyListeners();
+      return null;
+    }
     _lastErrorCode = data?['error_code']?.toString();
     _error = result.errorMessage ?? 'Failed to send verification code';
     notifyListeners();
@@ -175,6 +185,84 @@ class AuthProvider extends ChangeNotifier {
     _error = data['error'] as String? ?? result.errorMessage ?? 'Failed to resend code';
     notifyListeners();
     return data;
+  }
+
+  // ── Forgot password (email or phone identifier) ────────────────────────
+
+  /// Returns null on success. On success, [lastForgotPasswordMeta] holds
+  /// account email / channel / masked destination from the API.
+  Map<String, dynamic>? lastForgotPasswordMeta;
+
+  Future<String?> sendForgotPasswordOtp({
+    String? email,
+    String? identifier,
+  }) async {
+    _loading = true; _error = null; _lastErrorCode = null;
+    lastForgotPasswordMeta = null;
+    notifyListeners();
+    final result = await ApiService.sendForgotPasswordOtp(
+      email: email,
+      identifier: identifier ?? email,
+    );
+    _loading = false;
+    final data = result.data is Map ? result.data as Map<String, dynamic> : null;
+    if (result.statusCode == 200) {
+      lastForgotPasswordMeta = data;
+      notifyListeners();
+      return null;
+    }
+    _lastErrorCode = data?['error_code']?.toString();
+    _error = data?['error'] as String? ?? result.errorMessage ?? 'Failed to send verification code';
+    notifyListeners();
+    return _error;
+  }
+
+  Future<Map<String, dynamic>?> verifyForgotPasswordOtp({
+    required String email,
+    required String otpCode,
+  }) async {
+    _loading = true; _error = null; _lastErrorCode = null; notifyListeners();
+    final result = await ApiService.verifyForgotPasswordOtp(email: email, otpCode: otpCode);
+    _loading = false;
+    final data = result.data as Map<String, dynamic>? ?? {};
+    if (result.statusCode == 200 && data['verified'] == true) {
+      notifyListeners();
+      return null;
+    }
+    _error = data['error'] as String? ?? result.errorMessage ?? 'Verification failed';
+    notifyListeners();
+    return data;
+  }
+
+  Future<Map<String, dynamic>?> resendForgotPasswordOtp({required String email}) async {
+    _loading = true; _error = null; _lastErrorCode = null; notifyListeners();
+    final result = await ApiService.resendForgotPasswordOtp(email: email);
+    _loading = false;
+    final data = result.data as Map<String, dynamic>? ?? {};
+    if (result.statusCode == 200) { notifyListeners(); return null; }
+    _lastErrorCode = data['error_code']?.toString();
+    _error = data['error'] as String? ?? result.errorMessage ?? 'Failed to resend code';
+    notifyListeners();
+    return data;
+  }
+
+  Future<String?> resetPasswordAfterOtp({
+    required String email,
+    required String newPassword,
+    required String confirmPassword,
+  }) async {
+    _loading = true; _error = null; _lastErrorCode = null; notifyListeners();
+    final result = await ApiService.resetPasswordAfterOtp(
+      email: email,
+      newPassword: newPassword,
+      confirmPassword: confirmPassword,
+    );
+    _loading = false;
+    final data = result.data is Map ? result.data as Map<String, dynamic> : null;
+    if (result.statusCode == 200) { notifyListeners(); return null; }
+    _error = data?['error'] as String? ?? result.errorMessage ?? 'Failed to reset password';
+    notifyListeners();
+    return _error;
   }
 
   // ── Refresh user from server ─────────────────────────────────────────

@@ -13,6 +13,7 @@ import 'screens/rider/rider_shell.dart';
 import 'services/app_quality.dart';
 import 'theme/app_background.dart';
 import 'theme/app_theme.dart';
+import 'utils/responsive.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -58,6 +59,12 @@ class EFlowersApp extends StatelessWidget {
         title: 'E-FLORA',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.theme,
+        builder: (context, child) {
+          return MediaQuery(
+            data: clampAppTextScaler(MediaQuery.of(context)),
+            child: child ?? const SizedBox.shrink(),
+          );
+        },
         home: const _AppRoot(),
       ),
     );

@@ -19,7 +19,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   final _formKey = GlobalKey<FormState>();
   late TextEditingController _firstNameCtrl;
   late TextEditingController _lastNameCtrl;
-  late TextEditingController _phoneCtrl;
+  late TextEditingController _loginIdCtrl;
   bool _saving = false;
   File? _selectedImage;
   bool _uploadingAvatar = false;
@@ -32,7 +32,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final lastSpace = fullName.lastIndexOf(' ');
     _firstNameCtrl = TextEditingController(text: lastSpace > 0 ? fullName.substring(0, lastSpace) : fullName);
     _lastNameCtrl  = TextEditingController(text: lastSpace > 0 ? fullName.substring(lastSpace + 1) : '');
-    _phoneCtrl     = TextEditingController(text: user?.phone ?? '');
+    _loginIdCtrl   = TextEditingController(text: user?.email ?? '');
   }
 
   Future<void> _pickImage() async {
@@ -115,7 +115,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     final result = await ApiService.updateProfile(
       firstName: _firstNameCtrl.text.trim(),
       lastName:  _lastNameCtrl.text.trim(),
-      phone:     _phoneCtrl.text.trim().isEmpty ? null : _phoneCtrl.text.trim(),
     );
     if (!mounted) return;
     setState(() => _saving = false);
@@ -131,7 +130,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   @override
-  void dispose() { _firstNameCtrl.dispose(); _lastNameCtrl.dispose(); _phoneCtrl.dispose(); super.dispose(); }
+  void dispose() {
+    _firstNameCtrl.dispose();
+    _lastNameCtrl.dispose();
+    _loginIdCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -221,9 +225,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
-                  controller: _phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(labelText: 'Phone number (optional)', prefixIcon: Icon(Icons.phone_outlined, size: 20)),
+                  controller: _loginIdCtrl,
+                  readOnly: true,
+                  decoration: const InputDecoration(
+                    labelText: 'Email or mobile number',
+                    helperText: 'Login identity — cannot be changed',
+                    prefixIcon: Icon(Icons.badge_outlined, size: 20),
+                  ),
                 ),
                 const SizedBox(height: 28),
                 RoseButton(label: 'Save Changes', onPressed: _save, loading: _saving, width: double.infinity),

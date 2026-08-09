@@ -5,6 +5,7 @@ import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
 import '../services/app_quality.dart';
 import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
 import '../widgets/adaptive_blur.dart';
 import '../widgets/auth_required_sheet.dart';
 import '../widgets/chat_drawer.dart';
@@ -129,7 +130,7 @@ class MainShellState extends State<MainShell> {
             child: SafeArea(
               top: false,
               child: SizedBox(
-                height: 62,
+                height: context.s(62).clamp(56.0, 70.0),
                 child: Row(
                   children: [
                 _NavItem(icon: Icons.home_outlined,        activeIcon: Icons.home,              label: 'Home',    selected: _idx == 0, onTap: () => setState(() => _idx = 0)),
@@ -181,16 +182,16 @@ class _NavItem extends StatelessWidget {
                 child: Icon(
                   selected ? activeIcon : icon,
                   key: ValueKey(selected),
-                  size: 20,
+                  size: context.s(20),
                   color: selected ? Colors.white : AppColors.muted,
                 ),
               ),
             ),
-            const SizedBox(height: 3),
+            SizedBox(height: context.s(3)),
             Text(
               label,
               style: GoogleFonts.dmSans(
-                fontSize: 9.5,
+                fontSize: context.sp(9.5),
                 fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
                 color: selected ? AppColors.roseCta : AppColors.muted,
               ),

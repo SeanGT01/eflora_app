@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import '../services/app_quality.dart';
 import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
 
 /// Frosted card matching the website's `.product-card` / `.profile-card`
 /// recipe: translucent white fill, hairline highlight border, soft plum shadow
@@ -276,6 +277,7 @@ class GlassSectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final r = context.responsive;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -289,11 +291,17 @@ class GlassSectionTitle extends StatelessWidget {
                   style: theme.textTheme.labelSmall?.copyWith(
                     color: AppColors.dustyRose,
                     letterSpacing: 2,
+                    fontSize: r.sp(10),
                   ),
                 ),
-                const SizedBox(height: 4),
+                SizedBox(height: r.s(4)),
               ],
-              Text(title, style: theme.textTheme.headlineMedium),
+              Text(
+                title,
+                style: theme.textTheme.headlineMedium?.copyWith(
+                  fontSize: r.sp(22),
+                ),
+              ),
             ],
           ),
         ),

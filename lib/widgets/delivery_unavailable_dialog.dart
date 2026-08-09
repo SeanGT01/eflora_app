@@ -26,6 +26,17 @@ bool isDeliveryUnavailableError(String? message) {
       m.contains('undeliverable');
 }
 
+String _humanizeDeliveryReason(String? reason) {
+  final raw = (reason ?? '').trim();
+  final lower = raw.toLowerCase();
+  if (raw.isEmpty ||
+      lower.contains('outside delivery distance') ||
+      lower.contains('outside delivery area')) {
+    return 'This shop can’t deliver to your saved address — it’s outside their delivery coverage.';
+  }
+  return raw;
+}
+
 /// Shows a friendly dialog instead of dumping the raw API error string.
 Future<void> showDeliveryUnavailableDialog(
   BuildContext context, {
@@ -34,9 +45,7 @@ Future<void> showDeliveryUnavailableDialog(
   List<String>? storeDetails,
   String? tip,
 }) {
-  final detail = (reason != null && reason.trim().isNotEmpty)
-      ? reason.trim()
-      : 'This shop cannot deliver to your default address.';
+  final detail = _humanizeDeliveryReason(reason);
 
   final tipText = tip ??
       'You can still browse this shop, but checkout needs an address inside their delivery coverage — or turn on “Browse outside location” only for browsing.';

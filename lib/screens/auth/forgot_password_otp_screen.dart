@@ -10,28 +10,29 @@ import '../../theme/app_theme.dart';
 import '../../widgets/auth_chrome.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
-import '../../widgets/profile_onboarding_flow.dart';
+import 'forgot_password_reset_screen.dart';
 
-/// OTP verification screen shown after the user submits the registration form.
-///
-/// Receives the [email] that identifies the pending registration.
-class OtpVerificationScreen extends StatefulWidget {
+/// OTP verification for forgot-password (email or SMS code → set new password).
+class ForgotPasswordOtpScreen extends StatefulWidget {
   final String email;
+  /// What the user signs in with (phone for SMS accounts — never the internal email).
+  final String? loginId;
   final String otpChannel;
   final String? destinationMasked;
 
-  const OtpVerificationScreen({
+  const ForgotPasswordOtpScreen({
     super.key,
     required this.email,
+    this.loginId,
     this.otpChannel = 'email',
     this.destinationMasked,
   });
 
   @override
-  State<OtpVerificationScreen> createState() => _OtpVerificationScreenState();
+  State<ForgotPasswordOtpScreen> createState() => _ForgotPasswordOtpScreenState();
 }
 
-class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
+class _ForgotPasswordOtpScreenState extends State<ForgotPasswordOtpScreen> {
   static const int _otpLength = 6;
   static const int _resendCooldown = 60; // seconds — mirrors backend default
 
@@ -44,7 +45,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       List.generate(_otpLength, (_) => FocusNode());
 
   bool _verifying = false;
-  bool _finalising = false;
   String? _errorMsg;
 
   // Resend countdown
@@ -136,7 +136,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     setState(() { _verifying = true; _errorMsg = null; });
 
     final auth = context.read<AuthProvider>();
-    final errorData = await auth.verifyOtp(
+    final errorData = await auth.verifyForgotPasswordOtp(
       email: _emailNormalized,
       otpCode: code,
     );
@@ -145,8 +145,15 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     setState(() => _verifying = false);
 
     if (errorData == null) {
-      // OTP correct → finalise registration
-      await _finaliseRegistration();
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => ForgotPasswordResetScreen(
+            email: _emailNormalized,
+            loginId: widget.loginId,
+          ),
+        ),
+      );
     } else {
       final expired = errorData['expired'] == true;
       final locked  = errorData['locked']  == true;
@@ -158,94 +165,11 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       }
       setState(() => _errorMsg = msg);
 
-      // Clear cells on bad code so user can retype.
       if (!expired && !locked) {
         for (final c in _ctrls) c.clear();
         _focusNodes[0].requestFocus();
       }
     }
-  }
-
-  Future<void> _finaliseRegistration() async {
-    setState(() { _finalising = true; _errorMsg = null; });
-
-    final auth = context.read<AuthProvider>();
-    final error = await auth.registerAfterOtp(email: _emailNormalized);
-
-    if (!mounted) return;
-    setState(() => _finalising = false);
-
-    if (error == null) {
-      if (!mounted) return;
-      await markProfileOnboardingRequired();
-      if (!mounted) return;
-      final dialogFuture = _showSuccessDialog();
-      await Future.delayed(const Duration(milliseconds: 1400));
-      if (mounted && Navigator.of(context, rootNavigator: true).canPop()) {
-        Navigator.of(context, rootNavigator: true).pop();
-      }
-      await dialogFuture;
-      if (!mounted) return;
-      Navigator.of(context).pop(true);
-    } else {
-      setState(() => _errorMsg = error);
-    }
-  }
-
-  Future<void> _showSuccessDialog() async {
-    if (!mounted) return;
-    await showDialog<void>(
-      context: context,
-      barrierDismissible: false,
-      builder: (context) {
-        return AlertDialog(
-          backgroundColor: Colors.white.withValues(alpha: 0.94),
-          surfaceTintColor: Colors.transparent,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(24),
-            side: BorderSide(color: Colors.white.withValues(alpha: 0.85)),
-          ),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 60,
-                height: 60,
-                decoration: const BoxDecoration(
-                  gradient: AppColors.brandGradient,
-                  shape: BoxShape.circle,
-                  boxShadow: AppShadows.roseButton,
-                ),
-                child: const Icon(
-                  Icons.check_rounded,
-                  color: Colors.white,
-                  size: 32,
-                ),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                'Verification successful!',
-                style: GoogleFonts.cormorantGaramond(
-                  fontSize: 28,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.charcoal,
-                ),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Your account is ready. Please sign in with your email and password.',
-                style: GoogleFonts.dmSans(
-                  fontSize: 13.5,
-                  color: AppColors.muted,
-                ),
-                textAlign: TextAlign.center,
-              ),
-            ],
-          ),
-        );
-      },
-    );
   }
 
   // ── Resend ────────────────────────────────────────────────────────────────
@@ -256,17 +180,19 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     setState(() { _resending = true; _errorMsg = null; });
 
     final auth = context.read<AuthProvider>();
-    final errorData = await auth.resendOtp(email: _emailNormalized);
+    final errorData = await auth.resendForgotPasswordOtp(email: _emailNormalized);
 
     if (!mounted) return;
     setState(() => _resending = false);
 
     if (errorData == null) {
-      // Fresh OTP sent — reset cells and restart countdown.
       for (final c in _ctrls) c.clear();
       _focusNodes[0].requestFocus();
       _startResendCountdown();
-      showToast(context, 'A new code has been sent to $_emailNormalized');
+      showToast(
+        context,
+        'A new code has been sent to ${widget.destinationMasked?.trim().isNotEmpty == true ? widget.destinationMasked!.trim() : _emailNormalized}',
+      );
     } else {
       final retryAfter = errorData['retry_after_seconds'] as int?;
       final msg = errorData['error'] as String? ?? 'Failed to resend. Try again.';
@@ -287,7 +213,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   @override
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
-    final busy = _verifying || _finalising || auth.loading;
+    final busy = _verifying || auth.loading;
 
     return AuthScaffold(
       leadingIcon: Icons.arrow_back_rounded,
@@ -297,14 +223,14 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         AuthBrandMark(
           icon: widget.otpChannel == 'sms'
               ? Icons.sms_outlined
-              : Icons.mark_email_unread_outlined,
+              : Icons.lock_reset_rounded,
         ),
         const SizedBox(height: 26),
         AuthHeading(
           title: widget.otpChannel == 'sms'
               ? 'Check your messages'
               : 'Check your inbox',
-          subtitle: 'We sent a 6-digit code to',
+          subtitle: 'We sent a 6-digit reset code to',
         ),
         const SizedBox(height: 6),
         Text(
@@ -324,7 +250,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // ── 6-cell OTP input ───────────────────────────────────────
               _OtpInputRow(
                 controllers: _ctrls,
                 focusNodes: _focusNodes,
@@ -334,8 +259,6 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 enabled: !busy,
               ),
               const SizedBox(height: 16),
-
-              // ── Error message ─────────────────────────────────────────
               AnimatedSwitcher(
                 duration: AppMotion.fast,
                 child: _errorMsg != null
@@ -372,17 +295,13 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                     : const SizedBox.shrink(key: ValueKey('no-error')),
               ),
               const SizedBox(height: 22),
-
-              // ── Verify button ─────────────────────────────────────────
               GradientButton(
-                label: _finalising ? 'Creating account…' : 'Verify & Create Account',
+                label: 'Verify code',
                 onPressed: busy ? null : _verify,
                 loading: busy,
                 icon: Icons.check_circle_outline,
               ),
               const SizedBox(height: 20),
-
-              // ── Resend ────────────────────────────────────────────────
               if (_resending)
                 const Center(
                   child: SizedBox(
