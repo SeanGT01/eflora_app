@@ -49,17 +49,17 @@ class AppQuality {
 
   /// Unread badge poll while chat is closed.
   Duration get chatUnreadInterval =>
-      _isLite ? const Duration(seconds: 8) : const Duration(seconds: 5);
+      _isLite ? const Duration(seconds: 15) : const Duration(seconds: 8);
 
   /// Faster poll while chat UI is open.
   Duration get chatLiveInterval =>
-      _isLite ? const Duration(seconds: 5) : const Duration(seconds: 2);
+      _isLite ? const Duration(seconds: 8) : const Duration(seconds: 4);
 
   Duration get chatInboxSyncInterval =>
-      _isLite ? const Duration(seconds: 6) : const Duration(seconds: 2);
+      _isLite ? const Duration(seconds: 15) : const Duration(seconds: 8);
 
   Duration get chatMessagePollInterval =>
-      _isLite ? const Duration(seconds: 5) : const Duration(seconds: 2);
+      _isLite ? const Duration(seconds: 8) : const Duration(seconds: 4);
 
   int get imagePreloadLimit => _isLite ? 0 : 10;
 
@@ -67,8 +67,8 @@ class AppQuality {
   Future<void> init() async {
     if (_initialized) return;
 
-    _reduceMotion =
-        WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.reduceMotion;
+    _reduceMotion = WidgetsBinding
+        .instance.platformDispatcher.accessibilityFeatures.reduceMotion;
 
     if (kIsWeb) {
       _isLite = _reduceMotion;
@@ -80,7 +80,8 @@ class AppQuality {
       // Match web: iPhone/iPad keep rich FX unless reduced motion.
       _isLite = _reduceMotion;
       _initialized = true;
-      debugPrint('AppQuality: iOS → ${_isLite ? "lite" : "rich"} (reduceMotion=$_reduceMotion)');
+      debugPrint(
+          'AppQuality: iOS → ${_isLite ? "lite" : "rich"} (reduceMotion=$_reduceMotion)');
       return;
     }
 

@@ -49,16 +49,26 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   Future<void> _forgotPassword() async {
-    final raw = _emailCtrl.text.trim();
+    var raw = _emailCtrl.text.trim();
     if (raw.isEmpty) {
       showToast(context, 'Enter your email or phone number first', isError: true);
       return;
     }
 
     final isEmail = raw.contains('@');
-    final isPhone = RegExp(r'^(?:\+63|0)?9\d{9}$').hasMatch(
-      raw.replaceAll(RegExp(r'[\s\-()]'), ''),
-    );
+    if (isEmail) {
+      raw = raw.toLowerCase();
+    } else {
+      var compact = raw.replaceAll(RegExp(r'[\s\-()]'), '');
+      if (compact.startsWith('+63')) {
+        compact = '0${compact.substring(3)}';
+      } else if (compact.startsWith('63') && compact.length == 12) {
+        compact = '0${compact.substring(2)}';
+      }
+      raw = compact;
+    }
+
+    final isPhone = RegExp(r'^09\d{9}$').hasMatch(raw);
     if (!isEmail && !isPhone) {
       showToast(
         context,
@@ -117,8 +127,19 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthProvider>();
     var id = _emailCtrl.text.trim();
-    if (id.contains('@')) id = id.toLowerCase();
-    final error = await auth.login(id, _passwordCtrl.text);
+    if (id.contains('@')) {
+      id = id.toLowerCase();
+    } else {
+      // Normalize PH mobile to 09XXXXXXXXX for SMS rider/customer accounts.
+      var compact = id.replaceAll(RegExp(r'[\s\-()]'), '');
+      if (compact.startsWith('+63')) {
+        compact = '0${compact.substring(3)}';
+      } else if (compact.startsWith('63') && compact.length == 12) {
+        compact = '0${compact.substring(2)}';
+      }
+      id = compact;
+    }
+    final error = await auth.login(id, _passwordCtrl.text.trim());
     if (!mounted) return;
     if (error != null) {
       showToast(context, error, isError: true);

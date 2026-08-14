@@ -28,17 +28,21 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   bool _loadingRoute = true;
   bool _markingDelivered = false;
   Timer? _positionTimer;
+  bool _fetchingRoute = false;
 
   LatLng? get _storeLocation {
-    if (widget.order.storeLatitude != null && widget.order.storeLongitude != null) {
+    if (widget.order.storeLatitude != null &&
+        widget.order.storeLongitude != null) {
       return LatLng(widget.order.storeLatitude!, widget.order.storeLongitude!);
     }
     return null;
   }
 
   LatLng? get _customerLocation {
-    if (widget.order.customerLatitude != null && widget.order.customerLongitude != null) {
-      return LatLng(widget.order.customerLatitude!, widget.order.customerLongitude!);
+    if (widget.order.customerLatitude != null &&
+        widget.order.customerLongitude != null) {
+      return LatLng(
+          widget.order.customerLatitude!, widget.order.customerLongitude!);
     }
     return null;
   }
@@ -63,14 +67,19 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
     // Start location tracking
     if (widget.order.status == 'on_delivery') {
       provider.startLocationTracking(widget.order.id);
-      // Update rider position on screen periodically
+      // The provider owns GPS polling and uploads. Reuse its latest position
+      // here rather than requesting a second GPS fix on every interval.
       _positionTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
-        final p = await provider.getCurrentLocation();
+        final p = provider.currentPosition;
         if (p != null && mounted) {
+          final nextPosition = LatLng(p.latitude, p.longitude);
+          final moved = _riderPosition == null ||
+              _calculateDistance(_riderPosition!, nextPosition) * 1000 >= 25;
+          if (!moved) return;
           setState(() {
-            _riderPosition = LatLng(p.latitude, p.longitude);
+            _riderPosition = nextPosition;
           });
-          _fetchRoute();
+          await _fetchRoute();
         }
       });
     }
@@ -80,6 +89,7 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   }
 
   Future<void> _fetchRoute() async {
+    if (_fetchingRoute) return;
     final start = _riderPosition ?? _storeLocation;
     final end = _customerLocation;
 
@@ -88,18 +98,25 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
       return;
     }
 
-    final points = await RiderService.getRoute(
-      start.latitude, start.longitude,
-      end.latitude, end.longitude,
-    );
+    _fetchingRoute = true;
+    try {
+      final points = await RiderService.getRoute(
+        start.latitude,
+        start.longitude,
+        end.latitude,
+        end.longitude,
+      );
 
-    if (mounted) {
-      setState(() {
-        _loadingRoute = false;
-        if (points != null) {
-          _routePoints = points.map((p) => LatLng(p[0], p[1])).toList();
-        }
-      });
+      if (mounted) {
+        setState(() {
+          _loadingRoute = false;
+          if (points != null) {
+            _routePoints = points.map((p) => LatLng(p[0], p[1])).toList();
+          }
+        });
+      }
+    } finally {
+      _fetchingRoute = false;
     }
   }
 
@@ -137,11 +154,13 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         title: Text('Confirm Delivery',
-            style: GoogleFonts.cormorantGaramond(fontSize: 22, fontWeight: FontWeight.w600)),
+            style: GoogleFonts.cormorantGaramond(
+                fontSize: 22, fontWeight: FontWeight.w600)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text('Proofs captured successfully!', style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
+            Text('Proofs captured successfully!',
+                style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
             const SizedBox(height: 8),
             Text('Mark this order as delivered?', style: GoogleFonts.dmSans()),
           ],
@@ -164,18 +183,18 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
     // Call markDelivered with image paths
     setState(() => _markingDelivered = true);
     final ok = await context.read<RiderProvider>().markDelivered(
-      widget.order.id,
-      deliveryProofPath1: imagePaths[1],
-      deliveryProofPath2: imagePaths[2],
-    );
+          widget.order.id,
+          deliveryProofPath1: imagePaths[1],
+          deliveryProofPath2: imagePaths[2],
+        );
     if (mounted) {
       setState(() => _markingDelivered = false);
     }
-    
+
     if (!mounted) return;
     if (ok) {
       showToast(context, 'Order delivered successfully!');
-      
+
       // Navigate back to rider dashboard
       Navigator.of(context).popUntil((route) => route.isFirst);
     } else {
@@ -282,7 +301,8 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
                         final b = _bounds;
                         if (b != null) {
                           _mapController.fitCamera(
-                            CameraFit.bounds(bounds: b, padding: const EdgeInsets.all(60)),
+                            CameraFit.bounds(
+                                bounds: b, padding: const EdgeInsets.all(60)),
                           );
                         }
                       },
@@ -370,9 +390,11 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
                     // Legend
                     const Row(
                       children: [
-                        _LegendDot(color: AppColors.sage, label: 'Store (Pickup)'),
+                        _LegendDot(
+                            color: AppColors.sage, label: 'Store (Pickup)'),
                         SizedBox(width: 16),
-                        _LegendDot(color: AppColors.deepRose, label: 'Customer'),
+                        _LegendDot(
+                            color: AppColors.deepRose, label: 'Customer'),
                         SizedBox(width: 16),
                         _LegendDot(color: Color(0xFF3498db), label: 'You'),
                       ],
@@ -382,7 +404,8 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
                     // Customer info
                     Row(
                       children: [
-                        const Icon(Icons.person_outline, size: 16, color: AppColors.muted),
+                        const Icon(Icons.person_outline,
+                            size: 16, color: AppColors.muted),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
@@ -407,12 +430,14 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
                     const SizedBox(height: 6),
                     Row(
                       children: [
-                        const Icon(Icons.location_on_outlined, size: 16, color: AppColors.muted),
+                        const Icon(Icons.location_on_outlined,
+                            size: 16, color: AppColors.muted),
                         const SizedBox(width: 8),
                         Expanded(
                           child: Text(
                             widget.order.deliveryAddress ?? 'No address',
-                            style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
+                            style: GoogleFonts.dmSans(
+                                fontSize: 12, color: AppColors.muted),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                           ),
@@ -428,14 +453,16 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
                           Expanded(
                             child: OutlinedButton.icon(
                               onPressed: _openInMaps,
-                              icon: const Icon(Icons.navigation_outlined, size: 18),
+                              icon: const Icon(Icons.navigation_outlined,
+                                  size: 18),
                               label: const Text('Navigate'),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: ElevatedButton.icon(
-                              onPressed: _markingDelivered ? null : _markDelivered,
+                              onPressed:
+                                  _markingDelivered ? null : _markDelivered,
                               icon: _markingDelivered
                                   ? const SizedBox(
                                       width: 18,
@@ -445,8 +472,10 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
                                         strokeWidth: 2,
                                       ),
                                     )
-                                  : const Icon(Icons.check_circle_outline, size: 18),
-                              label: Text(_markingDelivered ? 'Updating' : 'Delivered'),
+                                  : const Icon(Icons.check_circle_outline,
+                                      size: 18),
+                              label: Text(
+                                  _markingDelivered ? 'Updating' : 'Delivered'),
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: AppColors.successGreen,
                               ),
@@ -483,7 +512,8 @@ class _MapPin extends StatelessWidget {
         color: color,
         shape: BoxShape.circle,
         boxShadow: [
-          BoxShadow(color: color.withOpacity(0.3), blurRadius: 8, spreadRadius: 2),
+          BoxShadow(
+              color: color.withOpacity(0.3), blurRadius: 8, spreadRadius: 2),
         ],
       ),
       padding: const EdgeInsets.all(8),
@@ -547,7 +577,8 @@ class _AcceptAndTrackButtonState extends State<_AcceptAndTrackButton> {
           ? const SizedBox(
               width: 18,
               height: 18,
-              child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
+              child: CircularProgressIndicator(
+                  color: Colors.white, strokeWidth: 2),
             )
           : const Icon(Icons.delivery_dining),
       label: Text(_loading ? 'Accepting...' : 'Accept & Start Delivery'),
@@ -599,7 +630,7 @@ class _DeliveryProofDialogState extends State<DeliveryProofDialog> {
       if (_capturedImages[1] == null) {
         await _captureImage(1);
         if (!mounted) return;
-        
+
         // Wait a moment before capturing second proof
         await Future.delayed(const Duration(milliseconds: 500));
       }
@@ -615,21 +646,30 @@ class _DeliveryProofDialogState extends State<DeliveryProofDialog> {
     }
   }
 
-  bool get _bothCaptured => _capturedImages[1] != null && _capturedImages[2] != null;
+  bool get _bothCaptured =>
+      _capturedImages[1] != null && _capturedImages[2] != null;
 
   @override
   Widget build(BuildContext context) {
     final screenSize = MediaQuery.of(context).size;
     final isSmallScreen = screenSize.width < 400;
     final isExtraSmallScreen = screenSize.width < 320;
-    
+
     // Responsive padding
-    final horizontalPadding = isExtraSmallScreen ? 12.0 : isSmallScreen ? 16.0 : 20.0;
-    
+    final horizontalPadding = isExtraSmallScreen
+        ? 12.0
+        : isSmallScreen
+            ? 16.0
+            : 20.0;
+
     // Responsive font sizes
-    final headerFontSize = isExtraSmallScreen ? 20.0 : isSmallScreen ? 22.0 : 24.0;
+    final headerFontSize = isExtraSmallScreen
+        ? 20.0
+        : isSmallScreen
+            ? 22.0
+            : 24.0;
     final subHeaderFontSize = isSmallScreen ? 12.0 : 13.0;
-    
+
     return Dialog(
       backgroundColor: AppColors.cream,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -704,7 +744,8 @@ class _DeliveryProofDialogState extends State<DeliveryProofDialog> {
                         onPressed: _isCapturingSequence
                             ? null
                             : _bothCaptured
-                                ? () => Navigator.pop(context, _capturedImages.cast<int, String>())
+                                ? () => Navigator.pop(context,
+                                    _capturedImages.cast<int, String>())
                                 : _captureSequence,
                         icon: _isCapturingSequence
                             ? const SizedBox(
@@ -712,7 +753,8 @@ class _DeliveryProofDialogState extends State<DeliveryProofDialog> {
                                 height: 14,
                                 child: CircularProgressIndicator(
                                   strokeWidth: 2,
-                                  valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+                                  valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white),
                                 ),
                               )
                             : Icon(
@@ -720,7 +762,9 @@ class _DeliveryProofDialogState extends State<DeliveryProofDialog> {
                                 size: isSmallScreen ? 16 : 18,
                               ),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: _bothCaptured ? AppColors.successGreen : AppColors.deepRose,
+                          backgroundColor: _bothCaptured
+                              ? AppColors.successGreen
+                              : AppColors.deepRose,
                           padding: EdgeInsets.symmetric(
                             vertical: isSmallScreen ? 10 : 12,
                           ),
@@ -752,7 +796,7 @@ class _DeliveryProofDialogState extends State<DeliveryProofDialog> {
   Widget _buildProofCard(int proofIndex, bool isSmallScreen) {
     final imagePath = _capturedImages[proofIndex];
     final hasCaptured = imagePath != null;
-    
+
     // Responsive sizing
     final imageHeight = isSmallScreen ? 110.0 : 140.0;
     final cardPadding = isSmallScreen ? 10.0 : 14.0;
@@ -773,7 +817,8 @@ class _DeliveryProofDialogState extends State<DeliveryProofDialog> {
           // Image Preview
           if (hasCaptured)
             ClipRRect(
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(13)),
+              borderRadius:
+                  const BorderRadius.vertical(top: Radius.circular(13)),
               child: Image.file(
                 File(imagePath),
                 height: imageHeight,
@@ -860,7 +905,9 @@ class _DeliveryProofDialogState extends State<DeliveryProofDialog> {
                         vertical: isSmallScreen ? 3 : 4,
                       ),
                       decoration: BoxDecoration(
-                        color: hasCaptured ? AppColors.successGreen.withOpacity(0.1) : AppColors.border,
+                        color: hasCaptured
+                            ? AppColors.successGreen.withOpacity(0.1)
+                            : AppColors.border,
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
@@ -868,7 +915,9 @@ class _DeliveryProofDialogState extends State<DeliveryProofDialog> {
                         style: GoogleFonts.dmSans(
                           fontSize: statusFontSize,
                           fontWeight: FontWeight.w700,
-                          color: hasCaptured ? AppColors.successGreen : AppColors.muted,
+                          color: hasCaptured
+                              ? AppColors.successGreen
+                              : AppColors.muted,
                         ),
                       ),
                     ),

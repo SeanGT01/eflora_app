@@ -12,6 +12,8 @@ class ChatProvider extends ChangeNotifier {
   bool _loading = false;
   Timer? _unreadTimer;
   bool _liveMode = false;
+  bool _fetchingUnread = false;
+
   /// Conversations cleared locally — ignore stale unread polls until server catches up.
   final Set<int> _locallyReadIds = {};
 
@@ -50,7 +52,8 @@ class ChatProvider extends ChangeNotifier {
 
   /// Clear local unread state (e.g. on logout).
   void clearUnread() {
-    if (_totalUnread == 0 && _conversations.isEmpty && _locallyReadIds.isEmpty) return;
+    if (_totalUnread == 0 && _conversations.isEmpty && _locallyReadIds.isEmpty)
+      return;
     _totalUnread = 0;
     _conversations = [];
     _locallyReadIds.clear();
@@ -69,7 +72,8 @@ class ChatProvider extends ChangeNotifier {
     _loading = true;
     notifyListeners();
 
-    _conversations = _applyLocalReadOverrides(await ChatService.getConversations());
+    _conversations =
+        _applyLocalReadOverrides(await ChatService.getConversations());
     _loading = false;
     notifyListeners();
   }
@@ -107,15 +111,21 @@ class ChatProvider extends ChangeNotifier {
 
   /// Fetch total unread count.
   Future<void> _fetchUnread() async {
-    final count = await ChatService.getUnreadCount();
-    var next = count;
-    // Never restore a badge we already cleared locally (stale in-flight polls)
-    if (_locallyReadIds.isNotEmpty && count > _totalUnread) {
-      next = _totalUnread;
-    }
-    if (next != _totalUnread) {
-      _totalUnread = next;
-      notifyListeners();
+    if (_fetchingUnread) return;
+    _fetchingUnread = true;
+    try {
+      final count = await ChatService.getUnreadCount();
+      var next = count;
+      // Never restore a badge we already cleared locally (stale in-flight polls)
+      if (_locallyReadIds.isNotEmpty && count > _totalUnread) {
+        next = _totalUnread;
+      }
+      if (next != _totalUnread) {
+        _totalUnread = next;
+        notifyListeners();
+      }
+    } finally {
+      _fetchingUnread = false;
     }
   }
 

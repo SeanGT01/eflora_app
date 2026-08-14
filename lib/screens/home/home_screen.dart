@@ -57,10 +57,10 @@ const Map<String, int> _kCategoryRampBySlug = {
 
 /// Same PNGs as the promotional banner / web category tiles.
 const Map<String, String> _kCategoryImageBySlug = {
-  'fresh-flowers': '/static/images/category_images/fresh_flowers.png',
-  'potted-plants': '/static/images/category_images/potted_plants.png',
-  'bouquets': '/static/images/category_images/bouquets.png',
-  'succulents': '/static/images/category_images/succulents.png',
+  'fresh-flowers': '/static/images/category_images/fresh_flowers.webp',
+  'potted-plants': '/static/images/category_images/potted_plants.webp',
+  'bouquets': '/static/images/category_images/bouquets.webp',
+  'succulents': '/static/images/category_images/succulents.webp',
 };
 
 /// Mirrors the web `index.html` hero slides (gradients, copy, imagery).
@@ -642,10 +642,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           sigma: 20,
           child: DecoratedBox(
             decoration: BoxDecoration(
-              gradient: AppQuality.instance.useBlur ? AppColors.headerGlass : null,
-              color: AppQuality.instance.useBlur
-                  ? null
-                  : const Color(0xF5FFFAFC),
+              gradient:
+                  AppQuality.instance.useBlur ? AppColors.headerGlass : null,
+              color:
+                  AppQuality.instance.useBlur ? null : const Color(0xF5FFFAFC),
               border: const Border(
                 bottom: BorderSide(color: Color(0x8CFFFFFF), width: 1),
               ),
@@ -1118,8 +1118,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             : (compact ? 180.0 : 260.0);
 
         // Scale type from banner height so copy fills the vacated button space.
-        final titleSize = (maxH * 0.195)
-            .clamp(compact ? 20.0 : 24.0, isWide ? 36.0 : 30.0);
+        final titleSize =
+            (maxH * 0.195).clamp(compact ? 20.0 : 24.0, isWide ? 36.0 : 30.0);
         final italicSize = titleSize * 0.78;
         final subtitleSize = (maxH * 0.078).clamp(11.5, 15.5);
         final eyebrowSize = (maxH * 0.058).clamp(9.0, 11.5);
@@ -1277,7 +1277,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                         onChanged: (v) async {
                           if (v && !_browseLimitationsDismissed) {
                             // Show limitations modal only when toggling ON and not dismissed before
-                            final confirmed = await _showBrowseLimitationsModal();
+                            final confirmed =
+                                await _showBrowseLimitationsModal();
                             if (confirmed) {
                               setState(() => _browseOutsideLocation = v);
                               await _loadData();
@@ -1597,8 +1598,7 @@ class _CategoryTile extends StatelessWidget {
     final ramp = _kCategoryTileRamps[
         _kCategoryRampBySlug[slug] ?? index % _kCategoryTileRamps.length];
     final imagePath = _kCategoryImageBySlug[slug];
-    final imageUrl =
-        imagePath != null ? ApiService.assetUrl(imagePath) : null;
+    final imageUrl = imagePath != null ? ApiService.assetUrl(imagePath) : null;
 
     final iconSize = (56 * scale).clamp(52.0, 64.0);
     // Wide enough for two-word labels like "Potted Plants" without ellipsis.

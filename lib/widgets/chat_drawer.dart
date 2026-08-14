@@ -47,6 +47,7 @@ class _FloatingChatButtonState extends State<FloatingChatButton>
   static const double _dockedRight = 0;
 
   late final AnimationController _anim;
+
   /// 0 = fully expanded circle, 1 = docked edge tab.
   double _progress = 0;
   double _dragStartProgress = 0;
@@ -57,8 +58,7 @@ class _FloatingChatButtonState extends State<FloatingChatButton>
   double get _right =>
       _expandedRight + (_dockedRight - _expandedRight) * _progress;
 
-  double get _width =>
-      _expandedSize + (_tabWidth - _expandedSize) * _progress;
+  double get _width => _expandedSize + (_tabWidth - _expandedSize) * _progress;
 
   double get _height =>
       _expandedSize + (_tabHeight - _expandedSize) * _progress;
@@ -85,8 +85,8 @@ class _FloatingChatButtonState extends State<FloatingChatButton>
     void tick() {
       if (!mounted) return;
       setState(() {
-        _progress =
-            start + (target - start) * Curves.easeOutCubic.transform(_anim.value);
+        _progress = start +
+            (target - start) * Curves.easeOutCubic.transform(_anim.value);
       });
     }
 
@@ -248,10 +248,13 @@ class _FloatingChatButtonState extends State<FloatingChatButton>
 
 class ChatDrawer extends StatefulWidget {
   final VoidCallback onClose;
+
   /// Optionally open directly to a specific store conversation.
   final int? openStoreId;
+
   /// Optionally open directly to a specific customer conversation.
   final int? openCustomerId;
+
   /// Optional rider order context for creating/opening customer thread.
   final int? openOrderId;
 
@@ -271,6 +274,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   // ═══ VIEW STATE ═══
   bool _showDetail = false;
   ChatConversation? _activeConversation;
+
   /// Kept separate from inbox rows so message/preview polls don't wipe it.
   ChatOrderContext? _orderContext;
 
@@ -304,6 +308,10 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   Timer? _typingPollTimer;
   DateTime? _lastTypingPing;
   Timer? _inboxSyncTimer;
+  bool _loadingInbox = false;
+  bool _loadingMessages = false;
+  bool _pollingTyping = false;
+  bool _markingRead = false;
 
   int get _myId => context.read<AuthProvider>().user?.id ?? 0;
 
@@ -315,15 +323,19 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   void initState() {
     super.initState();
     _chatProvider = context.read<ChatProvider>();
-    _slideController = AnimationController(vsync: this, duration: const Duration(milliseconds: 300));
+    _slideController = AnimationController(
+        vsync: this, duration: const Duration(milliseconds: 300));
     _slideAnimation = Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
+        .animate(
+            CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
     _slideController.forward();
     _chatProvider.setLiveMode(true);
     _loadInbox();
     _startInboxSync();
 
-    if (widget.openCustomerId != null || widget.openStoreId != null || widget.openOrderId != null) {
+    if (widget.openCustomerId != null ||
+        widget.openStoreId != null ||
+        widget.openOrderId != null) {
       _openWithContext();
     }
   }
@@ -354,46 +366,57 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   // ═══════════════════════════════════════════════════════════════════════
 
   Future<void> _loadInbox() async {
-    final convos = await ChatService.getConversations();
-    if (!mounted) return;
-    // Keep optimistic unread clears while server catches up
-    final merged = convos.map((c) {
-      final localIdx = _conversations.indexWhere((x) => x.id == c.id);
-      if (localIdx != -1 && _conversations[localIdx].unreadCount == 0 && c.unreadCount > 0) {
-        return c.copyWith(unreadCount: 0);
-      }
-      // Prefer newer local preview if timestamps look equal/older (just sent)
-      if (localIdx != -1) {
-        final local = _conversations[localIdx];
-        final localAt = local.lastMessageAt;
-        final serverAt = c.lastMessageAt;
-        if (localAt != null &&
-            localAt.isNotEmpty &&
-            (serverAt == null || serverAt.isEmpty || localAt.compareTo(serverAt) >= 0) &&
-            local.lastMessageText != null &&
-            local.lastMessageText != c.lastMessageText) {
-          return c.copyWith(
-            lastMessageText: local.lastMessageText,
-            lastMessageAt: localAt,
-            lastSenderId: local.lastSenderId,
-            unreadCount: 0,
-          );
+    if (_loadingInbox) return;
+    _loadingInbox = true;
+    try {
+      final convos = await ChatService.getConversations();
+      if (!mounted) return;
+      // Keep optimistic unread clears while server catches up
+      final merged = convos.map((c) {
+        final localIdx = _conversations.indexWhere((x) => x.id == c.id);
+        if (localIdx != -1 &&
+            _conversations[localIdx].unreadCount == 0 &&
+            c.unreadCount > 0) {
+          return c.copyWith(unreadCount: 0);
         }
-      }
-      return c;
-    }).toList();
-    setState(() {
-      _conversations = merged;
-      _inboxLoading = false;
-    });
-    final total = merged.fold<int>(0, (sum, c) => sum + c.unreadCount);
-    _chatProvider.syncUnreadTotal(total);
-    _chatProvider.refreshUnread();
+        // Prefer newer local preview if timestamps look equal/older (just sent)
+        if (localIdx != -1) {
+          final local = _conversations[localIdx];
+          final localAt = local.lastMessageAt;
+          final serverAt = c.lastMessageAt;
+          if (localAt != null &&
+              localAt.isNotEmpty &&
+              (serverAt == null ||
+                  serverAt.isEmpty ||
+                  localAt.compareTo(serverAt) >= 0) &&
+              local.lastMessageText != null &&
+              local.lastMessageText != c.lastMessageText) {
+            return c.copyWith(
+              lastMessageText: local.lastMessageText,
+              lastMessageAt: localAt,
+              lastSenderId: local.lastSenderId,
+              unreadCount: 0,
+            );
+          }
+        }
+        return c;
+      }).toList();
+      setState(() {
+        _conversations = merged;
+        _inboxLoading = false;
+      });
+      final total = merged.fold<int>(0, (sum, c) => sum + c.unreadCount);
+      _chatProvider.syncUnreadTotal(total);
+      _chatProvider.refreshUnread();
+    } finally {
+      _loadingInbox = false;
+    }
   }
 
   void _startInboxSync() {
     _inboxSyncTimer?.cancel();
-    _inboxSyncTimer = Timer.periodic(AppQuality.instance.chatInboxSyncInterval, (_) async {
+    _inboxSyncTimer =
+        Timer.periodic(AppQuality.instance.chatInboxSyncInterval, (_) async {
       if (!mounted || _showDetail) return;
       await _loadInbox();
     });
@@ -407,7 +430,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         _conversations[idx] = _conversations[idx].copyWith(unreadCount: 0);
       });
     }
-    _chatProvider.markConversationReadLocal(conversationId, knownUnread: cleared > 0 ? cleared : null);
+    _chatProvider.markConversationReadLocal(conversationId,
+        knownUnread: cleared > 0 ? cleared : null);
   }
 
   void _applyLocalPreview(int conversationId, String preview, {int? senderId}) {
@@ -424,8 +448,12 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         if (_activeConversation?.id == conversationId) {
           // Inbox rows don't carry order_context — keep the active thread's.
           _activeConversation = updated.copyWith(
-            orderContext: _orderContext ?? _activeConversation!.orderContext ?? updated.orderContext,
-            isRiderThread: _activeConversation!.isRiderThread || updated.isRiderThread || _orderContext != null,
+            orderContext: _orderContext ??
+                _activeConversation!.orderContext ??
+                updated.orderContext,
+            isRiderThread: _activeConversation!.isRiderThread ||
+                updated.isRiderThread ||
+                _orderContext != null,
           );
         }
       });
@@ -485,11 +513,11 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
 
   Future<void> _ensureOrderContext(ChatConversation convo) async {
     final role = context.read<AuthProvider>().user?.role;
-    final looksLikeRiderThread = convo.isRiderThread
-        || convo.orderContext != null
-        || _orderContext != null
-        || convo.otherUser?.role == 'rider'
-        || role == 'rider';
+    final looksLikeRiderThread = convo.isRiderThread ||
+        convo.orderContext != null ||
+        _orderContext != null ||
+        convo.otherUser?.role == 'rider' ||
+        role == 'rider';
     if (!looksLikeRiderThread) return;
 
     final preferredId = widget.openOrderId;
@@ -526,14 +554,16 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     // Rider order context must resolve first to avoid accidentally opening
     // the store's seller conversation.
     if (widget.openOrderId != null) {
-      final convo = await ChatService.getOrCreateRiderConversation(widget.openOrderId!);
+      final convo =
+          await ChatService.getOrCreateRiderConversation(widget.openOrderId!);
       if (!mounted) return;
       if (convo != null) {
         _openConversation(convo);
         return;
       }
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open rider chat for this order.')),
+        const SnackBar(
+            content: Text('Could not open rider chat for this order.')),
       );
       return;
     }
@@ -570,7 +600,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         _inboxLoading = false;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No existing conversation with this customer yet.')),
+        const SnackBar(
+            content: Text('No existing conversation with this customer yet.')),
       );
       return;
     }
@@ -600,26 +631,38 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   // ═══════════════════════════════════════════════════════════════════════
 
   Future<void> _loadMessages({bool forceScroll = false}) async {
-    if (_activeConversation == null) return;
-    final previousIds = _messages.map((m) => m.id).toSet();
-    final nearBottom = !_scrollController.hasClients ||
-        (_scrollController.position.maxScrollExtent - _scrollController.offset) < 140;
-    final msgs = await ChatService.getMessages(_activeConversation!.id, perPage: 50);
-    if (!mounted) return;
-    final hasNew = msgs.any((m) => !previousIds.contains(m.id));
-    setState(() {
-      _messages = msgs;
-      _messagesLoading = false;
-    });
-    if (forceScroll || previousIds.isEmpty || (hasNew && nearBottom)) {
-      _scrollToBottom();
-    }
-    if (hasNew && msgs.isNotEmpty) {
-      final last = msgs.last;
-      final preview = last.messageType == 'image'
-          ? (last.text?.isNotEmpty == true ? last.text! : '[Image]')
-          : (last.text ?? '');
-      _applyLocalPreview(_activeConversation!.id, preview, senderId: last.senderId);
+    if (_activeConversation == null || _loadingMessages) return;
+    _loadingMessages = true;
+    try {
+      final previousIds = _messages.map((m) => m.id).toSet();
+      final nearBottom = !_scrollController.hasClients ||
+          (_scrollController.position.maxScrollExtent -
+                  _scrollController.offset) <
+              140;
+      final msgs =
+          await ChatService.getMessages(_activeConversation!.id, perPage: 50);
+      if (!mounted) return;
+      final hasNew = msgs.any((m) => !previousIds.contains(m.id));
+      setState(() {
+        _messages = msgs;
+        _messagesLoading = false;
+      });
+      if (forceScroll || previousIds.isEmpty || (hasNew && nearBottom)) {
+        _scrollToBottom();
+      }
+      if (hasNew && msgs.isNotEmpty) {
+        final last = msgs.last;
+        final preview = last.messageType == 'image'
+            ? (last.text?.isNotEmpty == true ? last.text! : '[Image]')
+            : (last.text ?? '');
+        _applyLocalPreview(_activeConversation!.id, preview,
+            senderId: last.senderId);
+        if (last.senderId != _myId) {
+          _markRead();
+        }
+      }
+    } finally {
+      _loadingMessages = false;
     }
   }
 
@@ -636,18 +679,24 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   }
 
   Future<void> _markRead() async {
-    if (_activeConversation == null) return;
-    final id = _activeConversation!.id;
-    _applyLocalRead(id);
-    final ok = await ChatService.markAsRead(id);
-    if (!mounted) return;
-    await _chatProvider.refreshUnread();
-    if (ok) _chatProvider.confirmConversationRead(id);
+    if (_activeConversation == null || _markingRead) return;
+    _markingRead = true;
+    try {
+      final id = _activeConversation!.id;
+      _applyLocalRead(id);
+      final ok = await ChatService.markAsRead(id);
+      if (!mounted) return;
+      await _chatProvider.refreshUnread();
+      if (ok) _chatProvider.confirmConversationRead(id);
+    } finally {
+      _markingRead = false;
+    }
   }
 
   Future<void> _checkOnline() async {
     if (_activeConversation == null) return;
-    final otherId = _activeConversation!.otherUser?.id ?? _activeConversation!.sellerId;
+    final otherId =
+        _activeConversation!.otherUser?.id ?? _activeConversation!.sellerId;
     final online = await ChatService.isUserOnline(otherId);
     if (mounted) setState(() => _otherOnline = online);
   }
@@ -655,11 +704,11 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   void _startPoll() {
     _pollTimer?.cancel();
     _typingPollTimer?.cancel();
-    _pollTimer = Timer.periodic(AppQuality.instance.chatMessagePollInterval, (_) async {
+    _pollTimer =
+        Timer.periodic(AppQuality.instance.chatMessagePollInterval, (_) async {
       await _loadMessages();
-      _markRead();
     });
-    _typingPollTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+    _typingPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
       _pollTyping();
     });
     _pollTyping();
@@ -675,16 +724,21 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   }
 
   Future<void> _pollTyping() async {
-    if (_activeConversation == null) return;
-    final typing = await ChatService.getTyping(_activeConversation!.id);
-    if (!mounted) return;
-    final nextTyping = typing.isNotEmpty;
-    final nextName = nextTyping ? typing.first['full_name'] as String? : null;
-    if (nextTyping == _otherIsTyping && nextName == _typingName) return;
-    setState(() {
-      _otherIsTyping = nextTyping;
-      _typingName = nextName;
-    });
+    if (_activeConversation == null || _pollingTyping) return;
+    _pollingTyping = true;
+    try {
+      final typing = await ChatService.getTyping(_activeConversation!.id);
+      if (!mounted) return;
+      final nextTyping = typing.isNotEmpty;
+      final nextName = nextTyping ? typing.first['full_name'] as String? : null;
+      if (nextTyping == _otherIsTyping && nextName == _typingName) return;
+      setState(() {
+        _otherIsTyping = nextTyping;
+        _typingName = nextName;
+      });
+    } finally {
+      _pollingTyping = false;
+    }
   }
 
   void _pingTyping() {
@@ -737,7 +791,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     });
     HapticFeedback.lightImpact();
 
-    final msg = await ChatService.sendMessage(_activeConversation!.id, text, replyToId: replyId);
+    final msg = await ChatService.sendMessage(_activeConversation!.id, text,
+        replyToId: replyId);
     if (msg != null && mounted) {
       setState(() {
         _messages.add(msg);
@@ -755,7 +810,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         if (_msgController.text.isEmpty) _msgController.text = text;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to send message. Please try again.')),
+        const SnackBar(
+            content: Text('Failed to send message. Please try again.')),
       );
     }
   }
@@ -763,11 +819,13 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   Future<void> _pickImage() async {
     if (_pendingImages.length >= 5) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You can attach up to 5 images at a time.')),
+        const SnackBar(
+            content: Text('You can attach up to 5 images at a time.')),
       );
       return;
     }
-    final picked = await _picker.pickImage(source: ImageSource.gallery, maxWidth: 1200, imageQuality: 85);
+    final picked = await _picker.pickImage(
+        source: ImageSource.gallery, maxWidth: 1200, imageQuality: 85);
     if (picked == null) return;
     setState(() => _pendingImages.add(File(picked.path)));
   }
@@ -775,11 +833,13 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   Future<void> _takePhoto() async {
     if (_pendingImages.length >= 5) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You can attach up to 5 images at a time.')),
+        const SnackBar(
+            content: Text('You can attach up to 5 images at a time.')),
       );
       return;
     }
-    final picked = await _picker.pickImage(source: ImageSource.camera, maxWidth: 1200, imageQuality: 85);
+    final picked = await _picker.pickImage(
+        source: ImageSource.camera, maxWidth: 1200, imageQuality: 85);
     if (picked == null) return;
     setState(() => _pendingImages.add(File(picked.path)));
   }
@@ -798,7 +858,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     HapticFeedback.lightImpact();
 
     for (final file in files) {
-      final msg = await ChatService.sendImageMessage(_activeConversation!.id, file);
+      final msg =
+          await ChatService.sendImageMessage(_activeConversation!.id, file);
       if (msg != null && mounted) {
         setState(() => _messages.add(msg));
         _applyLocalPreview(
@@ -818,11 +879,16 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     int i = 0;
     while (i < _messages.length) {
       final m = _messages[i];
-      if (m.messageType == 'image' && m.imageUrl != null && (m.text == null || m.text!.isEmpty)) {
+      if (m.messageType == 'image' &&
+          m.imageUrl != null &&
+          (m.text == null || m.text!.isEmpty)) {
         final batch = <ChatMessage>[m];
         while (i + 1 < _messages.length && batch.length < 5) {
           final next = _messages[i + 1];
-          if (next.messageType == 'image' && next.imageUrl != null && (next.text == null || next.text!.isEmpty) && next.senderId == m.senderId) {
+          if (next.messageType == 'image' &&
+              next.imageUrl != null &&
+              (next.text == null || next.text!.isEmpty) &&
+              next.senderId == m.senderId) {
             batch.add(next);
             i++;
           } else {
@@ -863,10 +929,16 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
               decoration: const BoxDecoration(
                 color: AppColors.warmWhite,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-                boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 30, offset: Offset(0, -5))],
+                boxShadow: [
+                  BoxShadow(
+                      color: Colors.black26,
+                      blurRadius: 30,
+                      offset: Offset(0, -5))
+                ],
               ),
               child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(20)),
                 child: _showDetail ? _buildDetailView() : _buildInboxView(),
               ),
             ),
@@ -907,7 +979,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     );
   }
 
-  Widget _buildDrawerHeader({required String title, Widget? leading, Widget? trailing}) {
+  Widget _buildDrawerHeader(
+      {required String title, Widget? leading, Widget? trailing}) {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       decoration: BoxDecoration(
@@ -920,7 +993,10 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
           Expanded(
             child: Text(
               title,
-              style: GoogleFonts.cormorantGaramond(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.charcoal),
+              style: GoogleFonts.cormorantGaramond(
+                  fontSize: 20,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.charcoal),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -944,18 +1020,28 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         style: GoogleFonts.dmSans(fontSize: 13, color: AppColors.charcoal),
         decoration: InputDecoration(
           hintText: 'Search stores to message…',
-          hintStyle: GoogleFonts.dmSans(fontSize: 13, color: AppColors.muted.withOpacity(0.6)),
-          prefixIcon: Icon(Icons.search_rounded, color: AppColors.muted, size: 20),
+          hintStyle: GoogleFonts.dmSans(
+              fontSize: 13, color: AppColors.muted.withOpacity(0.6)),
+          prefixIcon:
+              Icon(Icons.search_rounded, color: AppColors.muted, size: 20),
           filled: true,
           fillColor: AppColors.cream,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: AppColors.borderStrong)),
-          enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: BorderSide(color: AppColors.borderStrong)),
-          focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(20), borderSide: const BorderSide(color: AppColors.deepRose)),
+          contentPadding:
+              const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(20),
+              borderSide: BorderSide(color: AppColors.borderStrong)),
+          enabledBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(20),
+              borderSide: BorderSide(color: AppColors.borderStrong)),
+          focusedBorder: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(20),
+              borderSide: const BorderSide(color: AppColors.deepRose)),
           isDense: true,
           suffixIcon: _searchController.text.isNotEmpty
               ? IconButton(
-                  icon: Icon(Icons.close_rounded, size: 18, color: AppColors.muted),
+                  icon: Icon(Icons.close_rounded,
+                      size: 18, color: AppColors.muted),
                   onPressed: () {
                     _searchController.clear();
                     _onSearch('');
@@ -970,20 +1056,24 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
 
   Widget _buildSearchResults() {
     if (_searching) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.deepRose, strokeWidth: 2.5));
+      return const Center(
+          child: CircularProgressIndicator(
+              color: AppColors.deepRose, strokeWidth: 2.5));
     }
     if (_searchResults.isEmpty) {
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(20),
-          child: Text('No stores found', style: GoogleFonts.dmSans(fontSize: 14, color: AppColors.muted)),
+          child: Text('No stores found',
+              style: GoogleFonts.dmSans(fontSize: 14, color: AppColors.muted)),
         ),
       );
     }
     return ListView.separated(
       padding: const EdgeInsets.symmetric(vertical: 4),
       itemCount: _searchResults.length,
-      separatorBuilder: (_, __) => Divider(height: 1, thickness: 0.5, indent: 66, color: AppColors.border),
+      separatorBuilder: (_, __) => Divider(
+          height: 1, thickness: 0.5, indent: 66, color: AppColors.border),
       itemBuilder: (context, i) {
         final store = _searchResults[i];
         final name = store['name'] ?? 'Store';
@@ -1008,16 +1098,33 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(name, style: GoogleFonts.dmSans(fontSize: 13.5, fontWeight: FontWeight.w600, color: AppColors.charcoal), maxLines: 1, overflow: TextOverflow.ellipsis),
+                      Text(name,
+                          style: GoogleFonts.dmSans(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.charcoal),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
                       if (address != null)
-                        Text(address, style: GoogleFonts.dmSans(fontSize: 11.5, color: AppColors.muted), maxLines: 1, overflow: TextOverflow.ellipsis),
+                        Text(address,
+                            style: GoogleFonts.dmSans(
+                                fontSize: 11.5, color: AppColors.muted),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis),
                     ],
                   ),
                 ),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
-                  decoration: BoxDecoration(color: AppColors.deepRose, borderRadius: BorderRadius.circular(16)),
-                  child: Text('Message', style: GoogleFonts.dmSans(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.white)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
+                  decoration: BoxDecoration(
+                      color: AppColors.deepRose,
+                      borderRadius: BorderRadius.circular(16)),
+                  child: Text('Message',
+                      style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white)),
                 ),
               ],
             ),
@@ -1029,7 +1136,9 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
 
   Widget _buildConversationList() {
     if (_inboxLoading) {
-      return const Center(child: CircularProgressIndicator(color: AppColors.deepRose, strokeWidth: 2.5));
+      return const Center(
+          child: CircularProgressIndicator(
+              color: AppColors.deepRose, strokeWidth: 2.5));
     }
     if (_conversations.isEmpty) {
       final role = context.read<AuthProvider>().user?.role;
@@ -1040,11 +1149,19 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.chat_bubble_outline_rounded, size: 48, color: AppColors.muted.withOpacity(0.3)),
+            Icon(Icons.chat_bubble_outline_rounded,
+                size: 48, color: AppColors.muted.withOpacity(0.3)),
             const SizedBox(height: 14),
-            Text('No conversations yet', style: GoogleFonts.dmSans(fontSize: 14, color: AppColors.muted, fontWeight: FontWeight.w500)),
+            Text('No conversations yet',
+                style: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    color: AppColors.muted,
+                    fontWeight: FontWeight.w500)),
             const SizedBox(height: 6),
-            Text(emptyHint, style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted.withOpacity(0.7)), textAlign: TextAlign.center),
+            Text(emptyHint,
+                style: GoogleFonts.dmSans(
+                    fontSize: 12, color: AppColors.muted.withOpacity(0.7)),
+                textAlign: TextAlign.center),
           ],
         ),
       );
@@ -1056,13 +1173,18 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4),
         itemCount: _conversations.length,
-        separatorBuilder: (_, __) => Divider(height: 1, thickness: 0.5, indent: 70, color: AppColors.border),
+        separatorBuilder: (_, __) => Divider(
+            height: 1, thickness: 0.5, indent: 70, color: AppColors.border),
         itemBuilder: (context, i) {
           final convo = _conversations[i];
           final other = convo.otherUser;
           final isSeller = other?.role == 'seller';
-          final displayName = isSeller ? (convo.storeName ?? other?.fullName ?? 'Unknown') : (other?.fullName ?? 'Unknown');
-          final displayAvatar = isSeller ? (convo.storeLogo ?? other?.avatarUrl) : other?.avatarUrl;
+          final displayName = isSeller
+              ? (convo.storeName ?? other?.fullName ?? 'Unknown')
+              : (other?.fullName ?? 'Unknown');
+          final displayAvatar = isSeller
+              ? (convo.storeLogo ?? other?.avatarUrl)
+              : other?.avatarUrl;
           final unread = convo.unreadCount;
           final hasUnread = unread > 0;
 
@@ -1073,17 +1195,25 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
               alignment: Alignment.centerRight,
               padding: const EdgeInsets.only(right: 24),
               color: Colors.red[400],
-              child: const Icon(Icons.delete_outline, color: Colors.white, size: 22),
+              child: const Icon(Icons.delete_outline,
+                  color: Colors.white, size: 22),
             ),
             confirmDismiss: (_) async {
               final confirmed = await showDialog<bool>(
                 context: context,
                 builder: (ctx) => AlertDialog(
-                  title: Text('Delete Conversation', style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
-                  content: Text('Delete your conversation with $displayName?', style: GoogleFonts.dmSans()),
+                  title: Text('Delete Conversation',
+                      style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
+                  content: Text('Delete your conversation with $displayName?',
+                      style: GoogleFonts.dmSans()),
                   actions: [
-                    TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-                    TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Delete', style: TextStyle(color: Colors.red[600]))),
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx, false),
+                        child: const Text('Cancel')),
+                    TextButton(
+                        onPressed: () => Navigator.pop(ctx, true),
+                        child: Text('Delete',
+                            style: TextStyle(color: Colors.red[600]))),
                   ],
                 ),
               );
@@ -1096,7 +1226,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
             child: InkWell(
               onTap: () => _openConversation(convo),
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Row(
                   children: [
                     _buildAvatar(displayAvatar, displayName, 44),
@@ -1107,14 +1238,28 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                         children: [
                           Text(
                             displayName,
-                            style: GoogleFonts.dmSans(fontSize: 14, fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w600, color: AppColors.charcoal),
-                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.dmSans(
+                                fontSize: 14,
+                                fontWeight: hasUnread
+                                    ? FontWeight.w700
+                                    : FontWeight.w600,
+                                color: AppColors.charcoal),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                           const SizedBox(height: 2),
                           Text(
                             convo.lastMessageText ?? 'No messages yet',
-                            style: GoogleFonts.dmSans(fontSize: 12.5, fontWeight: hasUnread ? FontWeight.w600 : FontWeight.w400, color: hasUnread ? AppColors.charcoal : AppColors.muted),
-                            maxLines: 1, overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.dmSans(
+                                fontSize: 12.5,
+                                fontWeight: hasUnread
+                                    ? FontWeight.w600
+                                    : FontWeight.w400,
+                                color: hasUnread
+                                    ? AppColors.charcoal
+                                    : AppColors.muted),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ],
                       ),
@@ -1122,16 +1267,24 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text(_timeAgo(convo.lastMessageAt), style: GoogleFonts.dmSans(fontSize: 11, color: AppColors.muted)),
+                        Text(_timeAgo(convo.lastMessageAt),
+                            style: GoogleFonts.dmSans(
+                                fontSize: 11, color: AppColors.muted)),
                         if (hasUnread) ...[
                           const SizedBox(height: 4),
                           Container(
                             constraints: const BoxConstraints(minWidth: 18),
                             height: 18,
                             padding: const EdgeInsets.symmetric(horizontal: 5),
-                            decoration: BoxDecoration(color: AppColors.deepRose, borderRadius: BorderRadius.circular(9)),
+                            decoration: BoxDecoration(
+                                color: AppColors.deepRose,
+                                borderRadius: BorderRadius.circular(9)),
                             child: Center(
-                              child: Text(unread > 99 ? '99+' : '$unread', style: GoogleFonts.dmSans(fontSize: 10, fontWeight: FontWeight.w700, color: Colors.white)),
+                              child: Text(unread > 99 ? '99+' : '$unread',
+                                  style: GoogleFonts.dmSans(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.white)),
                             ),
                           ),
                         ],
@@ -1155,8 +1308,11 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     final convo = _activeConversation!;
     final other = convo.otherUser;
     final isSeller = other?.role == 'seller';
-    final displayName = isSeller ? (convo.storeName ?? other?.fullName ?? 'Unknown') : (other?.fullName ?? 'Unknown');
-    final displayAvatar = isSeller ? (convo.storeLogo ?? other?.avatarUrl) : other?.avatarUrl;
+    final displayName = isSeller
+        ? (convo.storeName ?? other?.fullName ?? 'Unknown')
+        : (other?.fullName ?? 'Unknown');
+    final displayAvatar =
+        isSeller ? (convo.storeLogo ?? other?.avatarUrl) : other?.avatarUrl;
 
     return Column(
       children: [
@@ -1165,54 +1321,86 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
           decoration: BoxDecoration(
             color: AppColors.warmWhite,
-            border: Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
+            border:
+                Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
           ),
           child: Row(
             children: [
-              IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18), onPressed: _backToInbox, splashRadius: 18),
+              IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+                  onPressed: _backToInbox,
+                  splashRadius: 18),
               _buildAvatar(displayAvatar, displayName, 34),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(displayName, style: GoogleFonts.dmSans(fontSize: 14.5, fontWeight: FontWeight.w700, color: AppColors.charcoal), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(displayName,
+                        style: GoogleFonts.dmSans(
+                            fontSize: 14.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.charcoal),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis),
                     Row(
                       children: [
-                        Container(width: 7, height: 7, decoration: BoxDecoration(shape: BoxShape.circle, color: _otherOnline ? const Color(0xFF31a24c) : Colors.grey[400])),
+                        Container(
+                            width: 7,
+                            height: 7,
+                            decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                color: _otherOnline
+                                    ? const Color(0xFF31a24c)
+                                    : Colors.grey[400])),
                         const SizedBox(width: 4),
-                        Text(_otherOnline ? 'Online' : 'Offline', style: GoogleFonts.dmSans(fontSize: 11, color: AppColors.muted)),
+                        Text(_otherOnline ? 'Online' : 'Offline',
+                            style: GoogleFonts.dmSans(
+                                fontSize: 11, color: AppColors.muted)),
                       ],
                     ),
                   ],
                 ),
               ),
-              IconButton(icon: Icon(Icons.close_rounded, size: 22, color: AppColors.muted), onPressed: _dismiss, splashRadius: 18),
+              IconButton(
+                  icon: Icon(Icons.close_rounded,
+                      size: 22, color: AppColors.muted),
+                  onPressed: _dismiss,
+                  splashRadius: 18),
             ],
           ),
         ),
-        if (_orderContext != null) ChatOrderContextBanner(orderContext: _orderContext!),
+        if (_orderContext != null)
+          ChatOrderContextBanner(orderContext: _orderContext!),
         // Messages
         Expanded(
           child: _messagesLoading
-              ? const Center(child: CircularProgressIndicator(color: AppColors.deepRose, strokeWidth: 2.5))
+              ? const Center(
+                  child: CircularProgressIndicator(
+                      color: AppColors.deepRose, strokeWidth: 2.5))
               : _messages.isEmpty
                   ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          Icon(Icons.chat_outlined, size: 40, color: AppColors.muted.withOpacity(0.3)),
+                          Icon(Icons.chat_outlined,
+                              size: 40,
+                              color: AppColors.muted.withOpacity(0.3)),
                           const SizedBox(height: 10),
-                          Text('Start the conversation!', style: GoogleFonts.dmSans(fontSize: 13, color: AppColors.muted)),
+                          Text('Start the conversation!',
+                              style: GoogleFonts.dmSans(
+                                  fontSize: 13, color: AppColors.muted)),
                         ],
                       ),
                     )
                   : ListView.builder(
                       controller: _scrollController,
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
                       itemCount: _groupedMessages.length,
                       itemBuilder: (context, index) {
-                        return _buildMessageGroup(_groupedMessages[index], index);
+                        return _buildMessageGroup(
+                            _groupedMessages[index], index);
                       },
                     ),
         ),
@@ -1250,7 +1438,10 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
           if (msg.replyToSenderName != null)
             Text(
               msg.replyToSenderName!,
-              style: GoogleFonts.dmSans(fontSize: 11, fontWeight: FontWeight.w600, color: AppColors.deepRose),
+              style: GoogleFonts.dmSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.deepRose),
             ),
           const SizedBox(height: 2),
           Text(
@@ -1259,7 +1450,9 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
             overflow: TextOverflow.ellipsis,
             style: GoogleFonts.dmSans(
               fontSize: 11.5,
-              color: isRepliedDeleted ? Colors.grey[500] : AppColors.charcoal.withOpacity(0.7),
+              color: isRepliedDeleted
+                  ? Colors.grey[500]
+                  : AppColors.charcoal.withOpacity(0.7),
               fontStyle: isRepliedDeleted ? FontStyle.italic : FontStyle.normal,
             ),
           ),
@@ -1278,22 +1471,28 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
       showDate = _differentDay(prevGroup.first.createdAt, msg.createdAt);
     }
 
-    final lastSentByMe = _messages.lastWhere((m) => m.senderId == _myId, orElse: () => _messages.first);
+    final lastSentByMe = _messages.lastWhere((m) => m.senderId == _myId,
+        orElse: () => _messages.first);
     final isLastSent = isSent && group.contains(lastSentByMe);
     final isImageGrid = group.length > 1 && !msg.isDeleted;
 
     return Column(
-      crossAxisAlignment: isSent ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+      crossAxisAlignment:
+          isSent ? CrossAxisAlignment.end : CrossAxisAlignment.start,
       children: [
         if (showDate)
           Padding(
             padding: const EdgeInsets.symmetric(vertical: 10),
-            child: Center(child: Text(_formatDate(msg.createdAt), style: GoogleFonts.dmSans(fontSize: 10.5, color: AppColors.muted))),
+            child: Center(
+                child: Text(_formatDate(msg.createdAt),
+                    style: GoogleFonts.dmSans(
+                        fontSize: 10.5, color: AppColors.muted))),
           ),
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
           child: Row(
-            mainAxisAlignment: isSent ? MainAxisAlignment.end : MainAxisAlignment.start,
+            mainAxisAlignment:
+                isSent ? MainAxisAlignment.end : MainAxisAlignment.start,
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               if (!isSent) ...[
@@ -1302,12 +1501,21 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
               ],
               Flexible(
                 child: Container(
-                  constraints: BoxConstraints(maxWidth: isImageGrid ? 160.0 : MediaQuery.of(context).size.width * 0.68),
-                  padding: EdgeInsets.symmetric(horizontal: isImageGrid ? 5 : 12, vertical: isImageGrid ? 5 : 8),
+                  constraints: BoxConstraints(
+                      maxWidth: isImageGrid
+                          ? 160.0
+                          : MediaQuery.of(context).size.width * 0.68),
+                  padding: EdgeInsets.symmetric(
+                      horizontal: isImageGrid ? 5 : 12,
+                      vertical: isImageGrid ? 5 : 8),
                   decoration: BoxDecoration(
                     color: msg.isDeleted
-                        ? (isSent ? const Color(0xFFE8E8E8) : const Color(0xFFF1F3F5))
-                        : (isSent ? const Color(0xFFDCF8C5) : const Color(0xFFF1F3F5)),
+                        ? (isSent
+                            ? const Color(0xFFE8E8E8)
+                            : const Color(0xFFF1F3F5))
+                        : (isSent
+                            ? const Color(0xFFDCF8C5)
+                            : const Color(0xFFF1F3F5)),
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
                       topRight: const Radius.circular(16),
@@ -1316,7 +1524,9 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                     ),
                   ),
                   child: Column(
-                    crossAxisAlignment: isSent ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                    crossAxisAlignment: isSent
+                        ? CrossAxisAlignment.end
+                        : CrossAxisAlignment.start,
                     children: [
                       // ── Quoted reply ──
                       if (msg.replyToId != null) _buildQuotedReply(msg),
@@ -1325,20 +1535,27 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                         Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.block, size: 14, color: Colors.grey[500]),
+                            Icon(Icons.block,
+                                size: 14, color: Colors.grey[500]),
                             const SizedBox(width: 4),
                             Text(
                               'Message has been deleted',
-                              style: GoogleFonts.dmSans(fontSize: 13, fontStyle: FontStyle.italic, color: Colors.grey[500]),
+                              style: GoogleFonts.dmSans(
+                                  fontSize: 13,
+                                  fontStyle: FontStyle.italic,
+                                  color: Colors.grey[500]),
                             ),
                           ],
                         ),
                         const SizedBox(height: 2),
-                        Text(_formatTime(msg.createdAt), style: GoogleFonts.dmSans(fontSize: 9.5, color: Colors.grey[500])),
+                        Text(_formatTime(msg.createdAt),
+                            style: GoogleFonts.dmSans(
+                                fontSize: 9.5, color: Colors.grey[500])),
                       ] else ...[
                         if (isImageGrid)
                           _buildImageGrid(group)
-                        else if (msg.messageType == 'image' && msg.imageUrl != null) ...[
+                        else if (msg.messageType == 'image' &&
+                            msg.imageUrl != null) ...[
                           ClipRRect(
                             borderRadius: BorderRadius.circular(8),
                             child: GestureDetector(
@@ -1347,17 +1564,38 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                                 imageUrl: msg.imageUrl!,
                                 width: 130,
                                 fit: BoxFit.cover,
-                                placeholder: (_, __) => Container(width: 130, height: 90, color: Colors.grey[200], child: const Center(child: CircularProgressIndicator(strokeWidth: 2))),
-                                errorWidget: (_, __, ___) => Container(width: 130, height: 50, color: Colors.grey[200], child: const Icon(Icons.broken_image_outlined, color: Colors.grey)),
+                                placeholder: (_, __) => Container(
+                                    width: 130,
+                                    height: 90,
+                                    color: Colors.grey[200],
+                                    child: const Center(
+                                        child: CircularProgressIndicator(
+                                            strokeWidth: 2))),
+                                errorWidget: (_, __, ___) => Container(
+                                    width: 130,
+                                    height: 50,
+                                    color: Colors.grey[200],
+                                    child: const Icon(
+                                        Icons.broken_image_outlined,
+                                        color: Colors.grey)),
                               ),
                             ),
                           ),
-                          if (msg.text != null && msg.text!.isNotEmpty) const SizedBox(height: 3),
+                          if (msg.text != null && msg.text!.isNotEmpty)
+                            const SizedBox(height: 3),
                         ],
-                        if (!isImageGrid && msg.text != null && msg.text!.isNotEmpty)
-                          Text(msg.text!, style: GoogleFonts.dmSans(fontSize: 13.5, color: AppColors.charcoal, height: 1.4)),
+                        if (!isImageGrid &&
+                            msg.text != null &&
+                            msg.text!.isNotEmpty)
+                          Text(msg.text!,
+                              style: GoogleFonts.dmSans(
+                                  fontSize: 13.5,
+                                  color: AppColors.charcoal,
+                                  height: 1.4)),
                         const SizedBox(height: 2),
-                        Text(_formatTime(msg.createdAt), style: GoogleFonts.dmSans(fontSize: 9.5, color: Colors.grey[500])),
+                        Text(_formatTime(msg.createdAt),
+                            style: GoogleFonts.dmSans(
+                                fontSize: 9.5, color: Colors.grey[500])),
                       ],
                     ],
                   ),
@@ -1371,7 +1609,9 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         if (isLastSent && group.last.isRead)
           Padding(
             padding: const EdgeInsets.only(right: 4, bottom: 4),
-            child: Text('Seen', style: GoogleFonts.dmSans(fontSize: 10.5, color: AppColors.muted)),
+            child: Text('Seen',
+                style:
+                    GoogleFonts.dmSans(fontSize: 10.5, color: AppColors.muted)),
           ),
       ],
     );
@@ -1381,21 +1621,43 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     final isSent = msg.senderId == _myId;
     return PopupMenuButton<String>(
       onSelected: (action) {
-        if (action == 'copy') _copyMessage(msg);
-        else if (action == 'reply') _setReplyTo(msg);
+        if (action == 'copy')
+          _copyMessage(msg);
+        else if (action == 'reply')
+          _setReplyTo(msg);
         else if (action == 'delete') _deleteMessage(msg);
       },
       itemBuilder: (ctx) => [
-        PopupMenuItem(value: 'copy', child: Row(children: [const Icon(Icons.copy_rounded, size: 18), const SizedBox(width: 8), const Text('Copy')])),
-        PopupMenuItem(value: 'reply', child: Row(children: [const Icon(Icons.reply_rounded, size: 18), const SizedBox(width: 8), const Text('Reply')])),
-        if (isSent) PopupMenuItem(value: 'delete', child: Row(children: [const Icon(Icons.delete_rounded, size: 18, color: Colors.red), const SizedBox(width: 8), const Text('Delete', style: TextStyle(color: Colors.red))])),
+        PopupMenuItem(
+            value: 'copy',
+            child: Row(children: [
+              const Icon(Icons.copy_rounded, size: 18),
+              const SizedBox(width: 8),
+              const Text('Copy')
+            ])),
+        PopupMenuItem(
+            value: 'reply',
+            child: Row(children: [
+              const Icon(Icons.reply_rounded, size: 18),
+              const SizedBox(width: 8),
+              const Text('Reply')
+            ])),
+        if (isSent)
+          PopupMenuItem(
+              value: 'delete',
+              child: Row(children: [
+                const Icon(Icons.delete_rounded, size: 18, color: Colors.red),
+                const SizedBox(width: 8),
+                const Text('Delete', style: TextStyle(color: Colors.red))
+              ])),
       ],
       offset: const Offset(0, -100),
       child: Container(
         width: 32,
         height: 32,
         alignment: Alignment.center,
-        child: Icon(Icons.more_vert_rounded, size: 18, color: AppColors.muted.withOpacity(0.6)),
+        child: Icon(Icons.more_vert_rounded,
+            size: 18, color: AppColors.muted.withOpacity(0.6)),
       ),
     );
   }
@@ -1403,7 +1665,9 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   void _copyMessage(ChatMessage msg) {
     if (msg.text != null && msg.text!.isNotEmpty) {
       Clipboard.setData(ClipboardData(text: msg.text!));
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Copied to clipboard'), duration: Duration(milliseconds: 1500)));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Copied to clipboard'),
+          duration: Duration(milliseconds: 1500)));
     }
   }
 
@@ -1415,18 +1679,25 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Delete message?', style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
-        content: Text('This action cannot be undone.', style: GoogleFonts.dmSans()),
+        title: Text('Delete message?',
+            style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
+        content:
+            Text('This action cannot be undone.', style: GoogleFonts.dmSans()),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(onPressed: () => Navigator.pop(ctx, true), child: Text('Delete', style: TextStyle(color: Colors.red[600]))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancel')),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text('Delete', style: TextStyle(color: Colors.red[600]))),
         ],
       ),
     );
     if (confirmed != true || _activeConversation == null) return;
-    
+
     try {
-      final updated = await ChatService.deleteMessage(_activeConversation!.id, msg.id);
+      final updated =
+          await ChatService.deleteMessage(_activeConversation!.id, msg.id);
       if (updated != null && mounted) {
         setState(() {
           final idx = _messages.indexWhere((m) => m.id == msg.id);
@@ -1438,7 +1709,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         );
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Failed to delete message: $e')));
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to delete message: $e')));
     }
   }
 
@@ -1447,19 +1719,32 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     return Wrap(
       spacing: 3,
       runSpacing: 3,
-      children: imgs.map((m) => GestureDetector(
-        onTap: () => _viewImage(m.imageUrl!),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(5),
-          child: CachedNetworkImage(
-            imageUrl: m.imageUrl!,
-            width: size, height: size,
-            fit: BoxFit.cover,
-            placeholder: (_, __) => Container(width: size, height: size, color: Colors.grey[200], child: const Center(child: CircularProgressIndicator(strokeWidth: 2))),
-            errorWidget: (_, __, ___) => Container(width: size, height: size, color: Colors.grey[200], child: const Icon(Icons.broken_image_outlined, color: Colors.grey, size: 14)),
-          ),
-        ),
-      )).toList(),
+      children: imgs
+          .map((m) => GestureDetector(
+                onTap: () => _viewImage(m.imageUrl!),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(5),
+                  child: CachedNetworkImage(
+                    imageUrl: m.imageUrl!,
+                    width: size,
+                    height: size,
+                    fit: BoxFit.cover,
+                    placeholder: (_, __) => Container(
+                        width: size,
+                        height: size,
+                        color: Colors.grey[200],
+                        child: const Center(
+                            child: CircularProgressIndicator(strokeWidth: 2))),
+                    errorWidget: (_, __, ___) => Container(
+                        width: size,
+                        height: size,
+                        color: Colors.grey[200],
+                        child: const Icon(Icons.broken_image_outlined,
+                            color: Colors.grey, size: 14)),
+                  ),
+                ),
+              ))
+          .toList(),
     );
   }
 
@@ -1483,7 +1768,9 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   Widget _buildImagePreview() {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(color: AppColors.warmWhite, border: Border(top: BorderSide(color: AppColors.border, width: 0.5))),
+      decoration: BoxDecoration(
+          color: AppColors.warmWhite,
+          border: Border(top: BorderSide(color: AppColors.border, width: 0.5))),
       child: Row(
         children: [
           Expanded(
@@ -1497,15 +1784,23 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                   return Stack(
                     clipBehavior: Clip.none,
                     children: [
-                      ClipRRect(borderRadius: BorderRadius.circular(7), child: Image.file(_pendingImages[i], width: 50, height: 50, fit: BoxFit.cover)),
+                      ClipRRect(
+                          borderRadius: BorderRadius.circular(7),
+                          child: Image.file(_pendingImages[i],
+                              width: 50, height: 50, fit: BoxFit.cover)),
                       Positioned(
-                        top: -3, right: -3,
+                        top: -3,
+                        right: -3,
                         child: GestureDetector(
                           onTap: () => _removePendingImage(i),
                           child: Container(
-                            width: 16, height: 16,
-                            decoration: BoxDecoration(color: Colors.black.withOpacity(0.55), shape: BoxShape.circle),
-                            child: const Icon(Icons.close, color: Colors.white, size: 10),
+                            width: 16,
+                            height: 16,
+                            decoration: BoxDecoration(
+                                color: Colors.black.withOpacity(0.55),
+                                shape: BoxShape.circle),
+                            child: const Icon(Icons.close,
+                                color: Colors.white, size: 10),
                           ),
                         ),
                       ),
@@ -1516,8 +1811,13 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
             ),
           ),
           const SizedBox(width: 6),
-          Text('${_pendingImages.length}/5', style: GoogleFonts.dmSans(fontSize: 10.5, color: AppColors.muted)),
-          IconButton(icon: Icon(Icons.close_rounded, color: AppColors.muted, size: 18), onPressed: _cancelPendingImages, splashRadius: 16),
+          Text('${_pendingImages.length}/5',
+              style:
+                  GoogleFonts.dmSans(fontSize: 10.5, color: AppColors.muted)),
+          IconButton(
+              icon: Icon(Icons.close_rounded, color: AppColors.muted, size: 18),
+              onPressed: _cancelPendingImages,
+              splashRadius: 16),
         ],
       ),
     );
@@ -1533,20 +1833,31 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
               color: AppColors.cream,
-              border: Border(top: BorderSide(color: AppColors.borderStrong, width: 1)),
+              border: Border(
+                  top: BorderSide(color: AppColors.borderStrong, width: 1)),
             ),
             child: Row(
               children: [
-                Container(width: 3, height: 40, decoration: BoxDecoration(color: AppColors.deepRose, borderRadius: BorderRadius.circular(1.5))),
+                Container(
+                    width: 3,
+                    height: 40,
+                    decoration: BoxDecoration(
+                        color: AppColors.deepRose,
+                        borderRadius: BorderRadius.circular(1.5))),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Replying to ${_replyingTo!.senderName ?? "user"}', style: GoogleFonts.dmSans(fontSize: 10.5, fontWeight: FontWeight.w600, color: AppColors.deepRose)),
+                      Text('Replying to ${_replyingTo!.senderName ?? "user"}',
+                          style: GoogleFonts.dmSans(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.deepRose)),
                       Text(
                         _replyingTo!.text ?? '(Image)',
-                        style: GoogleFonts.dmSans(fontSize: 11, color: AppColors.charcoal),
+                        style: GoogleFonts.dmSans(
+                            fontSize: 11, color: AppColors.charcoal),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
@@ -1556,33 +1867,57 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                 const SizedBox(width: 8),
                 GestureDetector(
                   onTap: () => setState(() => _replyingTo = null),
-                  child: Icon(Icons.close_rounded, size: 18, color: AppColors.muted),
+                  child: Icon(Icons.close_rounded,
+                      size: 18, color: AppColors.muted),
                 ),
               ],
             ),
           ),
         // Input bar
         Container(
-          padding: EdgeInsets.only(left: 8, right: 8, top: 7, bottom: MediaQuery.of(context).padding.bottom + 7),
-          decoration: BoxDecoration(color: AppColors.warmWhite, border: Border(top: BorderSide(color: AppColors.border, width: 0.5))),
+          padding: EdgeInsets.only(
+              left: 8,
+              right: 8,
+              top: 7,
+              bottom: MediaQuery.of(context).padding.bottom + 7),
+          decoration: BoxDecoration(
+              color: AppColors.warmWhite,
+              border:
+                  Border(top: BorderSide(color: AppColors.border, width: 0.5))),
           child: Row(
             children: [
-              IconButton(icon: Icon(Icons.camera_alt_outlined, color: AppColors.muted, size: 20), onPressed: _sending ? null : _takePhoto, splashRadius: 18),
-              IconButton(icon: Icon(Icons.image_outlined, color: AppColors.muted, size: 20), onPressed: _sending ? null : _pickImage, splashRadius: 18),
+              IconButton(
+                  icon: Icon(Icons.camera_alt_outlined,
+                      color: AppColors.muted, size: 20),
+                  onPressed: _sending ? null : _takePhoto,
+                  splashRadius: 18),
+              IconButton(
+                  icon: Icon(Icons.image_outlined,
+                      color: AppColors.muted, size: 20),
+                  onPressed: _sending ? null : _pickImage,
+                  splashRadius: 18),
               Expanded(
                 child: Container(
-                  decoration: BoxDecoration(color: AppColors.cream, borderRadius: BorderRadius.circular(22), border: Border.all(color: AppColors.borderStrong, width: 1)),
+                  decoration: BoxDecoration(
+                      color: AppColors.cream,
+                      borderRadius: BorderRadius.circular(22),
+                      border:
+                          Border.all(color: AppColors.borderStrong, width: 1)),
                   child: TextField(
                     controller: _msgController,
                     onChanged: _onTextChanged,
                     onSubmitted: (_) => _sendText(),
                     textInputAction: TextInputAction.send,
-                    style: GoogleFonts.dmSans(fontSize: 13.5, color: AppColors.charcoal),
+                    style: GoogleFonts.dmSans(
+                        fontSize: 13.5, color: AppColors.charcoal),
                     decoration: InputDecoration(
                       hintText: 'Type a message…',
-                      hintStyle: GoogleFonts.dmSans(fontSize: 13.5, color: AppColors.muted.withOpacity(0.6)),
+                      hintStyle: GoogleFonts.dmSans(
+                          fontSize: 13.5,
+                          color: AppColors.muted.withOpacity(0.6)),
                       border: InputBorder.none,
-                      contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                      contentPadding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 9),
                       isDense: true,
                     ),
                     maxLines: 3,
@@ -1592,12 +1927,19 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
               ),
               const SizedBox(width: 5),
               Container(
-                width: 36, height: 36,
-                decoration: const BoxDecoration(gradient: AppColors.roseGradient, shape: BoxShape.circle),
+                width: 36,
+                height: 36,
+                decoration: const BoxDecoration(
+                    gradient: AppColors.roseGradient, shape: BoxShape.circle),
                 child: IconButton(
                   icon: _sending
-                      ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                      : const Icon(Icons.send_rounded, color: Colors.white, size: 16),
+                      ? const SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(
+                              color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.send_rounded,
+                          color: Colors.white, size: 16),
                   onPressed: _sending ? null : _sendText,
                   splashRadius: 18,
                 ),
@@ -1616,7 +1958,12 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   Widget _buildAvatar(String? url, String name, double size) {
     if (url != null && url.isNotEmpty) {
       return ClipOval(
-        child: CachedNetworkImage(imageUrl: url, width: size, height: size, fit: BoxFit.cover, errorWidget: (_, __, ___) => _placeholderAvatar(name, size)),
+        child: CachedNetworkImage(
+            imageUrl: url,
+            width: size,
+            height: size,
+            fit: BoxFit.cover,
+            errorWidget: (_, __, ___) => _placeholderAvatar(name, size)),
       );
     }
     return _placeholderAvatar(name, size);
@@ -1624,12 +1971,22 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
 
   Widget _placeholderAvatar(String name, double size) {
     final parts = name.trim().split(' ');
-    final initials = parts.length >= 2 ? '${parts[0][0]}${parts[1][0]}'.toUpperCase() : (parts.isNotEmpty && parts[0].isNotEmpty ? parts[0][0].toUpperCase() : '?');
+    final initials = parts.length >= 2
+        ? '${parts[0][0]}${parts[1][0]}'.toUpperCase()
+        : (parts.isNotEmpty && parts[0].isNotEmpty
+            ? parts[0][0].toUpperCase()
+            : '?');
     return Container(
-      width: size, height: size,
-      decoration: const BoxDecoration(gradient: AppColors.roseGradient, shape: BoxShape.circle),
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+          gradient: AppColors.roseGradient, shape: BoxShape.circle),
       alignment: Alignment.center,
-      child: Text(initials, style: GoogleFonts.dmSans(fontSize: size * 0.38, fontWeight: FontWeight.w700, color: Colors.white)),
+      child: Text(initials,
+          style: GoogleFonts.dmSans(
+              fontSize: size * 0.38,
+              fontWeight: FontWeight.w700,
+              color: Colors.white)),
     );
   }
 
@@ -1642,10 +1999,22 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Align(alignment: Alignment.topRight, child: IconButton(icon: const Icon(Icons.close, color: Colors.white, size: 28), onPressed: () => Navigator.pop(ctx))),
+            Align(
+                alignment: Alignment.topRight,
+                child: IconButton(
+                    icon:
+                        const Icon(Icons.close, color: Colors.white, size: 28),
+                    onPressed: () => Navigator.pop(ctx))),
             ClipRRect(
               borderRadius: BorderRadius.circular(12),
-              child: CachedNetworkImage(imageUrl: url, fit: BoxFit.contain, placeholder: (_, __) => const SizedBox(height: 200, child: Center(child: CircularProgressIndicator(color: Colors.white)))),
+              child: CachedNetworkImage(
+                  imageUrl: url,
+                  fit: BoxFit.contain,
+                  placeholder: (_, __) => const SizedBox(
+                      height: 200,
+                      child: Center(
+                          child:
+                              CircularProgressIndicator(color: Colors.white)))),
             ),
           ],
         ),
@@ -1681,9 +2050,11 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     try {
       final d = DateTime.parse(iso);
       final now = DateTime.now();
-      if (d.year == now.year && d.month == now.month && d.day == now.day) return 'Today';
+      if (d.year == now.year && d.month == now.month && d.day == now.day)
+        return 'Today';
       final y = now.subtract(const Duration(days: 1));
-      if (d.year == y.year && d.month == y.month && d.day == y.day) return 'Yesterday';
+      if (d.year == y.year && d.month == y.month && d.day == y.day)
+        return 'Yesterday';
       return '${d.month}/${d.day}/${d.year}';
     } catch (_) {
       return '';
@@ -1710,7 +2081,8 @@ class _DotsIndicator extends StatefulWidget {
   State<_DotsIndicator> createState() => _DotsIndicatorState();
 }
 
-class _DotsIndicatorState extends State<_DotsIndicator> with TickerProviderStateMixin {
+class _DotsIndicatorState extends State<_DotsIndicator>
+    with TickerProviderStateMixin {
   late final List<AnimationController> _controllers;
   late final List<Animation<double>> _animations;
 
@@ -1718,13 +2090,17 @@ class _DotsIndicatorState extends State<_DotsIndicator> with TickerProviderState
   void initState() {
     super.initState();
     _controllers = List.generate(3, (i) {
-      final c = AnimationController(vsync: this, duration: const Duration(milliseconds: 600));
+      final c = AnimationController(
+          vsync: this, duration: const Duration(milliseconds: 600));
       Future.delayed(Duration(milliseconds: i * 160), () {
         if (mounted) c.repeat(reverse: true);
       });
       return c;
     });
-    _animations = _controllers.map((c) => Tween<double>(begin: 0, end: -4).animate(CurvedAnimation(parent: c, curve: Curves.easeInOut))).toList();
+    _animations = _controllers
+        .map((c) => Tween<double>(begin: 0, end: -4)
+            .animate(CurvedAnimation(parent: c, curve: Curves.easeInOut)))
+        .toList();
   }
 
   @override
@@ -1742,8 +2118,14 @@ class _DotsIndicatorState extends State<_DotsIndicator> with TickerProviderState
       children: List.generate(3, (i) {
         return AnimatedBuilder(
           animation: _animations[i],
-          builder: (_, child) => Transform.translate(offset: Offset(0, _animations[i].value), child: child),
-          child: Container(width: 4.5, height: 4.5, margin: const EdgeInsets.symmetric(horizontal: 1), decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.grey[500])),
+          builder: (_, child) => Transform.translate(
+              offset: Offset(0, _animations[i].value), child: child),
+          child: Container(
+              width: 4.5,
+              height: 4.5,
+              margin: const EdgeInsets.symmetric(horizontal: 1),
+              decoration: BoxDecoration(
+                  shape: BoxShape.circle, color: Colors.grey[500])),
         );
       }),
     );
