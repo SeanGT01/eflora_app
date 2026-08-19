@@ -488,9 +488,11 @@ class ApiService {
   static Future<ApiResult> getStore(int storeId) async {
     try {
       print('📡 Getting store detail: $storeId');
+      // Send JWT when available so backend can attach default-address
+      // delivery coverage + customer map pin (same as web store detail).
       final res = await http.get(
         Uri.parse('$_api/customer/stores/$storeId'),
-        headers: await _headers(),
+        headers: await _headers(auth: true),
       ).timeout(const Duration(seconds: 10));
       return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
     } catch (e) {

@@ -12,6 +12,7 @@ import '../providers/chat_provider.dart';
 import '../services/app_quality.dart';
 import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
+import 'customer_default_avatar.dart';
 import 'chat_order_context_banner.dart';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -1092,7 +1093,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
             child: Row(
               children: [
-                _buildAvatar(logo, name, 40),
+                _buildAvatar(logo, name, 40, customerDefault: false),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Column(
@@ -1230,7 +1231,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Row(
                   children: [
-                    _buildAvatar(displayAvatar, displayName, 44),
+                    _buildAvatar(displayAvatar, displayName, 44, customerDefault: !isSeller),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -1330,7 +1331,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                   icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
                   onPressed: _backToInbox,
                   splashRadius: 18),
-              _buildAvatar(displayAvatar, displayName, 34),
+              _buildAvatar(displayAvatar, displayName, 34, customerDefault: !isSeller),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -1496,7 +1497,12 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               if (!isSent) ...[
-                _buildAvatar(msg.senderAvatar, msg.senderName ?? '', 22),
+                _buildAvatar(
+                  msg.senderAvatar,
+                  msg.senderName ?? '',
+                  22,
+                  customerDefault: msg.senderRole != 'seller' && msg.senderRole != 'admin',
+                ),
                 const SizedBox(width: 5),
               ],
               Flexible(
@@ -1955,7 +1961,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   // HELPERS
   // ═══════════════════════════════════════════════════════════════════════
 
-  Widget _buildAvatar(String? url, String name, double size) {
+  Widget _buildAvatar(String? url, String name, double size, {bool customerDefault = true}) {
     if (url != null && url.isNotEmpty) {
       return ClipOval(
         child: CachedNetworkImage(
@@ -1963,13 +1969,17 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
             width: size,
             height: size,
             fit: BoxFit.cover,
-            errorWidget: (_, __, ___) => _placeholderAvatar(name, size)),
+            errorWidget: (_, __, ___) =>
+                _placeholderAvatar(name, size, customerDefault: customerDefault)),
       );
     }
-    return _placeholderAvatar(name, size);
+    return _placeholderAvatar(name, size, customerDefault: customerDefault);
   }
 
-  Widget _placeholderAvatar(String name, double size) {
+  Widget _placeholderAvatar(String name, double size, {bool customerDefault = true}) {
+    if (customerDefault) {
+      return CustomerDefaultAvatar(size: size);
+    }
     final parts = name.trim().split(' ');
     final initials = parts.length >= 2
         ? '${parts[0][0]}${parts[1][0]}'.toUpperCase()

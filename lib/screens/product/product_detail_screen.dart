@@ -59,10 +59,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   List<Map<String, String>> _timeSlots = [];
   bool _timeSlotsLoading = false;
   bool _storeClosedOnDate = false;
+  String? _slotBlockReason;
+  bool _hasSchedule = false;
 
-  /// Weekday names the store trades on, taken from `store_schedule.schedules[].days`
-  /// exactly like the web `isStoreOpenOnDate()`. Empty means "no schedule set",
-  /// which the website treats as open every day.
+  /// Weekday names the store trades on, taken from `store_schedule.schedules[].days`.
+  /// Empty with `_hasSchedule == false` means hours are not configured.
   Set<String> _openDays = {};
 
   @override
@@ -131,22 +132,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
     final store = Store.fromJson(result.data as Map<String, dynamic>);
     final schedules = store.storeSchedule?['schedules'];
-    if (schedules is! List) return;
-
     final days = <String>{};
-    for (final entry in schedules) {
-      if (entry is Map && entry['days'] is List) {
-        for (final day in entry['days'] as List) {
-          days.add(day.toString().toLowerCase());
+    if (schedules is List) {
+      for (final entry in schedules) {
+        if (entry is Map && entry['days'] is List) {
+          for (final day in entry['days'] as List) {
+            days.add(day.toString().toLowerCase());
+          }
         }
       }
     }
-    setState(() => _openDays = days);
+    setState(() {
+      _openDays = days;
+      _hasSchedule = days.isNotEmpty;
+    });
   }
 
-  /// Mirrors the web `isStoreOpenOnDate()` — no schedule means every day is open.
+  /// Matches the website: no configured hours means the store is not bookable.
   bool _isStoreOpenOn(DateTime date) {
-    if (_openDays.isEmpty) return true;
+    if (!_hasSchedule || _openDays.isEmpty) return false;
     const names = [
       'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
     ];
@@ -177,6 +181,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   /// Auto-selects the nearest trading day within the 14-day booking window,
   /// same as the web quick-pick behaviour.
   void _selectFirstOpenDate() {
+    if (!_hasSchedule) {
+      setState(() {
+        _selectedDeliveryDate = null;
+        _selectedTimeSlot = null;
+        _storeClosedOnDate = false;
+        _slotBlockReason = 'no_schedule';
+        _timeSlots = [];
+        _timeSlotsLoading = false;
+      });
+      return;
+    }
     final open = _availableDates.where((d) => d['open'] != 'false').toList();
     if (open.isNotEmpty) {
       _selectDate(open.first);
@@ -216,6 +231,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       _selectedTimeSlot = null;
       _timeSlotsLoading = !closed;
       _storeClosedOnDate = closed;
+      _slotBlockReason = closed
+          ? (_hasSchedule ? 'closed' : 'no_schedule')
+          : null;
       _timeSlots = [];
     });
 
@@ -227,13 +245,29 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final result = await CheckoutService.fetchStoreTimeSlots(_product!.storeId, dateStr);
     if (!mounted) return;
 
-    final isOpen = result['is_open'] as bool? ?? true;
+    final isOpen = result['is_open'] as bool? ?? false;
+    final hasSchedule = result['has_schedule'] as bool? ?? false;
+    final blockReason = result['block_reason'] as String?;
 
-    if (!isOpen && (result['has_schedule'] as bool? ?? false)) {
+    if (!hasSchedule) {
       setState(() {
-        _storeClosedOnDate = true;
+        _hasSchedule = false;
+        _storeClosedOnDate = false;
+        _slotBlockReason = 'no_schedule';
         _timeSlotsLoading = false;
         _timeSlots = [];
+        _selectedTimeSlot = null;
+      });
+      return;
+    }
+
+    if (!isOpen || blockReason == 'closed') {
+      setState(() {
+        _storeClosedOnDate = true;
+        _slotBlockReason = 'closed';
+        _timeSlotsLoading = false;
+        _timeSlots = [];
+        _selectedTimeSlot = null;
       });
       return;
     }
@@ -268,6 +302,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     setState(() {
       _timeSlots = timeSlotList;
       _timeSlotsLoading = false;
+      _storeClosedOnDate = false;
+      _slotBlockReason = timeSlotList.isEmpty ? (blockReason ?? 'slots_passed') : null;
       _selectedTimeSlot = firstAvailable;
     });
   }
@@ -275,6 +311,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   /// Calendar mirroring the web flatpickr: today → +14 days, closed weekdays
   /// locked out entirely.
   void _showCalendarPicker() {
+    if (!_hasSchedule) return;
     final phToday = CheckoutService.normalizeToPhDate(CheckoutService.getPhilippineTime());
     final maxDate = phToday.add(const Duration(days: 14));
 
@@ -902,10 +939,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         padding: EdgeInsets.symmetric(vertical: 16),
                         child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
                       ))
+                    else if (!_hasSchedule || _slotBlockReason == 'no_schedule')
+                      _noticeCard(
+                        icon: Icons.schedule_rounded,
+                        text: 'This store has not set delivery hours yet.',
+                      )
                     else if (_storeClosedOnDate)
                       _noticeCard(
                         icon: Icons.storefront_outlined,
                         text: 'Store is closed on this day. Pick another date.',
+                      )
+                    else if (_slotBlockReason == 'order_cutoff')
+                      _noticeCard(
+                        icon: Icons.schedule_rounded,
+                        text: 'Same-day ordering is closed. Please choose another open day.',
+                      )
+                    else if (_slotBlockReason == 'lead_time')
+                      _noticeCard(
+                        icon: Icons.hourglass_bottom_rounded,
+                        text: 'Remaining slots are inside the prep window. Please choose a later slot or another date.',
                       )
                     else if (_timeSlots.isEmpty && _selectedDeliveryDate != null)
                       _noticeCard(
@@ -1390,7 +1442,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final isSelectOption = _product!.hasVariants && _selectedVariant == null && !_selectedIsMainProduct;
     final isOutOfStock = !canAddToCart && !isSelectOption;
     final isStoreClosed = _storeClosedOnDate;
-    final allSlotsPassed = !_storeClosedOnDate && _selectedDeliveryDate != null && _timeSlots.isNotEmpty && _timeSlots.every((s) => s['passed'] == 'true');
+    final hoursNotSet = !_hasSchedule || _slotBlockReason == 'no_schedule';
+    final allSlotsPassed = !_storeClosedOnDate &&
+        !_timeSlotsLoading &&
+        _timeSlots.isEmpty &&
+        (_selectedDeliveryDate != null || hoursNotSet);
     final noSlotSelected = _selectedDeliveryDate != null && !_storeClosedOnDate && _selectedTimeSlot == null && !_timeSlotsLoading;
     final outsideDelivery = _product!.canDeliverToCustomer == false;
 
@@ -1453,9 +1509,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         onPressed: null,
                         icon: Icons.shopping_bag_outlined,
                       )
-                    : (isStoreClosed || allSlotsPassed)
+                    : (hoursNotSet || isStoreClosed || allSlotsPassed)
                         ? RoseButton(
-                            label: isStoreClosed ? 'Store Closed' : 'No Slots Available',
+                            label: hoursNotSet
+                                ? 'Hours Not Set'
+                                : isStoreClosed
+                                    ? 'Store Closed'
+                                    : 'No Slots Available',
                             onPressed: null,
                             icon: Icons.close_rounded,
                             style: ElevatedButton.styleFrom(

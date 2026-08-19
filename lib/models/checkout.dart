@@ -125,6 +125,11 @@ class StoreOrderTotal {
   final List<String>? qrImages; // GCash QR codes per store
   final String? instructions; // GCash instructions
   final List<Map<String, dynamic>>? items; // Items in this store order
+  final bool allowCod;
+  final bool freeDeliveryEnabled;
+  final double? freeDeliveryMinimum;
+  final bool freeDeliveryApplied;
+  final double? amountToFreeDelivery;
 
   StoreOrderTotal({
     required this.storeId,
@@ -138,9 +143,31 @@ class StoreOrderTotal {
     this.qrImages,
     this.instructions,
     this.items,
+    this.allowCod = false,
+    this.freeDeliveryEnabled = false,
+    this.freeDeliveryMinimum,
+    this.freeDeliveryApplied = false,
+    this.amountToFreeDelivery,
   });
 
   factory StoreOrderTotal.fromJson(Map<String, dynamic> json) {
+    List<String>? qrImages;
+    if (json['qr_images'] is List) {
+      qrImages = List<String>.from(json['qr_images'] as List);
+    } else if (json['gcash_qr_codes'] is List) {
+      qrImages = (json['gcash_qr_codes'] as List)
+          .map((qr) {
+            if (qr is String) return qr;
+            if (qr is Map) {
+              return (qr['url'] ?? qr['cloudinary_url'] ?? qr['qr_image_url'] ?? '')
+                  .toString();
+            }
+            return '';
+          })
+          .where((u) => u.isNotEmpty)
+          .toList();
+    }
+
     return StoreOrderTotal(
       storeId: json['store_id'] is String ? int.parse(json['store_id'] as String) : (json['store_id'] as int? ?? 0),
       storeName: json['store_name'] ?? '',
@@ -150,9 +177,14 @@ class StoreOrderTotal {
       distanceKm: (json['distance_km'] as num?)?.toDouble() ?? 0.0,
       canDeliver: json['can_deliver'] ?? false,
       deliveryError: json['delivery_error'],
-      qrImages: List<String>.from(json['qr_images'] ?? []),
-      instructions: json['instructions'],
+      qrImages: qrImages,
+      instructions: json['instructions'] ?? json['gcash_instructions'],
       items: (json['items'] as List?)?.map((i) => i as Map<String, dynamic>).toList(),
+      allowCod: json['allow_cod'] == true,
+      freeDeliveryEnabled: json['free_delivery_enabled'] == true,
+      freeDeliveryMinimum: (json['free_delivery_minimum'] as num?)?.toDouble(),
+      freeDeliveryApplied: json['free_delivery_applied'] == true,
+      amountToFreeDelivery: (json['amount_to_free_delivery'] as num?)?.toDouble(),
     );
   }
 }

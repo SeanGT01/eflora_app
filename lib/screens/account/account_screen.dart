@@ -9,6 +9,7 @@ import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/customer_default_avatar.dart';
 import '../auth/login_screen.dart';
 import '../auth/register_screen.dart';
 import '../orders/orders_screen.dart';
@@ -285,15 +286,7 @@ class _LoggedInView extends StatelessWidget {
   }
 
   Widget _defaultProfileAvatar() {
-    return Container(
-      alignment: Alignment.center,
-      decoration: const BoxDecoration(gradient: AppColors.blushGradient),
-      child: const Icon(
-        Icons.person_rounded,
-        size: 34,
-        color: Colors.white,
-      ),
-    );
+    return const CustomerDefaultAvatar(size: 64);
   }
 
   Widget _buildMenuSection(

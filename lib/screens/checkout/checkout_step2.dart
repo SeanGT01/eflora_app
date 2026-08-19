@@ -328,57 +328,16 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                 ],
                 _buildPriceRow('Subtotal', storeOrder.subtotal),
                 const Divider(),
-                _buildPriceRow('Delivery Fee', storeOrder.deliveryFee, isDeliveryFee: true),
+                _buildPriceRow(
+                  'Delivery Fee',
+                  storeOrder.deliveryFee,
+                  isDeliveryFee: true,
+                  isFree: storeOrder.canDeliver &&
+                      (storeOrder.freeDeliveryApplied || storeOrder.deliveryFee <= 0),
+                ),
+                if (storeOrder.canDeliver) ..._deliveryFeeNotes(storeOrder),
                 const Divider(),
                 _buildPriceRow('Total', storeOrder.total, isBold: true, isTotal: true),
-                const SizedBox(height: 12),
-                if (storeOrder.qrImages != null && storeOrder.qrImages!.isNotEmpty)
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('GCash QR Code', style: Theme.of(context).textTheme.titleSmall),
-                      const SizedBox(height: 8),
-                      Container(
-                        height: 200,
-                        decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.6),
-                          border: Border.all(color: AppColors.glassBorder, width: 1.5),
-                          borderRadius: BorderRadius.circular(AppRadius.lg),
-                        ),
-                        child: Image.network(storeOrder.qrImages![0], fit: BoxFit.contain),
-                      ),
-                      const SizedBox(height: 8),
-                    ],
-                  ),
-                if (storeOrder.instructions != null)
-                  Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: _amberBg,
-                      border: Border.all(color: _amberBorder),
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'Payment Instructions',
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
-                              ?.copyWith(color: _amberText),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          storeOrder.instructions!,
-                          style: Theme.of(context)
-                              .textTheme
-                              .bodySmall
-                              ?.copyWith(color: _amberText),
-                        ),
-                      ],
-                    ),
-                  ),
               ],
             ),
           ),
@@ -387,18 +346,59 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
     );
   }
 
+  List<Widget> _deliveryFeeNotes(StoreOrderTotal storeOrder) {
+    final applied = storeOrder.freeDeliveryApplied ||
+        (storeOrder.deliveryFee <= 0 && storeOrder.freeDeliveryEnabled);
+    if (applied) {
+      return [
+        const SizedBox(height: 4),
+        Text(
+          'Your order qualifies for free delivery.',
+          style: GoogleFonts.dmSans(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            color: AppColors.successGreen,
+          ),
+        ),
+      ];
+    }
+
+    if (!storeOrder.freeDeliveryEnabled) return const [];
+
+    final remaining = storeOrder.amountToFreeDelivery ??
+        ((storeOrder.freeDeliveryMinimum ?? 0) - storeOrder.subtotal);
+    if (remaining <= 0) return const [];
+
+    final minLabel = (storeOrder.freeDeliveryMinimum ?? 0).toStringAsFixed(0);
+    return [
+      const SizedBox(height: 4),
+      Text(
+        'Add ₱${remaining.toStringAsFixed(2)} more to get free delivery (min ₱$minLabel).',
+        style: GoogleFonts.dmSans(
+          fontSize: 12,
+          fontWeight: FontWeight.w500,
+          color: const Color(0xFF9A5B00),
+        ),
+      ),
+    ];
+  }
+
   Widget _buildPriceRow(
     String label,
     double amount, {
     bool isBold = false,
     bool isTotal = false,
     bool isDeliveryFee = false,
+    bool isFree = false,
   }) {
-    final color = isDeliveryFee
-        ? const Color(0xFF9A5B00)
-        : isTotal
-            ? AppColors.deepRose
-            : AppColors.charcoal;
+    final color = isFree
+        ? AppColors.successGreen
+        : isDeliveryFee
+            ? const Color(0xFF9A5B00)
+            : isTotal
+                ? AppColors.deepRose
+                : AppColors.charcoal;
+    final amountText = isFree ? 'FREE' : '₱${amount.toStringAsFixed(2)}';
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -413,7 +413,7 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
         ),
         isTotal
             ? Text(
-                '₱${amount.toStringAsFixed(2)}',
+                amountText,
                 style: GoogleFonts.cormorantGaramond(
                   fontSize: 20,
                   fontWeight: FontWeight.w600,
@@ -421,9 +421,9 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                 ),
               )
             : Text(
-                '₱${amount.toStringAsFixed(2)}',
+                amountText,
                 style: GoogleFonts.dmSans(
-                  fontWeight: isBold ? FontWeight.w700 : FontWeight.w600,
+                  fontWeight: isBold || isFree ? FontWeight.w700 : FontWeight.w600,
                   fontSize: isBold ? 14 : 13,
                   color: color,
                 ),

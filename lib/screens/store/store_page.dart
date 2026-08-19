@@ -214,7 +214,10 @@ class _StorePageState extends State<StorePage>
             ),
             // ── Store identity (scrolls away with content) ──
             SliverToBoxAdapter(
-              child: _buildStoreHeader(store),
+              child: Container(
+                color: AppColors.pageCream,
+                child: _buildStoreHeader(store),
+              ),
             ),
             // ── Tabs stick under the app bar while scrolling ──
             SliverPersistentHeader(

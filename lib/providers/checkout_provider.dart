@@ -90,7 +90,7 @@ class CheckoutProvider extends ChangeNotifier {
     }
   }
 
-  Future<bool> validateCheckout() async {
+  Future<bool> validateCheckout({List<Map<String, dynamic>>? items}) async {
     if (!canProceedToStep1()) {
       _state = _state.copyWith(
         error: 'Please select a delivery address',
@@ -118,6 +118,7 @@ class CheckoutProvider extends ChangeNotifier {
         response = await CheckoutService.validateCheckout(
           addressId: _state.selectedAddress!.id ?? 0,
           deliveryNotes: _state.deliveryNotes ?? '',
+          items: items,
         );
       }
 
@@ -176,6 +177,7 @@ class CheckoutProvider extends ChangeNotifier {
     Map<int, Map<String, String>>? storePaymentProofs,
     Map<int, DateTime>? storeDeliveryDates,
     Map<int, String>? storeDeliveryTimes,
+    Map<int, String>? storePaymentMethods,
   }) async {
     if (!canProceedToStep2()) {
       _state = _state.copyWith(error: 'Please complete previous steps');
@@ -191,6 +193,12 @@ class CheckoutProvider extends ChangeNotifier {
 
       if (_buyNowMode && _buyNowProductId != null) {
         // Buy Now mode: create order directly from product
+        final firstProof = (storePaymentProofs != null && storePaymentProofs.isNotEmpty)
+            ? storePaymentProofs.values.first
+            : null;
+        final firstMethod = (storePaymentMethods != null && storePaymentMethods.isNotEmpty)
+            ? storePaymentMethods.values.first
+            : 'gcash';
         response = await CheckoutService.buyNowCreateOrder(
           productId: _buyNowProductId!,
           variantId: _buyNowVariantId,
@@ -199,8 +207,9 @@ class CheckoutProvider extends ChangeNotifier {
           deliveryNotes: _state.deliveryNotes ?? '',
           deliveryDate: storeDeliveryDates!.values.first,
           deliveryTime: storeDeliveryTimes!.values.first,
-          paymentProofUrl: paymentProofUrl ?? storePaymentProofs?.values.first['url'],
-          paymentProofPublicId: paymentProofPublicId ?? storePaymentProofs?.values.first['public_id'],
+          paymentProofUrl: paymentProofUrl ?? firstProof?['url'],
+          paymentProofPublicId: paymentProofPublicId ?? firstProof?['public_id'],
+          paymentMethod: firstMethod,
         );
       } else {
         // Normal cart checkout with per-store payment proofs
@@ -223,6 +232,7 @@ class CheckoutProvider extends ChangeNotifier {
           validatedOrders: validatedOrders,
           storeDeliveryDates: storeDeliveryDates,
           storeDeliveryTimes: storeDeliveryTimes,
+          storePaymentMethods: storePaymentMethods,
         );
       }
 

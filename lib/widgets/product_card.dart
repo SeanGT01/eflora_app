@@ -257,25 +257,19 @@ class ProductCard extends StatelessWidget {
   }
 
   /// Build action button based on product stock status
-  /// Matches web logic: Add to Basket → Select Variant → Out of Stock
+  /// Matches web: if main product or any variant has stock, + opens the
+  /// quick-add modal. Fully out of stock goes to product details.
   Widget _buildActionButton(BuildContext context, Product product) {
     final btn = context.s(28).clamp(26.0, 34.0);
     final icon = context.s(15).clamp(13.0, 18.0);
-    final mainProductHasStock = product.stockQuantity > 0 && product.isAvailable;
-    final hasVariantStock =
-        product.variants.any((v) => v.isAvailable && v.stockQuantity > 0);
 
-    if (mainProductHasStock) {
+    if (product.hasAnySellableStock) {
       return GradientCircleButton(
         icon: Icons.add,
         size: btn,
         iconSize: icon,
         onPressed: onAddToCart,
       );
-    }
-
-    if (hasVariantStock) {
-      return _outlineAction(context, Icons.add, onTap: onTap);
     }
 
     return _outlineAction(

@@ -7,6 +7,7 @@ import 'dart:io';
 import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/customer_default_avatar.dart';
 import '../../widgets/common.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -244,14 +245,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Widget _defaultProfileAvatar() {
-    return Container(
-      color: AppColors.cream,
-      alignment: Alignment.center,
-      child: const Icon(
-        Icons.account_circle,
-        size: 78,
-        color: AppColors.muted,
-      ),
-    );
+    return const CustomerDefaultAvatar(size: 100);
   }
 }

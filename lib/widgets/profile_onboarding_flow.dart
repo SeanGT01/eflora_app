@@ -12,7 +12,8 @@ import 'common.dart';
 
 const _kPromptOnboardingKey = 'prompt_profile_onboarding';
 
-/// Call after a successful OTP registration so home can run the required modals.
+/// Call after a successful OTP registration so the next customer login
+/// prioritizes the required-profile flow.
 Future<void> markProfileOnboardingRequired() async {
   final p = await SharedPreferences.getInstance();
   await p.setBool(_kPromptOnboardingKey, true);
@@ -25,49 +26,74 @@ Future<bool> _consumeOnboardingFlag() async {
   return needed;
 }
 
-/// Gender → birthday → add address (if none). Mirrors web post-registration flow.
+bool _onboardingInFlight = false;
+
+/// Gender → birthday → add address (if none).
+///
+/// Runs for newly registered customers (flag) and for any logged-in customer
+/// whose profile is still incomplete. This avoids a race where Home checked
+/// the flag before registration finished marking it.
 Future<void> maybeRunProfileOnboarding(BuildContext context) async {
+  if (_onboardingInFlight) return;
+
   final auth = context.read<AuthProvider>();
   if (!auth.isLoggedIn) return;
+  if (auth.user?.role != 'customer') return;
 
-  final prompted = await _consumeOnboardingFlag();
-  if (!prompted || !context.mounted) return;
-
-  var user = auth.user;
-  final needsGender = (user?.gender ?? '').trim().isEmpty;
-  final needsBirthday = (user?.birthday ?? '').trim().isEmpty;
-
-  if (needsGender) {
-    final ok = await _showGenderStep(context);
-    if (!ok || !context.mounted) return;
-    await auth.refreshUser();
-    user = auth.user;
-  }
-
-  if ((user?.birthday ?? '').trim().isEmpty || needsBirthday) {
+  _onboardingInFlight = true;
+  try {
+    // Registration sets this; incomplete profiles also continue below.
+    await _consumeOnboardingFlag();
     if (!context.mounted) return;
-    final stillNeeds = (auth.user?.birthday ?? '').trim().isEmpty;
-    if (stillNeeds) {
+
+    // Pull latest gender/birthday from the server before deciding.
+    await auth.refreshUser();
+    if (!context.mounted) return;
+
+    var user = auth.user;
+    final needsGender = (user?.gender ?? '').trim().isEmpty;
+    final needsBirthday = (user?.birthday ?? '').trim().isEmpty;
+
+    final addresses = context.read<AddressProvider>();
+    if (addresses.addresses.isEmpty) {
+      await addresses.loadAddresses();
+    }
+    if (!context.mounted) return;
+    final needsAddress = addresses.addresses.isEmpty;
+
+    if (!needsGender && !needsBirthday && !needsAddress) return;
+
+    if (needsGender) {
+      final ok = await _showGenderStep(context);
+      if (!ok || !context.mounted) return;
+      await auth.refreshUser();
+      user = auth.user;
+    }
+
+    final birthdayStillMissing = (auth.user?.birthday ?? '').trim().isEmpty;
+    if (birthdayStillMissing) {
+      if (!context.mounted) return;
       final ok = await _showBirthdayStep(context);
       if (!ok || !context.mounted) return;
       await auth.refreshUser();
     }
-  }
 
-  if (!context.mounted) return;
-  final addresses = context.read<AddressProvider>();
-  if (!addresses.isLoading && addresses.addresses.isEmpty) {
-    await addresses.loadAddresses();
-  }
-  if (!context.mounted) return;
-  if (addresses.addresses.isEmpty) {
-    showToast(context, 'Please add your delivery address to continue.');
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => const AddEditAddressScreen(),
-        fullscreenDialog: true,
-      ),
-    );
+    if (!context.mounted) return;
+    if (addresses.addresses.isEmpty) {
+      await addresses.loadAddresses();
+    }
+    if (!context.mounted) return;
+    if (addresses.addresses.isEmpty) {
+      showToast(context, 'Please add your delivery address to continue.');
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => const AddEditAddressScreen(),
+          fullscreenDialog: true,
+        ),
+      );
+    }
+  } finally {
+    _onboardingInFlight = false;
   }
 }
 
@@ -78,6 +104,7 @@ Future<bool> _showGenderStep(BuildContext context) async {
   final result = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
+    useRootNavigator: true,
     builder: (ctx) {
       return StatefulBuilder(
         builder: (ctx, setLocal) {
@@ -155,7 +182,7 @@ Future<bool> _showGenderStep(BuildContext context) async {
                       );
                       return;
                     }
-                    Navigator.of(ctx).pop(true);
+                    Navigator.of(ctx, rootNavigator: true).pop(true);
                   },
                   child: const Text('Continue'),
                 ),
@@ -175,6 +202,7 @@ Future<bool> _showBirthdayStep(BuildContext context) async {
   final result = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
+    useRootNavigator: true,
     builder: (ctx) {
       return StatefulBuilder(
         builder: (ctx, setLocal) {
@@ -252,7 +280,7 @@ Future<bool> _showBirthdayStep(BuildContext context) async {
                       );
                       return;
                     }
-                    Navigator.of(ctx).pop(true);
+                    Navigator.of(ctx, rootNavigator: true).pop(true);
                   },
                   child: const Text('Continue'),
                 ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/checkout.dart';
 import '../../providers/address_provider.dart';
+import '../../providers/cart_provider.dart';
 import '../../providers/checkout_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -347,7 +348,15 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
   }
 
   void _proceedToStep2(BuildContext context, CheckoutProvider provider) async {
-    final success = await provider.validateCheckout();
+    final selectedItems = context.read<CartProvider>().selectedItems;
+    final success = await provider.validateCheckout(
+      items: selectedItems
+          .map((item) => {
+                'item_id': item.id,
+                'quantity': item.quantity,
+              })
+          .toList(),
+    );
     if (!context.mounted) return;
     if (success) {
       widget.onNext();

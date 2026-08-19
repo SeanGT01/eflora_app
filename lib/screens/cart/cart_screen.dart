@@ -394,6 +394,12 @@ class _CartScreenState extends State<CartScreen> {
     final result = await CheckoutService.validateCheckout(
       addressId: address!.id!,
       deliveryNotes: '',
+      items: selectedItems
+          .map((item) => {
+                'item_id': item.id,
+                'quantity': item.quantity,
+              })
+          .toList(),
     );
     if (!mounted) return;
     setState(() => _checkingDelivery = false);

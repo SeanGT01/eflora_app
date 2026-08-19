@@ -12,6 +12,7 @@ import '../../providers/chat_provider.dart';
 import '../../services/app_quality.dart';
 import '../../services/chat_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/customer_default_avatar.dart';
 import '../../widgets/chat_order_context_banner.dart';
 
 /// Instagram-style chat detail screen.
@@ -321,7 +322,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         titleSpacing: 0,
         title: Row(
           children: [
-            _buildAvatar(avatarUrl, displayName, 34),
+            _buildAvatar(avatarUrl, displayName, 34, customerDefault: !isSeller),
             const SizedBox(width: 10),
             Expanded(
               child: Column(
@@ -437,7 +438,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               if (!isSent) ...[
-                _buildAvatar(msg.senderAvatar, msg.senderName ?? '', 24),
+                _buildAvatar(
+                  msg.senderAvatar,
+                  msg.senderName ?? '',
+                  24,
+                  customerDefault: msg.senderRole != 'seller' && msg.senderRole != 'admin',
+                ),
                 const SizedBox(width: 6),
               ],
               Flexible(
@@ -711,7 +717,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  Widget _buildAvatar(String? url, String name, double size) {
+  Widget _buildAvatar(String? url, String name, double size, {bool customerDefault = true}) {
     if (url != null && url.isNotEmpty) {
       return ClipOval(
         child: CachedNetworkImage(
@@ -719,14 +725,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           width: size,
           height: size,
           fit: BoxFit.cover,
-          errorWidget: (_, __, ___) => _placeholderAvatar(name, size),
+          errorWidget: (_, __, ___) => _placeholderAvatar(name, size, customerDefault: customerDefault),
         ),
       );
     }
-    return _placeholderAvatar(name, size);
+    return _placeholderAvatar(name, size, customerDefault: customerDefault);
   }
 
-  Widget _placeholderAvatar(String name, double size) {
+  Widget _placeholderAvatar(String name, double size, {bool customerDefault = true}) {
+    if (customerDefault) {
+      return CustomerDefaultAvatar(size: size);
+    }
     final parts = name.trim().split(' ');
     final initials = parts.length >= 2
         ? '${parts[0][0]}${parts[1][0]}'.toUpperCase()

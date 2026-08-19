@@ -8,6 +8,7 @@ import '../../utils/lowercase_email_formatter.dart';
 import '../../widgets/auth_chrome.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
+import '../main_shell.dart';
 import 'forgot_password_otp_screen.dart';
 import 'register_screen.dart';
 
@@ -149,6 +150,8 @@ class _LoginScreenState extends State<LoginScreen> {
           Navigator.of(context).pop();
         }
       } else {
+        // Prefer Home so the required-info dialogs are visible after login.
+        MainShell.switchTab(context, 0);
         if (mounted) {
           Navigator.of(context).pop();
         }

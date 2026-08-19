@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../models/chat.dart';
 import '../../providers/chat_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/customer_default_avatar.dart';
 import 'chat_detail_screen.dart';
 
 /// Instagram-style chat inbox listing all conversations.
@@ -189,7 +190,7 @@ class _ConversationTile extends StatelessWidget {
           child: Row(
             children: [
               // Avatar
-              _buildAvatar(avatarUrl, displayName),
+              _buildAvatar(avatarUrl, displayName, customerDefault: !isSeller),
               const SizedBox(width: 12),
               // Name + last message
               Expanded(
@@ -258,7 +259,7 @@ class _ConversationTile extends StatelessWidget {
     );
   }
 
-  Widget _buildAvatar(String? url, String name) {
+  Widget _buildAvatar(String? url, String name, {bool customerDefault = true}) {
     if (url != null && url.isNotEmpty) {
       return ClipOval(
         child: CachedNetworkImage(
@@ -266,15 +267,18 @@ class _ConversationTile extends StatelessWidget {
           width: 48,
           height: 48,
           fit: BoxFit.cover,
-          placeholder: (_, __) => _placeholderAvatar(name),
-          errorWidget: (_, __, ___) => _placeholderAvatar(name),
+          placeholder: (_, __) => _placeholderAvatar(name, customerDefault: customerDefault),
+          errorWidget: (_, __, ___) => _placeholderAvatar(name, customerDefault: customerDefault),
         ),
       );
     }
-    return _placeholderAvatar(name);
+    return _placeholderAvatar(name, customerDefault: customerDefault);
   }
 
-  Widget _placeholderAvatar(String name) {
+  Widget _placeholderAvatar(String name, {bool customerDefault = true}) {
+    if (customerDefault) {
+      return const CustomerDefaultAvatar(size: 48);
+    }
     final initials = _getInitials(name);
     return Container(
       width: 48,

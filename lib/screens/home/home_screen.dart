@@ -172,7 +172,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   List<Store> _stores = [];
   bool _loadingProducts = true;
   bool _loadingStores = true;
-  bool _onboardingChecked = false;
+  /// Last customer id we already attempted onboarding for (null = guest).
+  String? _onboardingForUserId;
   String _selectedCategorySlug = 'all'; // Using slug from CategoryProvider
   bool _browseOutsideLocation = false;
   bool _browseLimitationsDismissed =
@@ -294,24 +295,31 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     super.didChangeDependencies();
     // IndexedStack keeps Home alive — re-fetch when login/logout changes
     // so location filtering matches the signed-in default address (like web).
-    final userId = context.watch<AuthProvider>().user?.id.toString();
+    final auth = context.watch<AuthProvider>();
+    final userId = auth.user?.id.toString();
     if (!_authIdentityTracked || userId != _lastAuthUserId) {
       final shouldReload = _authIdentityTracked;
       _authIdentityTracked = true;
       _lastAuthUserId = userId;
       if (shouldReload) {
         _browseOutsideLocation = false;
-        _onboardingChecked = false;
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (mounted) _loadData();
         });
       }
     }
-    if (!_onboardingChecked && context.read<AuthProvider>().isLoggedIn) {
-      _onboardingChecked = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) maybeRunProfileOnboarding(context);
-      });
+
+    // Required gender / birthday / address prompts for customers.
+    // Track per user id so a fresh login after registration always re-runs.
+    if (auth.isLoggedIn && auth.user?.role == 'customer') {
+      if (_onboardingForUserId != userId) {
+        _onboardingForUserId = userId;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) maybeRunProfileOnboarding(context);
+        });
+      }
+    } else {
+      _onboardingForUserId = null;
     }
   }
 

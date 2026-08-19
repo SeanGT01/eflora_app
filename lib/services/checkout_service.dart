@@ -9,16 +9,80 @@ import 'dart:developer' as developer;
 class CheckoutService {
   static const String _baseUrl = 'https://eflora-system-production.up.railway.app/api/v1/checkout';
 
+  /// Extract GCash QR image URLs from API `gcash_qr_codes` (primary first).
+  /// Backend [GCashQR.to_dict] uses `url`, not `qr_image_url`.
+  static List<String> extractQrImageUrls(dynamic rawCodes) {
+    if (rawCodes is! List || rawCodes.isEmpty) return const [];
+
+    final entries = <Map<String, dynamic>>[];
+    for (final item in rawCodes) {
+      if (item is Map) {
+        entries.add(Map<String, dynamic>.from(item));
+      } else if (item is String && item.trim().isNotEmpty) {
+        entries.add({'url': item.trim()});
+      }
+    }
+    if (entries.isEmpty) return const [];
+
+    entries.sort((a, b) {
+      final aPrimary = a['is_primary'] == true ? 0 : 1;
+      final bPrimary = b['is_primary'] == true ? 0 : 1;
+      if (aPrimary != bPrimary) return aPrimary - bPrimary;
+      final aOrder = (a['sort_order'] as num?)?.toInt() ?? 0;
+      final bOrder = (b['sort_order'] as num?)?.toInt() ?? 0;
+      return aOrder - bOrder;
+    });
+
+    return entries
+        .map((qr) {
+          final url = (qr['url'] ??
+                  qr['cloudinary_url'] ??
+                  qr['qr_image_url'] ??
+                  '')
+              .toString()
+              .trim();
+          return url;
+        })
+        .where((url) => url.isNotEmpty)
+        .toList();
+  }
+
+  static StoreOrderTotal storeTotalFromOrder(Map<String, dynamic> order) {
+    final rawSid = order['store_id'];
+    final parsedSid = rawSid is int ? rawSid : int.parse(rawSid.toString());
+    return StoreOrderTotal(
+      storeId: parsedSid,
+      storeName: order['store_name'] ?? 'Unknown Store',
+      subtotal: (order['subtotal'] as num?)?.toDouble() ?? 0.0,
+      deliveryFee: (order['delivery_fee'] as num?)?.toDouble() ?? 0.0,
+      total: (order['total'] as num?)?.toDouble() ?? 0.0,
+      distanceKm: (order['distance_km'] as num?)?.toDouble() ?? 0.0,
+      canDeliver: true,
+      qrImages: extractQrImageUrls(order['gcash_qr_codes']),
+      instructions: order['gcash_instructions'] as String?,
+      items: (order['items'] as List?)
+          ?.map((i) => i as Map<String, dynamic>)
+          .toList(),
+      allowCod: order['allow_cod'] == true,
+      freeDeliveryEnabled: order['free_delivery_enabled'] == true,
+      freeDeliveryMinimum: (order['free_delivery_minimum'] as num?)?.toDouble(),
+      freeDeliveryApplied: order['free_delivery_applied'] == true,
+      amountToFreeDelivery: (order['amount_to_free_delivery'] as num?)?.toDouble(),
+    );
+  }
+
   /// Validate checkout - sends cart delivery address to backend
   /// Backend will validate delivery, calculate fees, return store totals and QR codes
   static Future<ApiResult> validateCheckout({
     required int addressId,
     required String deliveryNotes,
+    List<Map<String, dynamic>>? items,
   }) async {
     try {
       final payload = {
         'delivery_address_id': addressId,
         'delivery_notes': deliveryNotes,
+        if (items != null && items.isNotEmpty) 'items': items,
       };
 
       developer.log('Validating checkout: $payload');
@@ -70,25 +134,7 @@ class CheckoutService {
         double grandTotal = 0;
 
         for (final order in orders) {
-          final rawSid = order['store_id'];
-          final parsedSid = rawSid is int ? rawSid : int.parse(rawSid.toString());
-          final storeTotal = StoreOrderTotal(
-            storeId: parsedSid,
-            storeName: order['store_name'] ?? 'Unknown Store',
-            subtotal: (order['subtotal'] as num?)?.toDouble() ?? 0.0,
-            deliveryFee: (order['delivery_fee'] as num?)?.toDouble() ?? 0.0,
-            total: (order['total'] as num?)?.toDouble() ?? 0.0,
-            distanceKm: (order['distance_km'] as num?)?.toDouble() ?? 0.0,
-            canDeliver: true,
-            qrImages: (order['gcash_qr_codes'] as List?)
-                ?.map((qr) => qr['qr_image_url'] as String? ?? '')
-                .where((url) => url.isNotEmpty)
-                .toList(),
-            instructions: order['gcash_instructions'] as String?,
-            items: (order['items'] as List?)
-                ?.map((i) => i as Map<String, dynamic>)
-                .toList(),
-          );
+          final storeTotal = storeTotalFromOrder(Map<String, dynamic>.from(order as Map));
           
           storeOrderTotals.add(storeTotal);
           grandTotal += storeTotal.total;
@@ -257,6 +303,7 @@ class CheckoutService {
     List<Map<String, dynamic>>? validatedOrders,
     Map<int, DateTime>? storeDeliveryDates,
     Map<int, String>? storeDeliveryTimes,
+    Map<int, String>? storePaymentMethods,
   }) async {
     try {
       // Build per-store order data with individual payment proofs
@@ -266,6 +313,11 @@ class CheckoutService {
         for (final order in validatedOrders) {
           final storeIdRaw = order['store_id'];
           final storeId = storeIdRaw is String ? int.parse(storeIdRaw) : (storeIdRaw as int);
+          final paymentMethod =
+              (storePaymentMethods?[storeId] ?? order['payment_method'] ?? 'gcash')
+                  .toString()
+                  .toLowerCase();
+          final isCod = paymentMethod == 'cod';
           final orderEntry = <String, dynamic>{
             'store_id': storeId,
             'subtotal': order['subtotal'],
@@ -273,20 +325,23 @@ class CheckoutService {
             'distance_km': order['distance_km'],
             'total': order['total'],
             'items': order['items'],
+            'payment_method': isCod ? 'cod' : 'gcash',
             if (storeDeliveryDates != null && storeDeliveryDates.containsKey(storeId))
               'requested_delivery_date': DateFormat('yyyy-MM-dd').format(storeDeliveryDates[storeId]!),
             if (storeDeliveryTimes != null && storeDeliveryTimes.containsKey(storeId))
               'requested_delivery_time': storeDeliveryTimes[storeId],
           };
 
-          // Per-store payment proof
-          if (storePaymentProofs != null && storePaymentProofs.containsKey(storeId)) {
-            orderEntry['payment_proof_url'] = storePaymentProofs[storeId]!['url'];
-            orderEntry['payment_proof_public_id'] = storePaymentProofs[storeId]!['public_id'];
-          } else if (paymentProofUrl != null) {
-            // Fallback to single payment proof for all stores
-            orderEntry['payment_proof_url'] = paymentProofUrl;
-            orderEntry['payment_proof_public_id'] = paymentProofPublicId;
+          // Per-store payment proof (GCash only)
+          if (!isCod) {
+            if (storePaymentProofs != null && storePaymentProofs.containsKey(storeId)) {
+              orderEntry['payment_proof_url'] = storePaymentProofs[storeId]!['url'];
+              orderEntry['payment_proof_public_id'] = storePaymentProofs[storeId]!['public_id'];
+            } else if (paymentProofUrl != null) {
+              // Fallback to single payment proof for all stores
+              orderEntry['payment_proof_url'] = paymentProofUrl;
+              orderEntry['payment_proof_public_id'] = paymentProofPublicId;
+            }
           }
 
           ordersData.add(orderEntry);
@@ -385,25 +440,7 @@ class CheckoutService {
         double grandTotal = 0;
 
         for (final order in orders) {
-          final rawSid = order['store_id'];
-          final parsedSid = rawSid is int ? rawSid : int.parse(rawSid.toString());
-          final storeTotal = StoreOrderTotal(
-            storeId: parsedSid,
-            storeName: order['store_name'] ?? 'Unknown Store',
-            subtotal: (order['subtotal'] as num?)?.toDouble() ?? 0.0,
-            deliveryFee: (order['delivery_fee'] as num?)?.toDouble() ?? 0.0,
-            total: (order['total'] as num?)?.toDouble() ?? 0.0,
-            distanceKm: (order['distance_km'] as num?)?.toDouble() ?? 0.0,
-            canDeliver: true,
-            qrImages: (order['gcash_qr_codes'] as List?)
-                ?.map((qr) => qr['qr_image_url'] as String? ?? '')
-                .where((url) => url.isNotEmpty)
-                .toList(),
-            instructions: order['gcash_instructions'] as String?,
-            items: (order['items'] as List?)
-                ?.map((i) => i as Map<String, dynamic>)
-                .toList(),
-          );
+          final storeTotal = storeTotalFromOrder(Map<String, dynamic>.from(order as Map));
           storeOrderTotals.add(storeTotal);
           grandTotal += storeTotal.total;
         }
@@ -462,6 +499,7 @@ class CheckoutService {
     required String deliveryTime,
     String? paymentProofUrl,
     String? paymentProofPublicId,
+    String paymentMethod = 'gcash',
   }) async {
     try {
       final token = await ApiService.getToken();
@@ -478,8 +516,11 @@ class CheckoutService {
         'delivery_notes': deliveryNotes,
         'requested_delivery_date': DateFormat('yyyy-MM-dd').format(deliveryDate),
         'requested_delivery_time': deliveryTime,
-        'payment_proof_url': paymentProofUrl,
-        'payment_proof_public_id': paymentProofPublicId,
+        'payment_method': paymentMethod == 'cod' ? 'cod' : 'gcash',
+        if (paymentMethod != 'cod') ...{
+          'payment_proof_url': paymentProofUrl,
+          'payment_proof_public_id': paymentProofPublicId,
+        },
       };
 
       developer.log('Buy Now create order: $payload');
@@ -558,21 +599,40 @@ class CheckoutService {
         final slots = (data['time_slots'] as List)
             .map((s) => s['value'] as String)
             .toList();
+        final labels = Map.fromEntries(
+          (data['time_slots'] as List).map(
+            (s) => MapEntry(s['value'] as String, s['label'] as String),
+          ),
+        );
         return {
           'success': true,
           'slots': slots,
-          'labels': Map.fromEntries(
-            (data['time_slots'] as List).map((s) => MapEntry(s['value'] as String, s['label'] as String)),
-          ),
-          'is_open': data['is_open'] ?? true,
+          'labels': labels,
+          'is_open': data['is_open'] ?? false,
           'has_schedule': data['has_schedule'] ?? false,
+          'block_reason': asBlockReason(data['block_reason']),
+          'order_cutoff': data['order_cutoff'],
+          'open_days': (data['open_days'] as List?)
+                  ?.map((day) => day.toString().toLowerCase())
+                  .toList() ??
+              const <String>[],
         };
       }
 
-      return {'success': false, 'slots': <String>[], 'is_open': true, 'has_schedule': false};
+      return {
+        'success': false,
+        'slots': <String>[],
+        'is_open': false,
+        'has_schedule': false,
+      };
     } catch (e) {
       developer.log('Error fetching store time slots: $e', error: e);
-      return {'success': false, 'slots': <String>[], 'is_open': true, 'has_schedule': false};
+      return {
+        'success': false,
+        'slots': <String>[],
+        'is_open': false,
+        'has_schedule': false,
+      };
     }
   }
 
@@ -634,7 +694,7 @@ class CheckoutService {
     }
   }
 
-  /// Check if a time slot has passed (for today)
+  /// Check if a time slot has already started (for today, Philippine time).
   static bool isTimeSlotPassed(String timeSlot) {
     try {
       final phTime = getPhilippineTime();
@@ -643,12 +703,109 @@ class CheckoutService {
       final parts = timeSlot.split('-');
       if (parts.length != 2) return false;
 
-      final endTime = DateFormat('HH:mm').parse(parts[1].trim());
-      final endMinutes = endTime.hour * 60 + endTime.minute;
+      final startTime = DateFormat('HH:mm').parse(parts[0].trim());
+      final startMinutes = startTime.hour * 60 + startTime.minute;
 
-      return currentMinutes >= endMinutes;
+      return currentMinutes >= startMinutes;
     } catch (e) {
       return false;
     }
+  }
+
+  static String? asBlockReason(dynamic value) {
+    if (value == null) return null;
+    final text = value.toString().trim();
+    if (text.isEmpty || text == 'null') return null;
+    return text;
+  }
+
+  static bool isPastOrderCutoff(dynamic cutoff) {
+    final raw = cutoff?.toString().trim() ?? '';
+    if (raw.isEmpty) return false;
+    try {
+      final parts = raw.split(':');
+      if (parts.length < 2) return false;
+      final hour = int.parse(parts[0]);
+      final minute = int.parse(parts[1]);
+      final now = getPhilippineTime();
+      return (now.hour * 60 + now.minute) >= (hour * 60 + minute);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Match web checkout copy in base.html `reasonMessage()`.
+  static String slotBlockMessage(String? reason) {
+    switch (reason) {
+      case 'no_schedule':
+        return 'This store has not set delivery hours yet.';
+      case 'order_cutoff':
+        return 'Same-day ordering is closed. Please choose another open day.';
+      case 'lead_time':
+        return 'Remaining slots are inside the prep window. Please choose a later slot or another date.';
+      case 'slots_passed':
+        return 'All delivery slots for today have passed. Please select another open day.';
+      default:
+        return 'Store is closed on this day. Please select a different date.';
+    }
+  }
+
+  static String? resolveSlotBlockReason({
+    required dynamic apiReason,
+    required bool isToday,
+    required bool isOpen,
+    required bool hasSchedule,
+    required bool hasBookableSlots,
+    dynamic orderCutoff,
+    List<String>? openDays,
+    DateTime? date,
+  }) {
+    if (hasBookableSlots) return null;
+    final reason = asBlockReason(apiReason);
+    if (reason == 'no_schedule' || reason == 'lead_time') return reason;
+    if (!hasSchedule) return 'no_schedule';
+
+    final weekday = date == null
+        ? null
+        : DateFormat('EEEE').format(date).toLowerCase();
+    final scheduledOpen = weekday == null ||
+        (openDays == null || openDays.isEmpty) ||
+        openDays.contains(weekday);
+
+    if (isToday &&
+        scheduledOpen &&
+        (reason == 'order_cutoff' || isPastOrderCutoff(orderCutoff))) {
+      return 'order_cutoff';
+    }
+    if (reason != null) return reason;
+    if (!isOpen) return 'closed';
+    if (isToday) return 'slots_passed';
+    return 'closed';
+  }
+
+  /// Map create-order API errors to the same short web checkout warnings.
+  static String humanizeDeliverySlotError(String? error) {
+    final raw = (error ?? '').trim();
+    if (raw.isEmpty) return raw;
+    final lower = raw.toLowerCase();
+    if (lower.contains('same-day ordering')) {
+      return slotBlockMessage('order_cutoff');
+    }
+    if (lower.contains('prep window') || lower.contains('in advance')) {
+      return slotBlockMessage('lead_time');
+    }
+    if (lower.contains('already passed') ||
+        (lower.contains('slots') && lower.contains('passed'))) {
+      return slotBlockMessage('slots_passed');
+    }
+    if (lower.contains('has not configured delivery hours') ||
+        lower.contains('has not set delivery hours')) {
+      return slotBlockMessage('no_schedule');
+    }
+    if (lower.contains('is closed on the selected date') ||
+        lower.contains('store is closed')) {
+      return slotBlockMessage('closed');
+    }
+    return raw;
   }
 }
