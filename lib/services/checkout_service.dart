@@ -50,19 +50,53 @@ class CheckoutService {
   static StoreOrderTotal storeTotalFromOrder(Map<String, dynamic> order) {
     final rawSid = order['store_id'];
     final parsedSid = rawSid is int ? rawSid : int.parse(rawSid.toString());
+    final items = (order['items'] as List?)
+        ?.whereType<Map>()
+        .map((i) => Map<String, dynamic>.from(i))
+        .toList();
+
+    // Ensure store subtotal includes add-ons even if a client omitted them.
+    double? itemsSubtotal;
+    if (items != null && items.isNotEmpty) {
+      itemsSubtotal = items.fold<double>(0, (s, item) {
+        final qty = (item['quantity'] as num?)?.toInt() ?? 1;
+        final unit = (item['price'] as num?)?.toDouble() ?? 0;
+        final addons = (item['addons'] as List?) ?? const [];
+        final addonsTotal = (item['addons_total'] as num?)?.toDouble() ??
+            addons.fold<double>(0, (sum, raw) {
+              final a = raw is Map ? Map<String, dynamic>.from(raw) : <String, dynamic>{};
+              final aPrice = (a['price'] as num?)?.toDouble() ?? 0;
+              final aQty = (a['quantity'] as num?)?.toInt() ??
+                  (a['units'] as num?)?.toInt() ??
+                  1;
+              final aTotal = (a['total'] as num?)?.toDouble();
+              return sum + (aTotal ?? aPrice * (aQty <= 0 ? 1 : aQty));
+            });
+        return s + (unit * qty) + addonsTotal;
+      });
+    }
+
+    final apiSubtotal = (order['subtotal'] as num?)?.toDouble() ?? 0.0;
+    final subtotal = (itemsSubtotal != null && itemsSubtotal > apiSubtotal + 0.009)
+        ? itemsSubtotal
+        : apiSubtotal;
+    final deliveryFee = (order['delivery_fee'] as num?)?.toDouble() ?? 0.0;
+    final apiTotal = (order['total'] as num?)?.toDouble() ?? 0.0;
+    final total = (itemsSubtotal != null && itemsSubtotal > apiSubtotal + 0.009)
+        ? subtotal + deliveryFee
+        : (apiTotal > 0 ? apiTotal : subtotal + deliveryFee);
+
     return StoreOrderTotal(
       storeId: parsedSid,
       storeName: order['store_name'] ?? 'Unknown Store',
-      subtotal: (order['subtotal'] as num?)?.toDouble() ?? 0.0,
-      deliveryFee: (order['delivery_fee'] as num?)?.toDouble() ?? 0.0,
-      total: (order['total'] as num?)?.toDouble() ?? 0.0,
+      subtotal: subtotal,
+      deliveryFee: deliveryFee,
+      total: total,
       distanceKm: (order['distance_km'] as num?)?.toDouble() ?? 0.0,
       canDeliver: true,
       qrImages: extractQrImageUrls(order['gcash_qr_codes']),
       instructions: order['gcash_instructions'] as String?,
-      items: (order['items'] as List?)
-          ?.map((i) => i as Map<String, dynamic>)
-          .toList(),
+      items: items,
       allowCod: order['allow_cod'] == true,
       freeDeliveryEnabled: order['free_delivery_enabled'] == true,
       freeDeliveryMinimum: (order['free_delivery_minimum'] as num?)?.toDouble(),
@@ -173,6 +207,7 @@ class CheckoutService {
     int? productId,
     int? variantId,
     int quantity = 1,
+    List<int>? addonOptionIds,
   }) async {
     try {
       final payload = <String, dynamic>{'mode': mode};
@@ -180,6 +215,9 @@ class CheckoutService {
         payload['product_id'] = productId;
         payload['variant_id'] = variantId;
         payload['quantity'] = quantity;
+        if (addonOptionIds != null && addonOptionIds.isNotEmpty) {
+          payload['addon_option_ids'] = addonOptionIds;
+        }
       } else {
         payload['items'] = items ?? [];
       }
@@ -406,6 +444,7 @@ class CheckoutService {
     int? variantId,
     required int quantity,
     required int addressId,
+    List<int>? addonOptionIds,
   }) async {
     try {
       final token = await ApiService.getToken();
@@ -419,6 +458,8 @@ class CheckoutService {
         'variant_id': variantId,
         'quantity': quantity,
         'delivery_address_id': addressId,
+        if (addonOptionIds != null && addonOptionIds.isNotEmpty)
+          'addon_option_ids': addonOptionIds,
       };
 
       developer.log('Buy Now validate: $payload');
@@ -500,6 +541,7 @@ class CheckoutService {
     String? paymentProofUrl,
     String? paymentProofPublicId,
     String paymentMethod = 'gcash',
+    List<int>? addonOptionIds,
   }) async {
     try {
       final token = await ApiService.getToken();
@@ -521,6 +563,8 @@ class CheckoutService {
           'payment_proof_url': paymentProofUrl,
           'payment_proof_public_id': paymentProofPublicId,
         },
+        if (addonOptionIds != null && addonOptionIds.isNotEmpty)
+          'addon_option_ids': addonOptionIds,
       };
 
       developer.log('Buy Now create order: $payload');

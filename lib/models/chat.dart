@@ -153,6 +153,7 @@ class ChatOrderItem {
   final double price;
   final double total;
   final String? imageUrl;
+  final List<Map<String, dynamic>> addons;
 
   const ChatOrderItem({
     required this.id,
@@ -162,6 +163,7 @@ class ChatOrderItem {
     this.price = 0,
     this.total = 0,
     this.imageUrl,
+    this.addons = const [],
   });
 
   factory ChatOrderItem.fromJson(Map<String, dynamic> j) => ChatOrderItem(
@@ -172,6 +174,10 @@ class ChatOrderItem {
     price: (j['price'] as num?)?.toDouble() ?? 0,
     total: (j['total'] as num?)?.toDouble() ?? 0,
     imageUrl: j['image_url']?.toString() ?? j['product_image_url']?.toString(),
+    addons: (j['addons'] as List? ?? [])
+        .whereType<Map>()
+        .map((a) => Map<String, dynamic>.from(a))
+        .toList(),
   );
 }
 

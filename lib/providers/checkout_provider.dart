@@ -11,11 +11,13 @@ class CheckoutProvider extends ChangeNotifier {
   int? _buyNowProductId;
   int? _buyNowVariantId;
   int _buyNowQuantity = 1;
+  List<int> _buyNowAddonOptionIds = const [];
 
   bool get buyNowMode => _buyNowMode;
   int? get buyNowProductId => _buyNowProductId;
   int? get buyNowVariantId => _buyNowVariantId;
   int get buyNowQuantity => _buyNowQuantity;
+  List<int> get buyNowAddonOptionIds => _buyNowAddonOptionIds;
 
   CheckoutState get state => _state;
   Address? get selectedAddress => _state.selectedAddress;
@@ -69,11 +71,13 @@ class CheckoutProvider extends ChangeNotifier {
     required int productId,
     int? variantId,
     required int quantity,
+    List<int>? addonOptionIds,
   }) {
     _buyNowMode = true;
     _buyNowProductId = productId;
     _buyNowVariantId = variantId;
     _buyNowQuantity = quantity;
+    _buyNowAddonOptionIds = List<int>.from(addonOptionIds ?? const []);
   }
 
   void nextStep() {
@@ -112,6 +116,7 @@ class CheckoutProvider extends ChangeNotifier {
           variantId: _buyNowVariantId,
           quantity: _buyNowQuantity,
           addressId: _state.selectedAddress!.id ?? 0,
+          addonOptionIds: _buyNowAddonOptionIds,
         );
       } else {
         // Normal cart checkout
@@ -210,6 +215,7 @@ class CheckoutProvider extends ChangeNotifier {
           paymentProofUrl: paymentProofUrl ?? firstProof?['url'],
           paymentProofPublicId: paymentProofPublicId ?? firstProof?['public_id'],
           paymentMethod: firstMethod,
+          addonOptionIds: _buyNowAddonOptionIds,
         );
       } else {
         // Normal cart checkout with per-store payment proofs
@@ -272,6 +278,7 @@ class CheckoutProvider extends ChangeNotifier {
     _buyNowProductId = null;
     _buyNowVariantId = null;
     _buyNowQuantity = 1;
+    _buyNowAddonOptionIds = const [];
     notifyListeners();
   }
 

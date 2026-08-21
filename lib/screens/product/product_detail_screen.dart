@@ -7,6 +7,7 @@ import '../../models/product.dart';
 import '../../models/store.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
+import '../../providers/wishlist_provider.dart';
 import '../../screens/checkout/checkout_modal.dart';
 import '../../services/api_service.dart';
 import '../../services/app_quality.dart';
@@ -21,6 +22,7 @@ import '../../widgets/glass.dart';
 import '../../widgets/auth_required_sheet.dart';
 import '../../widgets/delivery_unavailable_dialog.dart';
 import '../../widgets/stock_issue_dialog.dart';
+import '../store/store_page.dart';
 
 /// Web `.gallery-main` / `.gallery-thumb` fill: `linear-gradient(145deg,#f8eef2,#ebe4f4)`.
 const LinearGradient _kImageFrameWash = LinearGradient(
@@ -52,6 +54,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   ProductVariant? _selectedVariant;
   bool _selectedIsMainProduct = false; // Track if main product is selected
 
+  /// groupId -> selected optionId (null = Do not add)
+  final Map<int, int?> _selectedAddonOptions = {};
+  /// YMAL add-on option id -> quantity (absent = not selected)
+  final Map<int, int> _ymalAddonQty = {};
+  bool _wishlistBusy = false;
+
   // Delivery date/time selection
   DateTime? _selectedDeliveryDate;
   String? _selectedTimeSlot;
@@ -65,6 +73,17 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   /// Weekday names the store trades on, taken from `store_schedule.schedules[].days`.
   /// Empty with `_hasSchedule == false` means hours are not configured.
   Set<String> _openDays = {};
+
+  Store? _storeDetail;
+  double _avgRating = 0;
+  int _totalRatings = 0;
+  double _overallAvgRating = 0;
+  int _overallTotalRatings = 0;
+  /// Keys: `"main"` or variant id as string → `{avg, count}`
+  Map<String, Map<String, num>> _variantRatings = {};
+  List<Product> _relatedProducts = [];
+  List<ProductAddonOption> _ymalAddons = [];
+  String _ymalTab = 'addons'; // 'addons' | 'flowers'
 
   @override
   void initState() {
@@ -84,15 +103,56 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     
     if (result.isSuccess && result.data is Map) {
       debugPrint('✅ Product data received, parsing...');
+      final raw = Map<String, dynamic>.from(result.data as Map);
+      final relatedRaw = (raw['related_products'] as List? ?? []);
+      final ymalRaw = (raw['ymal_addon_options'] as List? ?? []);
       setState(() {
-        _product = Product.fromJson(result.data as Map<String, dynamic>);
+        _product = Product.fromJson(raw);
         _loading = false;
+        _overallAvgRating = (raw['overall_avg_rating'] as num?)?.toDouble()
+            ?? (raw['avg_rating'] as num?)?.toDouble()
+            ?? 0;
+        _overallTotalRatings = (raw['overall_total_ratings'] as num?)?.toInt()
+            ?? (raw['total_ratings'] as num?)?.toInt()
+            ?? 0;
+        _variantRatings = {};
+        final vr = raw['variant_ratings'];
+        if (vr is Map) {
+          for (final e in vr.entries) {
+            final v = e.value;
+            if (v is Map) {
+              _variantRatings[e.key.toString()] = {
+                'avg': (v['avg'] as num?) ?? 0,
+                'count': (v['count'] as num?) ?? 0,
+              };
+            }
+          }
+        }
+        _relatedProducts = relatedRaw
+            .whereType<Map>()
+            .map((e) => Product.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+        _ymalAddons = ymalRaw
+            .whereType<Map>()
+            .map((e) => ProductAddonOption.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
+        _ymalAddonQty.clear();
+        _ymalTab = _ymalAddons.isNotEmpty ? 'addons' : 'flowers';
+        _selectedAddonOptions.clear();
+        for (final g in _product!.addonGroups) {
+          _selectedAddonOptions[g.id] = null;
+        }
+        if (raw['store'] is Map) {
+          _storeDetail = Store.fromJson(Map<String, dynamic>.from(raw['store'] as Map));
+        }
+        _syncRatingDisplay();
       });
       
       // Load the trading days first so closed dates are locked immediately.
       await _loadStoreSchedule();
       _buildAvailableDates();
       _selectFirstOpenDate();
+      _loadWishlistState();
       
       // Log product details after parsing
       debugPrint('\n📦 PRODUCT DETAILS:');
@@ -127,10 +187,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   /// probing the time-slot endpoint day by day.
   Future<void> _loadStoreSchedule() async {
     if (_product == null) return;
-    final result = await ApiService.getStore(_product!.storeId);
-    if (!mounted || !result.isSuccess || result.data is! Map) return;
+    // Prefer store payload already on the product response.
+    Store? store = _storeDetail;
+    if (store == null || store.storeSchedule == null) {
+      final result = await ApiService.getStore(_product!.storeId);
+      if (!mounted || !result.isSuccess || result.data is! Map) return;
+      store = Store.fromJson(result.data as Map<String, dynamic>);
+    }
 
-    final store = Store.fromJson(result.data as Map<String, dynamic>);
     final schedules = store.storeSchedule?['schedules'];
     final days = <String>{};
     if (schedules is List) {
@@ -143,6 +207,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       }
     }
     setState(() {
+      _storeDetail = store;
       _openDays = days;
       _hasSchedule = days.isNotEmpty;
     });
@@ -367,12 +432,40 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     });
   }
 
+  void _syncRatingDisplay() {
+    if (_selectedVariant != null) {
+      final bucket = _variantRatings['${_selectedVariant!.id}'];
+      _avgRating = (bucket?['avg'] ?? 0).toDouble();
+      _totalRatings = (bucket?['count'] ?? 0).toInt();
+      return;
+    }
+
+    // Standard / unset: only ratings for the main product (variant_id IS NULL).
+    // Variant reviews are never mixed into Standard.
+    final main = _variantRatings['main'];
+    if (main != null) {
+      _avgRating = (main['avg'] ?? 0).toDouble();
+      _totalRatings = (main['count'] ?? 0).toInt();
+      return;
+    }
+
+    // No dedicated main-bucket yet (e.g. product with no variants rated as overall)
+    if (!(_product?.hasVariants ?? false)) {
+      _avgRating = _overallAvgRating;
+      _totalRatings = _overallTotalRatings;
+    } else {
+      _avgRating = 0;
+      _totalRatings = 0;
+    }
+  }
+
   void _selectVariant(ProductVariant variant) {
     setState(() {
       _selectedVariant = variant;
       _selectedVariantId = variant.id;
       _selectedIsMainProduct = false; // Deselect main product
       _qty = 1; // Reset quantity when variant changes
+      _syncRatingDisplay();
     });
     debugPrint('✅ Selected variant: ${variant.name} (ID: ${variant.id}) - ₱${variant.price}');
   }
@@ -383,8 +476,48 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       _selectedVariantId = null;
       _selectedIsMainProduct = true; // Select main product
       _qty = 1; // Reset quantity when selection changes
+      _syncRatingDisplay();
     });
     debugPrint('✅ Selected main product: ${_product!.name} - ₱${_product!.price}');
+  }
+
+  Future<void> _loadWishlistState() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn || _product == null) return;
+    await context.read<WishlistProvider>().loadForProduct(_product!.id);
+  }
+
+  Future<void> _toggleWishlist() async {
+    final auth = context.read<AuthProvider>();
+    if (!auth.isLoggedIn) {
+      showAuthRequiredSheet(
+        context,
+        message: 'Sign in to save items to your wishlist',
+      );
+      return;
+    }
+    if (_product == null || _wishlistBusy) return;
+
+    setState(() => _wishlistBusy = true);
+    final variantId = _selectedVariant?.id;
+    final err = await context.read<WishlistProvider>().toggle(
+          _product!.id,
+          variantId: variantId,
+        );
+    if (!mounted) return;
+    setState(() => _wishlistBusy = false);
+    if (err != null) {
+      showToast(context, err, isError: true);
+      return;
+    }
+    final wished = context.read<WishlistProvider>().isWished(
+          _product!.id,
+          variantId: variantId,
+        );
+    showToast(
+      context,
+      wished ? 'Added to wishlist' : 'Removed from wishlist',
+    );
   }
 
   Future<void> _addToCart() async {
@@ -414,20 +547,23 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     setState(() => _addingToCart = true);
     
     String? error;
+    final addonIds = _selectedAddonOptionIds;
     if (_selectedVariant != null) {
       // Add variant to cart
       debugPrint('🛒 Adding VARIANT to cart: ${_selectedVariant!.name} x$_qty');
       error = await context.read<CartProvider>().addItem(
         _product!.id, 
         qty: _qty, 
-        variantId: _selectedVariant!.id
+        variantId: _selectedVariant!.id,
+        addonOptionIds: addonIds,
       );
     } else if (_selectedIsMainProduct || !_product!.hasVariants) {
       // Add main product to cart
       debugPrint('🛒 Adding MAIN PRODUCT to cart: ${_product!.name} x$_qty');
       error = await context.read<CartProvider>().addItem(
         _product!.id, 
-        qty: _qty
+        qty: _qty,
+        addonOptionIds: addonIds,
       );
     } else if (_product!.hasVariants) {
       // Product has variants but none selected - show error
@@ -482,6 +618,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       productId: _product!.id,
       variantId: _selectedVariant?.id,
       quantity: _qty,
+      addonOptionIds: _selectedAddonOptionIds,
     );
     if (!mounted) return;
 
@@ -515,12 +652,46 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       buyNowProductId: _product!.id,
       buyNowVariantId: _selectedVariant?.id,
       buyNowQuantity: _qty,
+      buyNowAddonOptionIds: _selectedAddonOptionIds,
       initialDeliveryDate: _selectedDeliveryDate != null
           ? DateFormat('yyyy-MM-dd').format(_selectedDeliveryDate!)
           : null,
       initialDeliveryTime: _selectedTimeSlot,
       initialStoreId: _product!.storeId,
     );
+  }
+
+  List<int> get _selectedAddonOptionIds {
+    final ids = <int>[
+      ..._selectedAddonOptions.values.whereType<int>(),
+    ];
+    // Expand YMAL qty into repeated option ids (backend sums units).
+    for (final e in _ymalAddonQty.entries) {
+      for (var i = 0; i < e.value; i++) {
+        ids.add(e.key);
+      }
+    }
+    return ids;
+  }
+
+  double get _structuredAddonsUnitTotal {
+    double sum = 0;
+    final p = _product;
+    if (p == null) return 0;
+    for (final entry in _selectedAddonOptions.entries) {
+      final optId = entry.value;
+      if (optId == null) continue;
+      for (final g in p.addonGroups) {
+        for (final o in g.options) {
+          if (o.id == optId) sum += o.price;
+        }
+      }
+    }
+    for (final opt in _ymalAddons) {
+      final qty = _ymalAddonQty[opt.id];
+      if (qty != null && qty > 0) sum += opt.price * qty;
+    }
+    return sum;
   }
 
   // Get current effective price (sale price if set)
@@ -530,6 +701,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
     return _product!.effectivePrice;
   }
+
+  // Matches web product page + buy-now (structured add-ons scale with qty).
+  // Cart checkout keeps add-ons fixed when flower qty changes.
+  double get _displayTotal =>
+      (_currentPrice + _structuredAddonsUnitTotal) * _qty;
 
   // Get current original price (before any sale)
   double get _currentOriginalPrice {
@@ -555,14 +731,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   // Get current image URL based on selection (variant image takes precedence)
   String? _getCurrentImageUrl() {
+    // Request a large transform so retina screens stay sharp
+    final dpr = MediaQuery.devicePixelRatioOf(context).clamp(1.0, 3.0);
+    final size = (900 * dpr).round().clamp(900, 1600);
+
     if (_selectedVariant != null && _selectedVariant!.imageUrl != null) {
-      return CloudinaryService.getMediumUrl(_selectedVariant!.imageUrl!, size: 400);
+      return CloudinaryService.getLargeUrl(_selectedVariant!.imageUrl!, size: size);
     }
     if (_product != null && _product!.images.isNotEmpty) {
       return CloudinaryService.getOptimizedUrl(
         _product!.images[_selectedImageIdx].filename,
-        width: 400,
-        height: 400,
+        width: size,
+        height: size,
+        crop: 'limit',
+        quality: 'auto:good',
       );
     }
     return null;
@@ -759,31 +941,92 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ],
                   ),
                   
-                  // Store name
-                  if (p.storeName != null) ...[
-                    const SizedBox(height: 8),
-                    Row(
-                      children: [
-                        const Icon(Icons.storefront_outlined, size: 14, color: AppColors.muted),
-                        const SizedBox(width: 4),
-                        Expanded(
-                          child: Text(
-                            p.storeName!,
-                            style: GoogleFonts.dmSans(
-                              fontSize: 12.5, 
-                              color: AppColors.muted, 
-                              fontWeight: FontWeight.w500
+                  // Rating + clickable store
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      ...List.generate(5, (i) {
+                        final filled = i < _avgRating.floor();
+                        final half = !filled &&
+                            i == _avgRating.floor() &&
+                            (_avgRating - _avgRating.floor()) >= 0.3;
+                        return Icon(
+                          half
+                              ? Icons.star_half_rounded
+                              : (filled
+                                  ? Icons.star_rounded
+                                  : Icons.star_outline_rounded),
+                          size: 16,
+                          color: const Color(0xFFF0B429),
+                        );
+                      }),
+                      const SizedBox(width: 6),
+                      Text(
+                        _avgRating > 0 ? _avgRating.toStringAsFixed(1) : '0',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.charcoal,
+                        ),
+                      ),
+                      const SizedBox(width: 4),
+                      GestureDetector(
+                        onTap: _openReviewsModal,
+                        child: Text(
+                          '($_totalRatings review${_totalRatings == 1 ? '' : 's'})',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 12.5,
+                            color: AppColors.deepRose,
+                            fontWeight: FontWeight.w600,
+                            decoration: TextDecoration.underline,
+                            decorationColor: AppColors.deepRose.withValues(alpha: 0.4),
+                          ),
+                        ),
+                      ),
+                      if (p.storeName != null) ...[
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                          child: Text('·',
+                              style: GoogleFonts.dmSans(color: AppColors.muted)),
+                        ),
+                        Flexible(
+                          child: GestureDetector(
+                            onTap: () => _openStorePage(p.storeId),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.storefront_outlined,
+                                    size: 14, color: AppColors.deepRose),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    p.storeName!,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 12.5,
+                                      color: AppColors.deepRose,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
                         ),
                       ],
-                    ),
-                  ],
+                    ],
+                  ),
                   
                   const SizedBox(height: 20),
                   
                   // Variants section
                   if (p.hasVariants) _buildVariants(p),
+
+                  if (p.addonGroups.isNotEmpty) ...[
+                    if (p.hasVariants) const SizedBox(height: 8),
+                    _buildAddonGroups(p),
+                  ],
                   
                   const _RoseDivider(),
 
@@ -809,9 +1052,20 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         ],
                       ),
                     ),
-                    const SizedBox(height: 24),
+                    const SizedBox(height: 12),
                   ],
-                  
+
+                  const SizedBox(height: 6),
+                  _buildInfoAccordion(
+                    title: 'Delivery Information',
+                    child: _buildDeliveryInfoContent(),
+                  ),
+                  const SizedBox(height: 8),
+                  _buildInfoAccordion(
+                    title: 'About the Store',
+                    child: _buildAboutStoreContent(),
+                  ),
+
                   // Qty selector
                   if (inStock) ...[
                     _sectionLabel('Quantity'),
@@ -821,6 +1075,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       max: _currentStock,
                       onChanged: (v) => setState(() => _qty = v),
                     ),
+                  ],
+
+                  if (_ymalAddons.isNotEmpty || _relatedProducts.isNotEmpty) ...[
+                    const SizedBox(height: 22),
+                    _sectionLabel('You might also like'),
+                    const SizedBox(height: 10),
+                    _buildYmalSection(),
                   ],
 
                   // ── Delivery Scheduling ──────────────────────────
@@ -1052,6 +1313,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
                     ],
                   ],
+
                   const SizedBox(height: 100),
                 ],
               ),
@@ -1060,6 +1322,568 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ],
       ),
       bottomNavigationBar: _buildAddToCartBar(),
+      ),
+    );
+  }
+
+  void _openStorePage(int storeId) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StorePage(
+          storeId: storeId,
+          initialStore: _storeDetail,
+        ),
+      ),
+    );
+  }
+
+  Widget _buildInfoAccordion({required String title, required Widget child}) {
+    return GlassCard(
+      radius: AppRadius.lg,
+      padding: EdgeInsets.zero,
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          title: Text(
+            title,
+            style: GoogleFonts.dmSans(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              color: AppColors.charcoal,
+            ),
+          ),
+          children: [child],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDeliveryInfoContent() {
+    final store = _storeDetail;
+    final sched = store?.storeSchedule;
+    final deliveryStart = sched?['delivery_start']?.toString();
+    final deliveryCutoff = sched?['delivery_cutoff']?.toString();
+    final orderCutoff = sched?['order_cutoff']?.toString();
+    final radius = store?.deliveryRadiusKm ?? 5;
+    final openDays = _openDays.toList()
+      ..sort((a, b) {
+        const order = [
+          'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'
+        ];
+        return order.indexOf(a).compareTo(order.indexOf(b));
+      });
+    final daysLabel = openDays
+        .map((d) => d[0].toUpperCase() + d.substring(1))
+        .join(', ');
+
+    String sameDay;
+    if (deliveryStart != null &&
+        deliveryStart.isNotEmpty &&
+        deliveryCutoff != null &&
+        deliveryCutoff.isNotEmpty) {
+      sameDay =
+          'Same-day delivery is available from $deliveryStart to $deliveryCutoff'
+          '${daysLabel.isNotEmpty ? ' on this store’s open days ($daysLabel)' : ''}, while delivery slots remain.'
+          '${orderCutoff != null && orderCutoff.isNotEmpty ? ' Order by $orderCutoff for same-day.' : ''}';
+    } else if (orderCutoff != null && orderCutoff.isNotEmpty) {
+      sameDay =
+          'Orders placed before $orderCutoff are eligible for same-day delivery within our service area, while delivery slots remain.';
+    } else if (daysLabel.isNotEmpty) {
+      sameDay =
+          'Same-day delivery is available on this store’s open days ($daysLabel), based on remaining delivery time slots.';
+    } else {
+      sameDay =
+          'Same-day delivery may be available depending on remaining delivery slots for today.';
+    }
+
+    final radiusText =
+        'We deliver within a ${radius.toStringAsFixed(radius.truncateToDouble() == radius ? 0 : 1)}km radius from our partner store.'
+        '${store?.address != null && store!.address!.isNotEmpty ? ' Located at ${store.address}.' : ''}';
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Same-Day Delivery',
+            style: GoogleFonts.dmSans(
+                fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.charcoal)),
+        const SizedBox(height: 4),
+        Text(sameDay,
+            style: GoogleFonts.dmSans(
+                fontSize: 13, height: 1.55, color: AppColors.muted)),
+        const SizedBox(height: 12),
+        Text('Delivery Radius',
+            style: GoogleFonts.dmSans(
+                fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.charcoal)),
+        const SizedBox(height: 4),
+        Text(radiusText,
+            style: GoogleFonts.dmSans(
+                fontSize: 13, height: 1.55, color: AppColors.muted)),
+      ],
+    );
+  }
+
+  Widget _buildAboutStoreContent() {
+    final store = _storeDetail;
+    if (store == null) {
+      return Text('Store information not available.',
+          style: GoogleFonts.dmSans(fontSize: 13, color: AppColors.muted));
+    }
+    final desc = (store.description != null && store.description!.trim().isNotEmpty)
+        ? store.description!.trim()
+        : 'A trusted local florist on E-FLOWERS, committed to delivering fresh and beautiful arrangements with care.';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        GestureDetector(
+          onTap: () => _openStorePage(store.id),
+          child: Text(
+            store.name,
+            style: GoogleFonts.dmSans(
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+              color: AppColors.deepRose,
+            ),
+          ),
+        ),
+        const SizedBox(height: 4),
+        Text(desc,
+            style: GoogleFonts.dmSans(
+                fontSize: 13, height: 1.55, color: AppColors.muted)),
+        if (store.address != null && store.address!.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text('Address',
+              style: GoogleFonts.dmSans(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.charcoal)),
+          const SizedBox(height: 4),
+          Text(store.address!,
+              style: GoogleFonts.dmSans(
+                  fontSize: 13, height: 1.55, color: AppColors.muted)),
+        ],
+        if (store.contactNumber != null && store.contactNumber!.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          Text('Contact',
+              style: GoogleFonts.dmSans(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.charcoal)),
+          const SizedBox(height: 4),
+          Text(store.contactNumber!,
+              style: GoogleFonts.dmSans(
+                  fontSize: 13, height: 1.55, color: AppColors.muted)),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildYmalSection() {
+    final hasAddons = _ymalAddons.isNotEmpty;
+    final hasFlowers = _relatedProducts.isNotEmpty;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (hasAddons && hasFlowers)
+          Row(
+            children: [
+              _ymalTabChip('Add-ons', 'addons'),
+              const SizedBox(width: 8),
+              _ymalTabChip('Flowers', 'flowers'),
+            ],
+          ),
+        if (hasAddons && hasFlowers) const SizedBox(height: 12),
+        SizedBox(
+          height: 210,
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            itemCount: (_ymalTab == 'addons' && hasAddons)
+                ? _ymalAddons.length
+                : _relatedProducts.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, i) {
+              if (_ymalTab == 'addons' && hasAddons) {
+                return _buildYmalAddonCard(_ymalAddons[i]);
+              }
+              return _buildYmalFlowerCard(_relatedProducts[i]);
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _ymalTabChip(String label, String value) {
+    final active = _ymalTab == value;
+    return GestureDetector(
+      onTap: () => setState(() => _ymalTab = value),
+      child: AnimatedContainer(
+        duration: AppMotion.fast,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          gradient: active ? AppColors.brandGradient : null,
+          color: active ? null : AppColors.glassFill,
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          border: Border.all(
+            color: active ? Colors.transparent : _kRoseBorder,
+          ),
+        ),
+        child: Text(
+          label,
+          style: GoogleFonts.dmSans(
+            fontSize: 12,
+            fontWeight: FontWeight.w700,
+            color: active ? Colors.white : AppColors.charcoal,
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _toggleYmalAddon(ProductAddonOption opt) {
+    if (opt.isOos) return;
+    setState(() {
+      if (_ymalAddonQty.containsKey(opt.id)) {
+        _ymalAddonQty.remove(opt.id);
+      } else {
+        _ymalAddonQty[opt.id] = 1;
+      }
+    });
+  }
+
+  void _changeYmalAddonQty(ProductAddonOption opt, int delta) {
+    final current = _ymalAddonQty[opt.id];
+    if (current == null) return;
+    final next = current + delta;
+    setState(() {
+      if (next < 1) {
+        _ymalAddonQty.remove(opt.id);
+      } else {
+        final maxStock = opt.stockQuantity > 0 ? opt.stockQuantity : 99;
+        _ymalAddonQty[opt.id] = next.clamp(1, maxStock);
+      }
+    });
+  }
+
+  Widget _ymalCheckBadge() {
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFC24E68), Color(0xFFD878A0), Color(0xFFB070C8)],
+        ),
+      ),
+      child: const Icon(Icons.check_rounded, size: 12, color: Colors.white),
+    );
+  }
+
+  Widget _ymalQtyRow({
+    required int qty,
+    required VoidCallback onMinus,
+    required VoidCallback onPlus,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.only(top: 6),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          _ymalQtyBtn('−', onMinus),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 10),
+            child: Text(
+              '$qty',
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                color: AppColors.deepRose,
+              ),
+            ),
+          ),
+          _ymalQtyBtn('+', onPlus),
+        ],
+      ),
+    );
+  }
+
+  Widget _ymalQtyBtn(String label, VoidCallback onTap) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: SizedBox(
+          width: 26,
+          height: 26,
+          child: Center(
+            child: Text(
+              label,
+              style: GoogleFonts.dmSans(
+                fontSize: 18,
+                height: 1,
+                fontWeight: FontWeight.w500,
+                color: AppColors.deepRose,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildYmalAddonCard(ProductAddonOption opt) {
+    final selected = _ymalAddonQty.containsKey(opt.id);
+    final qty = _ymalAddonQty[opt.id] ?? 1;
+    final oos = opt.isOos;
+    return Opacity(
+      opacity: oos ? 0.45 : 1,
+      child: SizedBox(
+        width: 118,
+        child: Column(
+          children: [
+            GestureDetector(
+              onTap: oos ? null : () => _toggleYmalAddon(opt),
+              child: AnimatedContainer(
+                duration: AppMotion.fast,
+                width: 118,
+                padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
+                decoration: BoxDecoration(
+                  color: selected
+                      ? const Color(0x2EFFBED2) // rgba(255,190,210,0.18)
+                      : Colors.white.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(
+                    color: selected
+                        ? const Color(0xFFD878A0)
+                        : Colors.white.withValues(alpha: 0.7),
+                    width: 2,
+                  ),
+                  boxShadow: selected
+                      ? [
+                          BoxShadow(
+                            color: const Color(0xFFC24E68).withValues(alpha: 0.25),
+                            blurRadius: 0,
+                            spreadRadius: 1,
+                          ),
+                        ]
+                      : [
+                          BoxShadow(
+                            color: const Color(0xFF502846).withValues(alpha: 0.05),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                ),
+                child: Stack(
+                  children: [
+                    Column(
+                      children: [
+                        ClipRRect(
+                          borderRadius: BorderRadius.vertical(
+                            top: Radius.circular(AppRadius.md - 2),
+                          ),
+                          child: Container(
+                            height: 100,
+                            width: double.infinity,
+                            decoration: const BoxDecoration(
+                              gradient: _kImageFrameWash,
+                            ),
+                            child: opt.imageUrl != null && opt.imageUrl!.isNotEmpty
+                                ? CachedNetworkImage(
+                                    imageUrl: opt.imageUrl!,
+                                    fit: BoxFit.cover,
+                                    errorWidget: (_, __, ___) => const Icon(
+                                      Icons.card_giftcard_outlined,
+                                      color: AppColors.dustyRose,
+                                    ),
+                                  )
+                                : const Icon(
+                                    Icons.card_giftcard_outlined,
+                                    color: AppColors.dustyRose,
+                                  ),
+                          ),
+                        ),
+                        if (oos)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              'Out of stock',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: const Color(0xFFC0392B),
+                              ),
+                            ),
+                          ),
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                          child: Text(
+                            opt.name,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 11,
+                              height: 1.3,
+                              fontWeight: FontWeight.w500,
+                              color: AppColors.charcoal,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 3),
+                        Text(
+                          '₱${opt.price.toStringAsFixed(0)}',
+                          style: GoogleFonts.cormorantGaramond(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.deepRose,
+                          ),
+                        ),
+                      ],
+                    ),
+                    if (selected)
+                      Positioned(
+                        top: 6,
+                        right: 6,
+                        child: _ymalCheckBadge(),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+            // Reserve qty row height so the carousel doesn't jump
+            SizedBox(
+              height: 32,
+              child: selected
+                  ? _ymalQtyRow(
+                      qty: qty,
+                      onMinus: () => _changeYmalAddonQty(opt, -1),
+                      onPlus: () => _changeYmalAddonQty(opt, 1),
+                    )
+                  : null,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildYmalFlowerCard(Product product) {
+    final img = product.primaryImageUrl;
+    final oos = product.stockQuantity <= 0;
+    return Opacity(
+      opacity: oos ? 0.45 : 1,
+      child: SizedBox(
+        width: 118,
+        child: Column(
+          children: [
+            GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => ProductDetailScreen(productId: product.id),
+                  ),
+                );
+              },
+              child: Container(
+                width: 118,
+                padding: const EdgeInsets.fromLTRB(0, 0, 0, 10),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  border: Border.all(
+                    color: Colors.white.withValues(alpha: 0.7),
+                    width: 2,
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFF502846).withValues(alpha: 0.05),
+                      blurRadius: 12,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
+                ),
+                child: Column(
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.vertical(
+                        top: Radius.circular(AppRadius.md - 2),
+                      ),
+                      child: Container(
+                        height: 100,
+                        width: double.infinity,
+                        decoration: const BoxDecoration(
+                          gradient: _kImageFrameWash,
+                        ),
+                        child: img != null && img.isNotEmpty
+                            ? CachedNetworkImage(
+                                imageUrl: img,
+                                fit: BoxFit.cover,
+                                errorWidget: (_, __, ___) => const Icon(
+                                  Icons.local_florist,
+                                  color: AppColors.dustyRose,
+                                ),
+                              )
+                            : const Icon(
+                                Icons.local_florist,
+                                color: AppColors.dustyRose,
+                              ),
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
+                      child: Text(
+                        product.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          height: 1.3,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.charcoal,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      '₱${product.effectivePrice.toStringAsFixed(0)}',
+                      style: GoogleFonts.cormorantGaramond(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.deepRose,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            const SizedBox(height: 32),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openReviewsModal() async {
+    // Standard → main only; variant → that variant only. Never mix.
+    final Object? filterVariantId =
+        _selectedVariant != null ? _selectedVariant!.id : 'main';
+    final filterLabel = _selectedVariant?.name ?? 'Standard';
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _ProductReviewsSheet(
+        productId: widget.productId,
+        productName: _product?.name ?? 'Product',
+        variantId: filterVariantId,
+        variantName: filterLabel,
+        initialAvg: _avgRating,
+        initialCount: _totalRatings,
       ),
     );
   }
@@ -1107,6 +1931,24 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       scrolledUnderElevation: 0,
       backgroundColor: AppColors.pageCream,
       iconTheme: const IconThemeData(color: AppColors.charcoal),
+      actions: [
+        Consumer<WishlistProvider>(
+          builder: (context, wishlist, _) {
+            final wished = wishlist.isWished(
+              p.id,
+              variantId: _selectedVariant?.id,
+            );
+            return IconButton(
+              tooltip: wished ? 'Remove from wishlist' : 'Add to wishlist',
+              onPressed: _wishlistBusy ? null : _toggleWishlist,
+              icon: Icon(
+                wished ? Icons.favorite_rounded : Icons.favorite_border_rounded,
+                color: wished ? const Color(0xFFC0392B) : AppColors.deepRose,
+              ),
+            );
+          },
+        ),
+      ],
       flexibleSpace: FlexibleSpaceBar(
         background: Stack(
           fit: StackFit.expand,
@@ -1117,8 +1959,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                 child: CachedNetworkImage(
                   imageUrl: imageUrl,
                   fit: BoxFit.cover,
-                  memCacheWidth: 400,
-                  memCacheHeight: 400,
+                  memCacheWidth: 1400,
+                  memCacheHeight: 1400,
                   placeholder: (context, url) {
                     debugPrint('⏳ Main image loading: $url');
                     return Container(
@@ -1137,16 +1979,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     
                     // Try fallback to product image if variant image fails
                     if (_selectedVariant != null && p.images.isNotEmpty) {
-                      final fallbackUrl = CloudinaryService.getOptimizedUrl(
+                      final fallbackUrl = CloudinaryService.getLargeUrl(
                         p.images[0].filename,
-                        width: 400,
-                        height: 400,
+                        size: 1200,
                       );
                       return CachedNetworkImage(
                         imageUrl: fallbackUrl,
                         fit: BoxFit.cover,
-                        memCacheWidth: 400,
-                        memCacheHeight: 400,
+                        memCacheWidth: 1400,
+                        memCacheHeight: 1400,
                         errorWidget: (_, __, ___) => Container(
                           color: AppColors.warmWhite,
                           child: const Center(
@@ -1276,6 +2117,430 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             ),
           );
         },
+      ),
+    );
+  }
+
+  Widget _buildAddonGroups(Product p) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _sectionLabel('Add-ons'),
+        const SizedBox(height: 10),
+        ...p.addonGroups.map((group) {
+          final selectedId = _selectedAddonOptions[group.id];
+          ProductAddonOption? selectedOpt;
+          for (final o in group.options) {
+            if (o.id == selectedId) {
+              selectedOpt = o;
+              break;
+            }
+          }
+          final previewUrl = selectedOpt?.imageUrl;
+          final closedLabel = selectedOpt == null
+              ? 'Do not add'
+              : (selectedOpt.isOos
+                  ? '${selectedOpt.name} (+₱${selectedOpt.price.toStringAsFixed(2)}) — Out of stock'
+                  : '${selectedOpt.name} (+₱${selectedOpt.price.toStringAsFixed(2)})');
+
+          return Padding(
+            padding: const EdgeInsets.only(bottom: 12),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                final previewSize = constraints.maxWidth < 360 ? 48.0 : 56.0;
+                return Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    GestureDetector(
+                      onTap: (previewUrl != null && previewUrl.isNotEmpty)
+                          ? () => _zoomAddonImage(
+                                previewUrl,
+                                selectedOpt?.name ?? group.name,
+                              )
+                          : null,
+                      child: SizedBox(
+                        width: previewSize,
+                        height: previewSize,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            color: const Color(0xFFFFF8F6),
+                            borderRadius: BorderRadius.circular(AppRadius.md),
+                            border: Border.all(
+                                color: AppColors.deepRose.withOpacity(0.25)),
+                          ),
+                          clipBehavior: Clip.antiAlias,
+                          child: previewUrl != null && previewUrl.isNotEmpty
+                              ? Image.network(
+                                  previewUrl,
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (_, __, ___) =>
+                                      _noAddonPlaceholder(),
+                                )
+                              : _noAddonPlaceholder(),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            group.name,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 13.5,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.charcoal,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          ConstrainedBox(
+                            constraints: const BoxConstraints(maxWidth: 360),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                borderRadius:
+                                    BorderRadius.circular(AppRadius.md),
+                                onTap: () => _openAddonOptionPicker(group),
+                                child: Ink(
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withOpacity(0.7),
+                                    borderRadius:
+                                        BorderRadius.circular(AppRadius.md),
+                                    border: Border.all(
+                                      color:
+                                          AppColors.deepRose.withOpacity(0.35),
+                                      width: 1.5,
+                                    ),
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                        8, 8, 6, 8),
+                                    child: Row(
+                                      children: [
+                                        GestureDetector(
+                                          onTap: (previewUrl != null &&
+                                                  previewUrl.isNotEmpty)
+                                              ? () => _zoomAddonImage(
+                                                    previewUrl,
+                                                    selectedOpt?.name ??
+                                                        group.name,
+                                                  )
+                                              : null,
+                                          child: ClipRRect(
+                                            borderRadius:
+                                                BorderRadius.circular(6),
+                                            child: SizedBox(
+                                              width: 28,
+                                              height: 28,
+                                              child: previewUrl != null &&
+                                                      previewUrl.isNotEmpty
+                                                  ? Image.network(
+                                                      previewUrl,
+                                                      fit: BoxFit.cover,
+                                                      errorBuilder: (_, __,
+                                                              ___) =>
+                                                          _noAddonPlaceholder(),
+                                                    )
+                                                  : _noAddonPlaceholder(),
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            closedLabel,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: GoogleFonts.dmSans(
+                                              fontSize: 13,
+                                              color: AppColors.charcoal,
+                                            ),
+                                          ),
+                                        ),
+                                        Icon(
+                                          Icons.keyboard_arrow_down_rounded,
+                                          color: AppColors.deepRose
+                                              .withOpacity(0.85),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                );
+              },
+            ),
+          );
+        }),
+        const SizedBox(height: 8),
+      ],
+    );
+  }
+
+  Future<void> _openAddonOptionPicker(ProductAddonGroup group) async {
+    final currentId = _selectedAddonOptions[group.id];
+    final result = await showModalBottomSheet<_AddonPickResult>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppColors.warmWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 12, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Center(
+                  child: Container(
+                    width: 36,
+                    height: 4,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    decoration: BoxDecoration(
+                      color: AppColors.muted.withOpacity(0.35),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+                Text(
+                  group.name,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.charcoal,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.sizeOf(ctx).height * 0.55,
+                  ),
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      _addonPickerRow(
+                        context: ctx,
+                        label: 'Do not add',
+                        imageUrl: null,
+                        selected: currentId == null,
+                        enabled: true,
+                        onSelect: () =>
+                            Navigator.pop(ctx, const _AddonPickResult(null)),
+                      ),
+                      ...group.options.map((opt) {
+                        final label = opt.isOos
+                            ? '${opt.name} (+₱${opt.price.toStringAsFixed(2)}) — Out of stock'
+                            : '${opt.name} (+₱${opt.price.toStringAsFixed(2)})';
+                        return _addonPickerRow(
+                          context: ctx,
+                          label: label,
+                          imageUrl: opt.imageUrl,
+                          imageName: opt.name,
+                          selected: currentId == opt.id,
+                          enabled: !opt.isOos,
+                          onSelect: () =>
+                              Navigator.pop(ctx, _AddonPickResult(opt.id)),
+                        );
+                      }),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    if (result == null || !mounted) return;
+    setState(() => _selectedAddonOptions[group.id] = result.optionId);
+  }
+
+  Widget _addonPickerRow({
+    required BuildContext context,
+    required String label,
+    required String? imageUrl,
+    String? imageName,
+    required bool selected,
+    required bool enabled,
+    required VoidCallback onSelect,
+  }) {
+    final url = imageUrl;
+    final hasImage = url != null && url.isNotEmpty;
+    return Opacity(
+      opacity: enabled ? 1 : 0.5,
+      child: Material(
+        color: selected
+            ? AppColors.deepRose.withOpacity(0.08)
+            : Colors.transparent,
+        borderRadius: BorderRadius.circular(10),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: enabled ? onSelect : null,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+            child: Row(
+              children: [
+                GestureDetector(
+                  onTap: hasImage
+                      ? () => _zoomAddonImage(url, imageName ?? label)
+                      : null,
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(6),
+                    child: SizedBox(
+                      width: 36,
+                      height: 36,
+                      child: hasImage
+                          ? Image.network(
+                              url,
+                              fit: BoxFit.cover,
+                              errorBuilder: (_, __, ___) =>
+                                  _noAddonPlaceholder(),
+                            )
+                          : _noAddonPlaceholder(),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    label,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13.5,
+                      color: enabled ? AppColors.charcoal : AppColors.muted,
+                      fontWeight:
+                          selected ? FontWeight.w600 : FontWeight.w400,
+                    ),
+                  ),
+                ),
+                if (selected)
+                  Icon(Icons.check_rounded,
+                      size: 20, color: AppColors.deepRose),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _zoomAddonImage(String imageUrl, String title) {
+    showDialog<void>(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.85),
+      builder: (ctx) {
+        final size = MediaQuery.sizeOf(ctx);
+        final maxW = size.width - 48;
+        final maxH = size.height * 0.82;
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: InteractiveViewer(
+                        constrained: false,
+                        minScale: 1,
+                        maxScale: 4,
+                        child: Image.network(
+                          imageUrl,
+                          fit: BoxFit.contain,
+                          width: maxW,
+                          errorBuilder: (_, __, ___) => Container(
+                            width: 240,
+                            padding: const EdgeInsets.all(24),
+                            color: Colors.black26,
+                            child: Text(
+                              'Unable to load image',
+                              style: GoogleFonts.dmSans(color: Colors.white),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: -8,
+                      right: -8,
+                      child: Material(
+                        color: Colors.white,
+                        shape: const CircleBorder(),
+                        elevation: 3,
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => Navigator.pop(ctx),
+                          child: const SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: Icon(Icons.close_rounded, size: 18),
+                          ),
+                        ),
+                      ),
+                    ),
+                    if (title.isNotEmpty)
+                      Positioned(
+                        left: 8,
+                        right: 40,
+                        bottom: 8,
+                        child: Text(
+                          title,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.dmSans(
+                            color: Colors.white,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            shadows: const [
+                              Shadow(blurRadius: 8, color: Colors.black54),
+                            ],
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _noAddonPlaceholder() {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(8),
+      child: Image.asset(
+        'assets/images/no_addon_placeholder.png',
+        fit: BoxFit.cover,
+        width: double.infinity,
+        height: double.infinity,
+        errorBuilder: (_, __, ___) => ColoredBox(
+          color: const Color(0xFFFFF8F6),
+          child: Center(
+            child: Icon(
+              Icons.card_giftcard_outlined,
+              size: 22,
+              color: AppColors.deepRose.withOpacity(0.45),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -1437,7 +2702,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   Widget _buildAddToCartBar() {
-    final totalPrice = _currentPrice * _qty;
+    final totalPrice = _displayTotal;
     final canAddToCart = _currentStock > 0 && _product!.isAvailable;
     final isSelectOption = _product!.hasVariants && _selectedVariant == null && !_selectedIsMainProduct;
     final isOutOfStock = !canAddToCart && !isSelectOption;
@@ -1635,6 +2900,326 @@ class _QtySelector extends StatelessWidget {
         child: Icon(icon,
             size: 18,
             color: onTap != null ? AppColors.charcoal : AppColors.borderStrong),
+      ),
+    );
+  }
+}
+
+class _AddonPickResult {
+  final int? optionId;
+  const _AddonPickResult(this.optionId);
+}
+
+/// Product reviews bottom sheet — mirrors web Ratings modal overview + list.
+class _ProductReviewsSheet extends StatefulWidget {
+  final int productId;
+  final String productName;
+  /// `null` = all reviews; `'main'` = standard only; `int` = that variant
+  final Object? variantId;
+  final String? variantName;
+  final double initialAvg;
+  final int initialCount;
+
+  const _ProductReviewsSheet({
+    required this.productId,
+    required this.productName,
+    this.variantId,
+    this.variantName,
+    required this.initialAvg,
+    required this.initialCount,
+  });
+
+  @override
+  State<_ProductReviewsSheet> createState() => _ProductReviewsSheetState();
+}
+
+class _ProductReviewsSheetState extends State<_ProductReviewsSheet> {
+  bool _loading = true;
+  String? _error;
+  double _avg = 0;
+  int _count = 0;
+  Map<String, int> _distribution = {'5': 0, '4': 0, '3': 0, '2': 0, '1': 0};
+  List<Map<String, dynamic>> _ratings = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _avg = widget.initialAvg;
+    _count = widget.initialCount;
+    _load();
+  }
+
+  Future<void> _load() async {
+    final res = await ApiService.getProductRatings(
+      widget.productId,
+      perPage: 50,
+      variantId: widget.variantId,
+    );
+    if (!mounted) return;
+    if (!res.isSuccess || res.data is! Map) {
+      setState(() {
+        _loading = false;
+        _error = res.error ?? 'Unable to load reviews right now.';
+      });
+      return;
+    }
+    final data = Map<String, dynamic>.from(res.data as Map);
+    final ratings = (data['ratings'] as List? ?? [])
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+    final distRaw = data['distribution'];
+    final dist = {'5': 0, '4': 0, '3': 0, '2': 0, '1': 0};
+    if (distRaw is Map) {
+      for (final e in distRaw.entries) {
+        dist[e.key.toString()] = (e.value as num?)?.toInt() ?? 0;
+      }
+    }
+    setState(() {
+      _loading = false;
+      _ratings = ratings;
+      _avg = (data['avg_rating'] as num?)?.toDouble() ?? widget.initialAvg;
+      _count = (data['total_ratings'] as num?)?.toInt() ?? widget.initialCount;
+      _distribution = dist;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final maxH = MediaQuery.of(context).size.height * 0.88;
+    return Container(
+      constraints: BoxConstraints(maxHeight: maxH),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFBF7F4),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 8, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Ratings',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.charcoal,
+                    ),
+                  ),
+                ),
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.charcoal.withValues(alpha: 0.06),
+                    foregroundColor: AppColors.charcoal,
+                    hoverColor: AppColors.charcoal.withValues(alpha: 0.1),
+                    minimumSize: const Size(32, 32),
+                    maximumSize: const Size(32, 32),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                ),
+              ],
+            ),
+          ),
+          if (widget.variantId != null && widget.variantName != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Text(
+                  'Showing reviews for ${widget.variantName}',
+                  style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
+                ),
+              ),
+            ),
+          Expanded(
+            child: _loading
+                ? const Center(
+                    child: CircularProgressIndicator(color: AppColors.roseCta))
+                : _error != null
+                    ? Center(
+                        child: Text(_error!,
+                            style: GoogleFonts.dmSans(color: AppColors.muted)))
+                    : ListView(
+                        padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+                        children: [
+                          _overview(),
+                          const SizedBox(height: 16),
+                          if (_ratings.isEmpty)
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 28),
+                              child: Column(
+                                children: [
+                                  Icon(Icons.chat_bubble_outline_rounded,
+                                      size: 36,
+                                      color: AppColors.muted.withValues(alpha: 0.5)),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    'No reviews yet for this selection.',
+                                    style: GoogleFonts.dmSans(
+                                        fontSize: 13, color: AppColors.muted),
+                                  ),
+                                ],
+                              ),
+                            )
+                          else
+                            ..._ratings.map(_reviewRow),
+                        ],
+                      ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _overview() {
+    final total = _count <= 0 ? 1 : _count;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Average user rating',
+                    style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.muted)),
+                const SizedBox(height: 4),
+                Text.rich(
+                  TextSpan(
+                    text: _count == 0 ? '0' : _avg.toStringAsFixed(1),
+                    style: GoogleFonts.cormorantGaramond(
+                      fontSize: 34,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.charcoal,
+                    ),
+                    children: [
+                      TextSpan(
+                        text: ' / 5',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Row(
+                  children: List.generate(5, (i) {
+                    final filled = i < _avg.round();
+                    return Icon(
+                      filled ? Icons.star_rounded : Icons.star_outline_rounded,
+                      size: 16,
+                      color: const Color(0xFFF0B429),
+                    );
+                  }),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 6,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Rating breakdown',
+                    style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.muted)),
+                const SizedBox(height: 8),
+                for (final star in [5, 4, 3, 2, 1])
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 5),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 12,
+                          child: Text('$star',
+                              style: GoogleFonts.dmSans(
+                                  fontSize: 11, color: AppColors.muted)),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(99),
+                            child: LinearProgressIndicator(
+                              value: (_distribution['$star'] ?? 0) / total,
+                              minHeight: 7,
+                              backgroundColor: const Color(0xFFEDE3D8),
+                              valueColor: const AlwaysStoppedAnimation(
+                                  Color(0xFFF0B429)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reviewRow(Map<String, dynamic> r) {
+    final name = (r['customer_name'] ?? 'Anonymous').toString();
+    final rating = (r['rating'] as num?)?.toInt() ?? 0;
+    final comment = (r['comment']?.toString().trim().isNotEmpty == true)
+        ? r['comment'].toString().trim()
+        : 'No written comment.';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: List.generate(
+              5,
+              (i) => Icon(
+                i < rating ? Icons.star_rounded : Icons.star_outline_rounded,
+                size: 14,
+                color: const Color(0xFFF0B429),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(comment,
+              style: GoogleFonts.dmSans(
+                  fontSize: 13, height: 1.45, color: AppColors.muted)),
+          const SizedBox(height: 6),
+          Text(
+            '— Reviewed by $name',
+            style: GoogleFonts.dmSans(
+              fontSize: 12,
+              fontStyle: FontStyle.italic,
+              color: AppColors.muted,
+            ),
+          ),
+        ],
       ),
     );
   }

@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
+import '../../providers/wishlist_provider.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -14,6 +15,7 @@ import '../auth/login_screen.dart';
 import '../auth/register_screen.dart';
 import '../orders/orders_screen.dart';
 import '../cart/cart_screen.dart';
+import '../wishlist/wishlist_screen.dart';
 import '../notifications/notifications_screen.dart';
 import 'edit_profile_screen.dart';
 import 'change_password_screen.dart';
@@ -129,6 +131,11 @@ class _LoggedInView extends StatelessWidget {
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const OrdersScreen()))),
             _MenuItem(
+                icon: Icons.favorite_border_rounded,
+                label: 'Wishlist',
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const WishlistScreen()))),
+            _MenuItem(
                 icon: Icons.shopping_bag_outlined,
                 label: 'My Cart',
                 onTap: () => Navigator.push(context,
@@ -225,6 +232,7 @@ class _LoggedInView extends StatelessWidget {
                 if (confirm == true) {
                   context.read<AuthProvider>().logout();
                   context.read<CartProvider>().reset();
+                  context.read<WishlistProvider>().reset();
                 }
               },
             ),

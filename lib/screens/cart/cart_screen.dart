@@ -134,13 +134,13 @@ class _CartScreenState extends State<CartScreen> {
           Icon(Icons.shopping_bag_outlined,
               size: 72, color: AppColors.dustyRose.withValues(alpha: 0.3)),
           const SizedBox(height: 16),
-          Text('Your cart is empty',
+          Text('Your basket is empty',
               style: Theme.of(context)
                   .textTheme
                   .headlineSmall
                   ?.copyWith(color: AppColors.muted)),
           const SizedBox(height: 8),
-          Text('Add some beautiful blooms!',
+          Text('Add some blooms to get started',
               style: Theme.of(context).textTheme.bodySmall),
           const SizedBox(height: 24),
           OutlinedButton(
@@ -504,22 +504,37 @@ class _StoreSection extends StatelessWidget {
                       size: 18, color: AppColors.labelPink),
                   const SizedBox(width: 6),
                   Expanded(
-                    child: Text(
-                      group.storeName,
-                      style: GoogleFonts.dmSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.labelPink,
-                        letterSpacing: 0.1,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          group.storeName,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 13,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.labelPink,
+                            letterSpacing: 0.1,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        Text(
+                          '${group.displayLineCount} item${group.displayLineCount != 1 ? 's' : ''}',
+                          style: GoogleFonts.dmSans(
+                              fontSize: 11, color: AppColors.muted),
+                        ),
+                      ],
                     ),
                   ),
                   Text(
-                    '${group.items.length} item${group.items.length > 1 ? 's' : ''}',
-                    style: GoogleFonts.dmSans(
-                        fontSize: 11, color: AppColors.muted),
+                    '₱${group.selectedSubtotal.toStringAsFixed(2)}',
+                    style: GoogleFonts.cormorantGaramond(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
+                      color: group.anySelected
+                          ? AppColors.deepRose
+                          : AppColors.muted,
+                    ),
                   ),
                 ],
               ),
@@ -531,7 +546,7 @@ class _StoreSection extends StatelessWidget {
                 item: item,
                 cart: cart,
               )),
-          // Store subtotal
+          // Store subtotal footer kept for clarity (web shows total in header too)
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
             decoration: const BoxDecoration(
@@ -613,7 +628,7 @@ class _CartItemTile extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 10),
-          // Info
+          // Info — layout matches web: name → variant → price → qty → add-ons
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -699,10 +714,89 @@ class _CartItemTile extends StatelessWidget {
                       ? () => cart.updateItem(item.id, item.quantity + 1)
                       : null,
                 ),
+                if (item.addons.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: item.addons.map((a) {
+                        final label =
+                            a.groupName != null && a.groupName!.isNotEmpty
+                                ? '${a.groupName}: ${a.name}'
+                                : a.name;
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            children: [
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(5),
+                                child: a.imageUrl != null &&
+                                        a.imageUrl!.isNotEmpty
+                                    ? Image.network(
+                                        a.imageUrl!,
+                                        width: 22,
+                                        height: 22,
+                                        fit: BoxFit.cover,
+                                        errorBuilder: (_, __, ___) => Container(
+                                          width: 22,
+                                          height: 22,
+                                          color: AppColors.warmWhite,
+                                          child: Icon(Icons.card_giftcard,
+                                              size: 12, color: AppColors.muted),
+                                        ),
+                                      )
+                                    : Container(
+                                        width: 22,
+                                        height: 22,
+                                        color: AppColors.warmWhite,
+                                        child: Icon(Icons.card_giftcard,
+                                            size: 12, color: AppColors.muted),
+                                      ),
+                              ),
+                              const SizedBox(width: 6),
+                              Expanded(
+                                child: Text(
+                                  '+ $label${a.quantity > 1 ? ' ×${a.quantity}' : ''}',
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 10,
+                                    color: AppColors.muted,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              Text(
+                                '₱${(a.price * a.quantity).toStringAsFixed(2)}',
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 10,
+                                  color: AppColors.charcoal,
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              GestureDetector(
+                                onTap: a.addonOptionId > 0
+                                    ? () => cart.removeAddon(
+                                        item.id, a.addonOptionId)
+                                    : null,
+                                child: Padding(
+                                  padding: const EdgeInsets.all(2),
+                                  child: Icon(
+                                    Icons.close,
+                                    size: 14,
+                                    color: AppColors.muted.withValues(alpha: 0.85),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        );
+                      }).toList(),
+                    ),
+                  ),
               ],
             ),
           ),
-          // Price + delete
+          // Line total + delete item (web cart-item-side)
           Column(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
@@ -727,7 +821,7 @@ class _CartItemTile extends StatelessWidget {
                     borderRadius: BorderRadius.circular(AppRadius.pill),
                   ),
                   child: const Icon(
-                    Icons.close,
+                    Icons.delete_outline,
                     size: 14,
                     color: AppColors.muted,
                   ),

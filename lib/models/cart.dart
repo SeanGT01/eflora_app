@@ -3,6 +3,38 @@ import '../services/cloudinary_service.dart';
 import 'product.dart';
 import '../theme/app_theme.dart';
 
+class CartItemAddon {
+  final int id;
+  final int addonOptionId;
+  final String name;
+  final double price;
+  final int quantity;
+  final String? imageUrl;
+  final String? groupName;
+
+  const CartItemAddon({
+    required this.id,
+    required this.addonOptionId,
+    required this.name,
+    required this.price,
+    this.quantity = 1,
+    this.imageUrl,
+    this.groupName,
+  });
+
+  factory CartItemAddon.fromJson(Map<String, dynamic> j) {
+    return CartItemAddon(
+      id: j['id'] ?? 0,
+      addonOptionId: j['addon_option_id'] ?? 0,
+      name: j['name'] ?? '',
+      price: (j['price'] as num?)?.toDouble() ?? 0,
+      quantity: j['quantity'] ?? 1,
+      imageUrl: j['image_url'] as String?,
+      groupName: j['group_name'] as String?,
+    );
+  }
+}
+
 class CartItem {
   final int id;
   final int productId;
@@ -19,6 +51,8 @@ class CartItem {
   final String? storeName;
   final int? storeId;
   bool isSelected;
+  final List<CartItemAddon> addons;
+  final double addonsTotal;
 
   CartItem({
     required this.id,
@@ -36,10 +70,22 @@ class CartItem {
     this.storeName,
     this.storeId,
     this.isSelected = true,
+    this.addons = const [],
+    this.addonsTotal = 0,
   });
 
   bool get isVariant => variantId != null;
-  double get subtotal => price * quantity;
+
+  /// Add-on charge for this line (not scaled by flower/variant qty — matches backend).
+  double get addonsUnitTotal {
+    if (addons.isNotEmpty) {
+      return addons.fold<double>(0, (s, a) => s + a.price * a.quantity);
+    }
+    return addonsTotal;
+  }
+
+  /// Product + structured add-ons (add-ons stay fixed when flower qty changes).
+  double get subtotal => (price * quantity) + addonsUnitTotal;
 
 /// Get optimized Cloudinary image URL for cart display
 String? get optimizedImageUrl {
@@ -177,6 +223,13 @@ factory CartItem.fromJson(Map<String, dynamic> j) {
     debugPrint('⚠️ No image URL found for item ${j['id']}');
   }
 
+  final addons = (j['addons'] as List? ?? [])
+      .whereType<Map>()
+      .map((a) => CartItemAddon.fromJson(Map<String, dynamic>.from(a)))
+      .toList();
+  final addonsTotal = (j['addons_total'] as num?)?.toDouble() ??
+      addons.fold<double>(0, (s, a) => s + (a.price * a.quantity));
+
   return CartItem(
     id: j['id'] as int,
     productId: product.id,
@@ -193,6 +246,8 @@ factory CartItem.fromJson(Map<String, dynamic> j) {
     storeName: storeName,
     storeId: j['store_id'] as int? ?? product.storeId,
     isSelected: j['is_selected'] as bool? ?? true,
+    addons: addons,
+    addonsTotal: addonsTotal,
   );
 }
 
@@ -228,6 +283,8 @@ factory CartItem.fromJson(Map<String, dynamic> j) {
     String? storeName,
     int? storeId,
     bool? isSelected,
+    List<CartItemAddon>? addons,
+    double? addonsTotal,
   }) {
     return CartItem(
       id: id ?? this.id,
@@ -245,6 +302,8 @@ factory CartItem.fromJson(Map<String, dynamic> j) {
       storeName: storeName ?? this.storeName,
       storeId: storeId ?? this.storeId,
       isSelected: isSelected ?? this.isSelected,
+      addons: addons ?? this.addons,
+      addonsTotal: addonsTotal ?? this.addonsTotal,
     );
   }
 }
@@ -266,7 +325,11 @@ class StoreCartGroup {
       items.where((i) => i.isSelected).fold(0.0, (sum, i) => sum + i.subtotal);
   bool get allSelected => items.every((i) => i.isSelected);
   bool get anySelected => items.any((i) => i.isSelected);
+  /// Flower qty only (selected lines).
   int get itemCount => items.fold(0, (sum, i) => sum + i.quantity);
+  /// Web parity: each product line + each add-on row.
+  int get displayLineCount =>
+      items.fold(0, (sum, i) => sum + 1 + i.addons.length);
   int get selectedItemCount =>
       items.where((i) => i.isSelected).fold(0, (sum, i) => sum + i.quantity);
 }
@@ -278,14 +341,25 @@ class Cart {
   const Cart({required this.id, required this.items});
 
   double get total => items.fold(0, (sum, i) => sum + i.subtotal);
-  int get itemCount => items.fold(0, (sum, i) => sum + i.quantity);
+  /// Web parity: product qty + add-on units (badge count).
+  int get itemCount => items.fold(0, (sum, i) {
+        final addonUnits = i.addons.fold<int>(
+          0,
+          (s, a) => s + (a.quantity <= 0 ? 1 : a.quantity),
+        );
+        // If addons list empty but addonsTotal set, still count product qty only
+        // (units unknown); badge stays product-based in that edge case.
+        return sum + i.quantity + addonUnits;
+      });
   bool get isEmpty => items.isEmpty;
   bool get isNotEmpty => items.isNotEmpty;
 
   /// Only selected items
   List<CartItem> get selectedItems => items.where((i) => i.isSelected).toList();
   double get selectedTotal => selectedItems.fold(0.0, (sum, i) => sum + i.subtotal);
-  int get selectedItemCount => selectedItems.fold(0, (sum, i) => sum + i.quantity);
+  /// Selected flower/variant units (checkout CTA) — not add-on units.
+  int get selectedItemCount =>
+      selectedItems.fold(0, (sum, i) => sum + i.quantity);
 
   /// Items grouped by store
   Map<int, StoreCartGroup> get storeGroups {

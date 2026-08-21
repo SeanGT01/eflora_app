@@ -20,8 +20,15 @@ class OrderDetailScreen extends StatelessWidget {
     final dateStr = order.createdAt != null
         ? DateFormat('MMMM d, yyyy  h:mm a').format(order.createdAt!)
         : '';
-    final computedTotal = order.subtotalAmount + order.deliveryFee;
-    final totalToShow = (order.totalAmount <= 0 ||
+    final itemsSubtotal = order.items.fold<double>(0, (s, i) => s + i.lineTotal);
+    final hasAddons = order.items.any((i) => i.addons.isNotEmpty || i.addonsTotal > 0);
+    final subtotalToUse = (hasAddons && itemsSubtotal > 0)
+        ? itemsSubtotal
+        : (itemsSubtotal > order.subtotalAmount + 0.009
+            ? itemsSubtotal
+            : order.subtotalAmount);
+    final computedTotal = subtotalToUse + order.deliveryFee;
+    final totalToShow = (hasAddons || order.totalAmount <= 0 ||
             (order.totalAmount - computedTotal).abs() > 0.05)
         ? computedTotal
         : order.totalAmount;
@@ -178,7 +185,7 @@ class OrderDetailScreen extends StatelessWidget {
               children: [
                 ...order.items.map((item) => _OrderItemRow(item: item)),
                 const Divider(height: 20),
-                _PriceRow(label: 'Subtotal', amount: order.subtotalAmount),
+                _PriceRow(label: 'Subtotal', amount: subtotalToUse),
                 const SizedBox(height: 4),
                 _PriceRow(label: 'Delivery Fee', amount: order.deliveryFee),
                 const Divider(height: 16),
@@ -403,40 +410,83 @@ class OrderDetailScreen extends StatelessWidget {
   void _showDeliveryProofZoom(BuildContext context, String imageUrl) {
     showDialog(
       context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Stack(
-            children: [
-              Center(
-                child: CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  fit: BoxFit.contain,
-                  placeholder: (_, __) => const CircularProgressIndicator(
-                    color: AppColors.deepRose,
-                  ),
+      barrierColor: Colors.black.withOpacity(0.85),
+      builder: (ctx) {
+        final size = MediaQuery.sizeOf(ctx);
+        final maxW = size.width - 48;
+        final maxH = size.height * 0.82;
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: maxW,
+                          maxHeight: maxH,
+                        ),
+                        child: InteractiveViewer(
+                          minScale: 1,
+                          maxScale: 4,
+                          child: CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            fit: BoxFit.contain,
+                            placeholder: (_, __) => const SizedBox(
+                              width: 120,
+                              height: 120,
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: AppColors.deepRose,
+                                ),
+                              ),
+                            ),
+                            errorWidget: (_, __, ___) => Container(
+                              width: 200,
+                              padding: const EdgeInsets.all(24),
+                              color: Colors.black26,
+                              child: Text(
+                                'Unable to load image',
+                                style: GoogleFonts.dmSans(color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: -8,
+                      right: -8,
+                      child: Material(
+                        color: Colors.white,
+                        shape: const CircleBorder(),
+                        elevation: 3,
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => Navigator.pop(ctx),
+                          child: const SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: Icon(Icons.close_rounded, size: 18),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.deepRose,
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -576,6 +626,57 @@ class _OrderItemRow extends StatelessWidget {
                     color: AppColors.charcoal,
                   ),
                 ),
+                if (item.addons.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  ...item.addons.map((a) {
+                    final name = (a['name'] ?? 'Add-on').toString();
+                    final q = (a['quantity'] as num?)?.toInt() ?? 1;
+                    final rawImg = (a['image_url'] ?? a['image'] ?? '').toString().trim();
+                    final imgUrl = rawImg.isEmpty ? null : ApiService.assetUrl(rawImg);
+                    return Padding(
+                      padding: const EdgeInsets.only(bottom: 4),
+                      child: Row(
+                        children: [
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(5),
+                            child: Container(
+                              width: 22,
+                              height: 22,
+                              color: AppColors.cream,
+                              child: imgUrl != null
+                                  ? Image.network(
+                                      imgUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) => const Icon(
+                                        Icons.local_florist,
+                                        size: 12,
+                                        color: AppColors.dustyRose,
+                                      ),
+                                    )
+                                  : const Icon(
+                                      Icons.local_florist,
+                                      size: 12,
+                                      color: AppColors.dustyRose,
+                                    ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              '+ $name${q > 1 ? ' ×$q' : ''}',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 11,
+                                color: AppColors.muted,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
               ],
             ),
           ),
@@ -591,7 +692,7 @@ class _OrderItemRow extends StatelessWidget {
                 ),
               ),
               Text(
-                '₱${(item.price * item.quantity).toStringAsFixed(2)}',
+                '₱${item.lineTotal.toStringAsFixed(2)}',
                 style: GoogleFonts.dmSans(
                   fontSize: 13,
                   fontWeight: FontWeight.w700,

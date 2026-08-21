@@ -551,7 +551,12 @@ class ApiService {
 ///   - Payload structure: {product_id, quantity, [variant_id]}
 ///   - Error handling: Comprehensive logging
 ///   - Classifications: Detects variant vs main product
-  static Future<ApiResult> addToCart(int productId, int qty, {int? variantId}) async {
+  static Future<ApiResult> addToCart(
+    int productId,
+    int qty, {
+    int? variantId,
+    List<int>? addonOptionIds,
+  }) async {
   try {
     // ════════════════════════════════════════════════════════════════
     // CLASSIFICATION: Determine if this is a variant or main product
@@ -584,6 +589,9 @@ class ApiService {
       bodyMap['variant_id'] = variantId;
       print('🛒 │');
       print('🛒 │  Payload includes variant_id: $variantId');
+    }
+    if (addonOptionIds != null && addonOptionIds.isNotEmpty) {
+      bodyMap['addon_option_ids'] = addonOptionIds;
     }
     
     final body = jsonEncode(bodyMap);
@@ -657,6 +665,20 @@ class ApiService {
     }
   }
 
+  /// Remove one structured add-on from a cart line (web cart parity).
+  static Future<ApiResult> removeCartAddon(int itemId, int addonOptionId) async {
+    try {
+      final url = '$_api/customer/cart/items/$itemId/addons/$addonOptionId';
+      final res = await http.delete(
+        Uri.parse(url),
+        headers: await _headers(auth: true),
+      ).timeout(const Duration(seconds: 10));
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
   static Future<ApiResult> clearCart() async {
     try {
       print('🛒 Clearing cart');
@@ -715,6 +737,61 @@ class ApiService {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // WISHLIST
+  // ══════════════════════════════════════════════════════════════════════════
+
+  static Future<ApiResult> getWishlist() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_api/customer/wishlist'),
+        headers: await _headers(auth: true),
+      ).timeout(const Duration(seconds: 10));
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  static Future<ApiResult> getWishlistForProduct(int productId) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_api/customer/wishlist/product/$productId'),
+        headers: await _headers(auth: true),
+      ).timeout(const Duration(seconds: 10));
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  static Future<ApiResult> toggleWishlist(int productId, {int? variantId}) async {
+    try {
+      final body = <String, dynamic>{'product_id': productId};
+      if (variantId != null) body['variant_id'] = variantId;
+      final res = await http.post(
+        Uri.parse('$_api/customer/wishlist/toggle'),
+        headers: await _headers(auth: true),
+        body: jsonEncode(body),
+      ).timeout(const Duration(seconds: 10));
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  static Future<ApiResult> removeWishlistItem(int itemId) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_api/customer/wishlist/$itemId'),
+        headers: await _headers(auth: true),
+      ).timeout(const Duration(seconds: 10));
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // ORDERS
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -758,11 +835,19 @@ class ApiService {
     }
   }
 
-  static Future<ApiResult> cancelOrder(int id) async {
+  static Future<ApiResult> cancelOrder(
+    int id, {
+    required String reasonCode,
+    String? reason,
+  }) async {
     try {
       final res = await http.post(
         Uri.parse('$_api/customer/orders/$id/cancel'),
         headers: await _headers(auth: true),
+        body: jsonEncode({
+          'reason_code': reasonCode,
+          if (reason != null && reason.trim().isNotEmpty) 'reason': reason.trim(),
+        }),
       ).timeout(const Duration(seconds: 10));
       return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
     } catch (e) {
@@ -814,13 +899,26 @@ class ApiService {
     }
   }
 
-  static Future<ApiResult> getProductRatings(int productId, {int page = 1}) async {
+  static Future<ApiResult> getProductRatings(
+    int productId, {
+    int page = 1,
+    int perPage = 50,
+    /// null = all; use `'main'` for standard product; int for a variant id
+    Object? variantId,
+  }) async {
     try {
+      final params = <String, String>{
+        'page': page.toString(),
+        'per_page': perPage.toString(),
+      };
+      if (variantId != null) {
+        params['variant_id'] = variantId.toString();
+      }
       final uri = Uri.parse('$_api/customer/products/$productId/ratings')
-          .replace(queryParameters: {'page': page.toString()});
+          .replace(queryParameters: params);
       final res = await http.get(
         uri,
-        headers: await _headers(auth: true),
+        headers: await _headers(),
       ).timeout(const Duration(seconds: 10));
       return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
     } catch (e) {

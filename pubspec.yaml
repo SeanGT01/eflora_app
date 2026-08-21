@@ -36,6 +36,8 @@ flutter:
   assets:
     - assets/images/app_logo.png
     - assets/images/default_customer_avatar.svg
+    - assets/images/no_addon_placeholder.png
+    - assets/images/no_addon_placeholder.svg
 
 flutter_launcher_icons:
   android: true

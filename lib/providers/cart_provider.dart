@@ -110,10 +110,20 @@ class CartProvider extends ChangeNotifier {
     }
   }
 
-  Future<String?> addItem(int productId, {int qty = 1, int? variantId}) async {
+  Future<String?> addItem(
+    int productId, {
+    int qty = 1,
+    int? variantId,
+    List<int>? addonOptionIds,
+  }) async {
     // ✅ Use unified addToCart - handles both main products and variants
     final result =
-        await ApiService.addToCart(productId, qty, variantId: variantId);
+        await ApiService.addToCart(
+          productId,
+          qty,
+          variantId: variantId,
+          addonOptionIds: addonOptionIds,
+        );
 
     if (result.isSuccess && result.data is Map) {
       final d = result.data as Map<String, dynamic>;
@@ -200,6 +210,35 @@ class CartProvider extends ChangeNotifier {
     }
 
     final result = await ApiService.removeFromCart(itemId);
+    if (result.isSuccess && result.data is Map) {
+      final d = result.data as Map<String, dynamic>;
+      _cart = Cart.fromJson(d);
+      notifyListeners();
+    } else if (!result.isSuccess) {
+      await load(showLoading: false);
+    }
+  }
+
+  /// Remove one add-on from a cart line (matches web removeCartAddon).
+  Future<void> removeAddon(int itemId, int addonOptionId) async {
+    if (_cart == null) return;
+    final idx = _cart!.items.indexWhere((i) => i.id == itemId);
+    if (idx == -1) return;
+
+    final item = _cart!.items[idx];
+    final newAddons =
+        item.addons.where((a) => a.addonOptionId != addonOptionId).toList();
+    if (newAddons.length == item.addons.length) return;
+
+    final newAddonsTotal =
+        newAddons.fold<double>(0, (s, a) => s + a.price * a.quantity);
+    _cart!.items[idx] = item.copyWith(
+      addons: newAddons,
+      addonsTotal: newAddonsTotal,
+    );
+    notifyListeners();
+
+    final result = await ApiService.removeCartAddon(itemId, addonOptionId);
     if (result.isSuccess && result.data is Map) {
       final d = result.data as Map<String, dynamic>;
       _cart = Cart.fromJson(d);

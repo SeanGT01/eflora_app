@@ -25,6 +25,17 @@ class _ChatOrderContextBannerState extends State<ChatOrderContextBanner> {
         if (item.variantName != null && item.variantName!.isNotEmpty) item.variantName!,
       ].join(' · ');
 
+  double _chatItemLineTotal(ChatOrderItem item) {
+    if (item.total > 0) return item.total;
+    final addonsSum = item.addons.fold<double>(0, (s, a) {
+      final price = (a['price'] as num?)?.toDouble() ?? 0;
+      final qty = (a['quantity'] as num?)?.toInt() ?? 1;
+      final total = (a['total'] as num?)?.toDouble();
+      return s + (total ?? price * (qty <= 0 ? 1 : qty));
+    });
+    return (item.price * item.quantity) + addonsSum;
+  }
+
   @override
   void didUpdateWidget(covariant ChatOrderContextBanner oldWidget) {
     super.didUpdateWidget(oldWidget);
@@ -211,12 +222,23 @@ class _ChatOrderContextBannerState extends State<ChatOrderContextBanner> {
                       'Qty ${item.quantity} · ${_peso(item.price)} each',
                       style: GoogleFonts.dmSans(fontSize: 11, color: AppColors.muted),
                     ),
+                    if (item.addons.isNotEmpty)
+                      ...item.addons.map((a) {
+                        final name = (a['name'] ?? 'Add-on').toString();
+                        final q = (a['quantity'] as num?)?.toInt() ?? 1;
+                        return Text(
+                          '+ $name${q > 1 ? ' ×$q' : ''}',
+                          style: GoogleFonts.dmSans(fontSize: 10.5, color: AppColors.muted),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        );
+                      }),
                   ],
                 ),
               ),
               const SizedBox(width: 8),
               Text(
-                _peso(item.total > 0 ? item.total : item.price * item.quantity),
+                _peso(_chatItemLineTotal(item)),
                 style: GoogleFonts.dmSans(
                   fontSize: 12.5,
                   fontWeight: FontWeight.w700,

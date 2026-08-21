@@ -3,6 +3,44 @@ import 'package:flutter/material.dart';
 int _safeInt(dynamic v) => v is int ? v : v is String ? int.parse(v) : (v as num?)?.toInt() ?? 0;
 double _safeDbl(dynamic v) => v is double ? v : v is int ? v.toDouble() : v is String ? double.parse(v) : (v as num?)?.toDouble() ?? 0.0;
 
+class OrderItemAddon {
+  final int id;
+  /// ProductAddonOption id used when re-adding to cart.
+  final int? addonOptionId;
+  final String name;
+  final double price;
+  final int quantity;
+  final String? imageUrl;
+  final double total;
+
+  const OrderItemAddon({
+    required this.id,
+    this.addonOptionId,
+    required this.name,
+    required this.price,
+    this.quantity = 1,
+    this.imageUrl,
+    this.total = 0,
+  });
+
+  factory OrderItemAddon.fromJson(Map<String, dynamic> j) {
+    final price = _safeDbl(j['price']);
+    final qty = _safeInt(j['quantity'] ?? 1);
+    final optionId = j['addon_option_id'] != null
+        ? _safeInt(j['addon_option_id'])
+        : null;
+    return OrderItemAddon(
+      id: _safeInt(j['id']),
+      addonOptionId: (optionId != null && optionId > 0) ? optionId : null,
+      name: j['name'] ?? 'Add-on',
+      price: price,
+      quantity: qty <= 0 ? 1 : qty,
+      imageUrl: j['image_url'] as String?,
+      total: j['total'] != null ? _safeDbl(j['total']) : price * (qty <= 0 ? 1 : qty),
+    );
+  }
+}
+
 class OrderItem {
   final int id;
   final int productId;
@@ -12,25 +50,59 @@ class OrderItem {
   final int quantity;
   final double price;
   final String? imageUrl;
+  final List<OrderItemAddon> addons;
+  final double addonsTotal;
+  final double lineTotal;
+  /// Customer's 1–5 product rating for this line when already rated.
+  final int? rating;
 
   const OrderItem({
     required this.id, required this.productId, required this.productName,
     this.variantName, this.variantId,
     required this.quantity, required this.price, this.imageUrl,
+    this.addons = const [],
+    this.addonsTotal = 0,
+    this.lineTotal = 0,
+    this.rating,
   });
 
   factory OrderItem.fromJson(Map<String, dynamic> j) {
     // Try multiple possible field names for image URL
     final imageUrl = j['image_url'] ?? j['product_image_url'] ?? j['image'] ?? j['thumbnail_url'];
+    final addons = (j['addons'] as List? ?? [])
+        .whereType<Map>()
+        .map((a) => OrderItemAddon.fromJson(Map<String, dynamic>.from(a)))
+        .toList();
+    final addonsTotal = j['addons_total'] != null
+        ? _safeDbl(j['addons_total'])
+        : addons.fold<double>(0, (s, a) => s + a.total);
+    final qty = _safeInt(j['quantity']);
+    final price = _safeDbl(j['price']);
+    final computedLine = (price * qty) + addonsTotal;
+    final apiLine = j['total'] != null ? _safeDbl(j['total']) : null;
+    // Prefer the higher of API vs computed so missing add-ons in `total` still count.
+    final lineTotal = apiLine == null
+        ? computedLine
+        : (apiLine >= computedLine - 0.009 ? apiLine : computedLine);
+    final rawRating = j['rating'];
+    int? rating;
+    if (rawRating != null) {
+      final r = _safeInt(rawRating);
+      if (r >= 1 && r <= 5) rating = r;
+    }
     return OrderItem(
       id: _safeInt(j['id']),
       productId: _safeInt(j['product_id']),
       productName: j['product_name'] ?? j['name'] ?? '',
       variantName: j['variant_name'] ?? j['variant'],
       variantId: j['variant_id'] != null ? _safeInt(j['variant_id']) : null,
-      quantity: _safeInt(j['quantity']),
-      price: _safeDbl(j['price']),
+      quantity: qty,
+      price: price,
       imageUrl: imageUrl,
+      addons: addons,
+      addonsTotal: addonsTotal,
+      lineTotal: lineTotal,
+      rating: rating,
     );
   }
 
@@ -40,6 +112,22 @@ class OrderItem {
       return '$productName - $variantName';
     }
     return productName;
+  }
+
+  /// Addon option ids for Buy Again (qty scaled to a single product unit).
+  List<int> get reorderAddonOptionIds {
+    if (addons.isEmpty) return const [];
+    final productQty = quantity <= 0 ? 1 : quantity;
+    final ids = <int>[];
+    for (final a in addons) {
+      final oid = a.addonOptionId;
+      if (oid == null || oid <= 0) continue;
+      final perProduct = ((a.quantity / productQty).round()).clamp(1, 99);
+      for (var i = 0; i < perProduct; i++) {
+        ids.add(oid);
+      }
+    }
+    return ids;
   }
 }
 
@@ -67,6 +155,8 @@ class Order {
   final DateTime? donePreparingAt;
   final DateTime? confirmedAt;
   final DateTime? deliveredAt;
+  final String? cancellationReason;
+  final String? cancellationReasonCode;
 
   const Order({
     required this.id, required this.status, required this.subtotalAmount, required this.totalAmount,
@@ -76,6 +166,7 @@ class Order {
     this.paymentMethod, this.paymentStatus,
     this.pendingAt, this.acceptedAt, this.preparingAt, this.donePreparingAt,
     this.confirmedAt, this.deliveredAt,
+    this.cancellationReason, this.cancellationReasonCode,
   });
 
   factory Order.fromJson(Map<String, dynamic> j) {
@@ -104,6 +195,36 @@ class Order {
       donePreparingAt: j['done_preparing_at'] != null ? DateTime.tryParse(j['done_preparing_at']) : null,
       confirmedAt: j['confirmed_at'] != null ? DateTime.tryParse(j['confirmed_at']) : null,
       deliveredAt: j['delivered_at'] != null ? DateTime.tryParse(j['delivered_at']) : null,
+      cancellationReason: j['cancellation_reason']?.toString(),
+      cancellationReasonCode: j['cancellation_reason_code']?.toString(),
+    );
+  }
+
+  Order copyWith({String? status}) {
+    return Order(
+      id: id,
+      status: status ?? this.status,
+      subtotalAmount: subtotalAmount,
+      totalAmount: totalAmount,
+      deliveryFee: deliveryFee,
+      storeName: storeName,
+      items: items,
+      createdAt: createdAt,
+      riderName: riderName,
+      paymentProofUrl: paymentProofUrl,
+      deliveryProofUrl: deliveryProofUrl,
+      deliveryProof2Url: deliveryProof2Url,
+      donePreparingProofUrl: donePreparingProofUrl,
+      paymentMethod: paymentMethod,
+      paymentStatus: paymentStatus,
+      pendingAt: pendingAt,
+      acceptedAt: acceptedAt,
+      preparingAt: preparingAt,
+      donePreparingAt: donePreparingAt,
+      confirmedAt: confirmedAt,
+      deliveredAt: deliveredAt,
+      cancellationReason: cancellationReason,
+      cancellationReasonCode: cancellationReasonCode,
     );
   }
 

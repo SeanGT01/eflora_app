@@ -127,6 +127,83 @@ class ProductVariant {
   }
 }
 
+class ProductAddonOption {
+  final int id;
+  final int groupId;
+  final String name;
+  final double price;
+  final int stockQuantity;
+  final String? imageUrl;
+  final int sortOrder;
+  final bool isAvailable;
+  final bool showInYouMayAlsoLike;
+  final String? groupName;
+
+  const ProductAddonOption({
+    required this.id,
+    required this.groupId,
+    required this.name,
+    required this.price,
+    required this.stockQuantity,
+    this.imageUrl,
+    required this.sortOrder,
+    required this.isAvailable,
+    this.showInYouMayAlsoLike = false,
+    this.groupName,
+  });
+
+  bool get isOos => stockQuantity <= 0;
+
+  factory ProductAddonOption.fromJson(Map<String, dynamic> j) {
+    return ProductAddonOption(
+      id: j['id'] ?? 0,
+      groupId: j['group_id'] ?? 0,
+      name: j['name'] ?? '',
+      price: (j['price'] is int)
+          ? (j['price'] as int).toDouble()
+          : (j['price'] ?? 0.0).toDouble(),
+      stockQuantity: j['stock_quantity'] ?? 0,
+      imageUrl: j['image_url'] as String?,
+      sortOrder: j['sort_order'] ?? 0,
+      isAvailable: j['is_available'] ?? true,
+      showInYouMayAlsoLike: j['show_in_you_may_also_like'] ?? false,
+      groupName: j['group_name'] as String?,
+    );
+  }
+}
+
+class ProductAddonGroup {
+  final int id;
+  final int productId;
+  final String name;
+  final int sortOrder;
+  final bool isActive;
+  final List<ProductAddonOption> options;
+
+  const ProductAddonGroup({
+    required this.id,
+    required this.productId,
+    required this.name,
+    required this.sortOrder,
+    required this.isActive,
+    required this.options,
+  });
+
+  factory ProductAddonGroup.fromJson(Map<String, dynamic> j) {
+    final opts = (j['options'] as List? ?? [])
+        .map((o) => ProductAddonOption.fromJson(o as Map<String, dynamic>))
+        .toList();
+    return ProductAddonGroup(
+      id: j['id'] ?? 0,
+      productId: j['product_id'] ?? 0,
+      name: j['name'] ?? '',
+      sortOrder: j['sort_order'] ?? 0,
+      isActive: j['is_active'] ?? true,
+      options: opts,
+    );
+  }
+}
+
 class Product {
   final int id;
   final int storeId;
@@ -159,9 +236,15 @@ class Product {
   final bool isAvailable;
   final List<ProductImage> images;
   final List<ProductVariant> variants;
+  final List<ProductAddonGroup> addonGroups;
+  final List<ProductAddonOption> ymalAddonOptions;
+  final double avgRating;
+  final int reviewCount;
+  final Map<String, Map<String, dynamic>> variantRatings;
   final String? storeName;
   final DateTime? createdAt;
   final bool hasVariants;
+  final bool hasAddons;
   final bool? canDeliverToCustomer;
   final String? deliveryReason;
 
@@ -202,9 +285,15 @@ class Product {
     required this.isAvailable,
     required this.images,
     required this.variants,
+    this.addonGroups = const [],
+    this.ymalAddonOptions = const [],
+    this.avgRating = 0,
+    this.reviewCount = 0,
+    this.variantRatings = const {},
     this.storeName,
     this.createdAt,
     required this.hasVariants,
+    this.hasAddons = false,
     this.canDeliverToCustomer,
     this.deliveryReason,
   });
@@ -225,6 +314,25 @@ class Product {
           return ProductVariant.fromJson(v as Map<String, dynamic>);
         })
         .toList();
+
+    final addonGroups = (j['addon_groups'] as List? ?? [])
+        .map((g) => ProductAddonGroup.fromJson(g as Map<String, dynamic>))
+        .toList();
+
+    final ymalAddonOptions = (j['ymal_addon_options'] as List? ?? [])
+        .whereType<Map>()
+        .map((o) => ProductAddonOption.fromJson(Map<String, dynamic>.from(o)))
+        .toList();
+
+    final variantRatings = <String, Map<String, dynamic>>{};
+    final vrRaw = j['variant_ratings'];
+    if (vrRaw is Map) {
+      vrRaw.forEach((k, v) {
+        if (v is Map) {
+          variantRatings[k.toString()] = Map<String, dynamic>.from(v);
+        }
+      });
+    }
     
     debugPrint('   Found ${imgs.length} images and ${variants.length} variants for product ${j['name']}');
     
@@ -259,11 +367,19 @@ class Product {
       isAvailable: j['is_available'] ?? true,
       images: imgs,
       variants: variants,
+      addonGroups: addonGroups,
+      ymalAddonOptions: ymalAddonOptions,
+      avgRating: (j['avg_rating'] as num?)?.toDouble() ?? 0,
+      reviewCount: (j['review_count'] as num?)?.toInt()
+          ?? (j['total_ratings'] as num?)?.toInt()
+          ?? 0,
+      variantRatings: variantRatings,
       storeName: j['store_name'],
       createdAt: j['created_at'] != null
           ? DateTime.tryParse(j['created_at'])
           : null,
       hasVariants: j['has_variants'] ?? false,
+      hasAddons: j['has_addons'] ?? addonGroups.isNotEmpty,
       canDeliverToCustomer: _parseOptionalBool(j['can_deliver_to_customer']),
       deliveryReason: j['delivery_reason'] as String?,
     );
@@ -304,7 +420,7 @@ class Product {
     final primary = images.where((i) => i.isPrimary).firstOrNull ?? images.first;
     
     if (primary.filename.contains('cloudinary.com')) {
-      return CloudinaryService.getMediumUrl(primary.filename, size: 400);
+      return CloudinaryService.getLargeUrl(primary.filename, size: 1200);
     }
     
     return primary.filename;

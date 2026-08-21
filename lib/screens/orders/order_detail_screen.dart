@@ -2,13 +2,16 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:provider/provider.dart';
 import '../../models/order.dart';
+import '../../providers/cart_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/cloudinary_service.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/chat_drawer.dart';
+import '../../widgets/cancel_order_reason_sheet.dart';
 import '../product/product_detail_screen.dart';
 
 /// Pill badge using the web's per-status fill / text / border trio.
@@ -78,6 +81,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   Map<int, int> _existingRatings = {};
   bool _storeRated = false;
   bool _ratingsLoaded = false;
+  bool _buyAgainBusy = false;
 
   @override
   void initState() {
@@ -118,6 +122,86 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       _storeRated &&
       _order.items.every((i) => _existingRatings.containsKey(i.id));
 
+  Future<void> _buyAgain() async {
+    if (_buyAgainBusy) return;
+    setState(() => _buyAgainBusy = true);
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Adding items to cart…')),
+    );
+
+    try {
+      final res = await ApiService.getOrder(_order.id);
+      if (!mounted) return;
+
+      List<OrderItem> items = _order.items;
+      if (res.isSuccess && res.data is Map) {
+        final parsed =
+            Order.fromJson(Map<String, dynamic>.from(res.data as Map));
+        if (parsed.items.isNotEmpty) items = parsed.items;
+      }
+
+      if (items.isEmpty) {
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          const SnackBar(content: Text('No items found in this order.')),
+        );
+        return;
+      }
+
+      final cart = context.read<CartProvider>();
+      var added = 0;
+      var skipped = 0;
+
+      for (final item in items) {
+        if (item.productId <= 0) {
+          skipped++;
+          continue;
+        }
+        final err = await cart.addItem(
+          item.productId,
+          qty: 1,
+          variantId: item.variantId,
+          addonOptionIds: item.reorderAddonOptionIds.isEmpty
+              ? null
+              : item.reorderAddonOptionIds,
+        );
+        if (err == null) {
+          added++;
+        } else {
+          skipped++;
+        }
+      }
+
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      if (added > 0) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '$added item${added == 1 ? '' : 's'} added to cart'
+              '${skipped > 0 ? ' ($skipped out of stock)' : ''}',
+            ),
+          ),
+        );
+      } else {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('All items are out of stock.')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Failed to reorder. Please try again.')),
+      );
+    } finally {
+      if (mounted) setState(() => _buyAgainBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final order = _order;
@@ -125,8 +209,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         ? DateFormat('MMMM dd, yyyy · hh:mm a')
             .format(_toPhilippineTime(order.createdAt!))
         : '—';
-    final computedTotal = order.subtotalAmount + order.deliveryFee;
-    final totalToShow = (order.totalAmount <= 0 ||
+    final itemsSubtotal = order.items.fold<double>(0, (s, i) => s + i.lineTotal);
+    final hasAddons = order.items.any((i) => i.addons.isNotEmpty || i.addonsTotal > 0);
+    final subtotalToUse = (hasAddons && itemsSubtotal > 0)
+        ? itemsSubtotal
+        : (itemsSubtotal > order.subtotalAmount + 0.009
+            ? itemsSubtotal
+            : order.subtotalAmount);
+    final computedTotal = subtotalToUse + order.deliveryFee;
+    final totalToShow = (hasAddons || order.totalAmount <= 0 ||
             (order.totalAmount - computedTotal).abs() > 0.05)
         ? computedTotal
         : order.totalAmount;
@@ -214,6 +305,38 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               ),
               const SizedBox(height: 20),
 
+              if (order.status == 'cancelled' &&
+                  (order.cancellationReason?.trim().isNotEmpty ?? false)) ...[
+                GlassCard(
+                  padding: const EdgeInsets.all(14),
+                  radius: AppRadius.lg,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Cancellation reason',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.6,
+                          color: AppColors.muted,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        order.cancellationReason!,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13.5,
+                          height: 1.45,
+                          color: AppColors.charcoal,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+
               // Order Items
               const GlassSectionTitle(
                   eyebrow: 'Your bouquet', title: 'Order Items'),
@@ -250,7 +373,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                         CrossAxisAlignment.start,
                                     children: [
                                       Text(
-                                        item.displayName,
+                                        item.productName,
                                         style: GoogleFonts.dmSans(
                                           fontSize: 14,
                                           fontWeight: FontWeight.w600,
@@ -259,6 +382,20 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                         maxLines: 2,
                                         overflow: TextOverflow.ellipsis,
                                       ),
+                                      if (item.variantName != null &&
+                                          item.variantName!.isNotEmpty) ...[
+                                        const SizedBox(height: 2),
+                                        Text(
+                                          'Variant: ${item.variantName}',
+                                          style: GoogleFonts.dmSans(
+                                            fontSize: 12,
+                                            fontWeight: FontWeight.w500,
+                                            color: AppColors.deepRose,
+                                          ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ],
                                       const SizedBox(height: 4),
                                       Text(
                                         'Qty: ${item.quantity}',
@@ -266,31 +403,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                             fontSize: 12,
                                             color: AppColors.muted),
                                       ),
-                                      const SizedBox(height: 6),
-                                      Text(
-                                        '₱${item.price.toStringAsFixed(2)}',
-                                        style: GoogleFonts.dmSans(
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w700,
-                                          color: AppColors.deepRose,
-                                        ),
-                                      ),
+                                      const SizedBox(height: 8),
+                                      _OrderItemPriceBreakdown(item: item),
                                     ],
                                   ),
-                                ),
-                                Column(
-                                  crossAxisAlignment: CrossAxisAlignment.end,
-                                  children: [
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      '₱${(item.price * item.quantity).toStringAsFixed(2)}',
-                                      style: GoogleFonts.dmSans(
-                                        fontSize: 14,
-                                        fontWeight: FontWeight.w700,
-                                        color: AppColors.charcoal,
-                                      ),
-                                    ),
-                                  ],
                                 ),
                               ],
                             ),
@@ -317,7 +433,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   children: [
                     _SummaryRow(
                       label: 'Subtotal',
-                      value: '₱${(order.subtotalAmount).toStringAsFixed(2)}',
+                      value: '₱${subtotalToUse.toStringAsFixed(2)}',
                     ),
                     const SizedBox(height: 8),
                     _SummaryRow(
@@ -478,6 +594,38 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   icon: Icons.star_border_rounded,
                   onPressed: () => _openRatingSheet(context),
                 ),
+                const SizedBox(height: 12),
+              ],
+              if (order.status == 'delivered' ||
+                  order.status == 'completed') ...[
+                SizedBox(
+                  width: double.infinity,
+                  height: 50,
+                  child: OutlinedButton.icon(
+                    onPressed: _buyAgainBusy ? null : _buyAgain,
+                    icon: _buyAgainBusy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.refresh_rounded, size: 18),
+                    label: Text(
+                      'Buy Again',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AppColors.charcoal,
+                      side: const BorderSide(color: AppColors.glassBorder),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(AppRadius.pill),
+                      ),
+                    ),
+                  ),
+                ),
               ],
               if (order.canCancel) ...[
                 const SizedBox(height: 12),
@@ -529,46 +677,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   }
 
   Future<void> _cancelOrder() async {
-    final ok = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadius.lg),
-            ),
-            title: Text(
-              'Cancel order?',
-              style: GoogleFonts.cormorantGaramond(
-                fontWeight: FontWeight.w600,
-                color: AppColors.charcoal,
-              ),
-            ),
-            content: Text(
-              'This cannot be undone. The store will be notified.',
-              style: GoogleFonts.dmSans(color: AppColors.muted, height: 1.4),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: Text('Keep order',
-                    style: GoogleFonts.dmSans(color: AppColors.muted)),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: Text(
-                  'Cancel order',
-                  style: GoogleFonts.dmSans(
-                    color: const Color(0xFF9B1C1C),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-    if (!ok) return;
+    final reason = await showCancelOrderReasonSheet(context);
+    if (reason == null || !mounted) return;
 
-    final res = await ApiService.cancelOrder(_order.id);
+    final res = await ApiService.cancelOrder(
+      _order.id,
+      reasonCode: reason.reasonCode,
+      reason: reason.reason,
+    );
     if (!mounted) return;
     if (res.statusCode == 200 && res.data?['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -726,40 +842,83 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   void _showImageZoom(BuildContext context, String imageUrl) {
     showDialog(
       context: context,
-      builder: (_) => Dialog(
-        backgroundColor: Colors.transparent,
-        insetPadding: const EdgeInsets.all(16),
-        child: GestureDetector(
-          onTap: () => Navigator.pop(context),
-          child: Stack(
-            children: [
-              Center(
-                child: CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  fit: BoxFit.contain,
-                  placeholder: (_, __) => const CircularProgressIndicator(
-                    color: AppColors.deepRose,
-                  ),
+      barrierColor: Colors.black.withOpacity(0.85),
+      builder: (ctx) {
+        final size = MediaQuery.sizeOf(ctx);
+        final maxW = size.width - 48;
+        final maxH = size.height * 0.82;
+        return Dialog(
+          backgroundColor: Colors.transparent,
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          child: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    ClipRRect(
+                      borderRadius: BorderRadius.circular(12),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: maxW,
+                          maxHeight: maxH,
+                        ),
+                        child: InteractiveViewer(
+                          minScale: 1,
+                          maxScale: 4,
+                          child: CachedNetworkImage(
+                            imageUrl: imageUrl,
+                            fit: BoxFit.contain,
+                            placeholder: (_, __) => const SizedBox(
+                              width: 120,
+                              height: 120,
+                              child: Center(
+                                child: CircularProgressIndicator(
+                                  color: AppColors.deepRose,
+                                ),
+                              ),
+                            ),
+                            errorWidget: (_, __, ___) => Container(
+                              width: 200,
+                              padding: const EdgeInsets.all(24),
+                              color: Colors.black26,
+                              child: Text(
+                                'Unable to load image',
+                                style: GoogleFonts.dmSans(color: Colors.white),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: -8,
+                      right: -8,
+                      child: Material(
+                        color: Colors.white,
+                        shape: const CircleBorder(),
+                        elevation: 3,
+                        child: InkWell(
+                          customBorder: const CircleBorder(),
+                          onTap: () => Navigator.pop(ctx),
+                          child: const SizedBox(
+                            width: 32,
+                            height: 32,
+                            child: Icon(Icons.close_rounded, size: 18),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              Positioned(
-                top: 8,
-                right: 8,
-                child: Container(
-                  decoration: BoxDecoration(
-                    color: AppColors.deepRose,
-                    shape: BoxShape.circle,
-                  ),
-                  child: IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white),
-                    onPressed: () => Navigator.pop(context),
-                  ),
-                ),
-              ),
-            ],
+            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 
@@ -1597,6 +1756,142 @@ class _RatingSheetState extends State<_RatingSheet> {
       borderRadius: BorderRadius.circular(8),
       child: CachedNetworkImage(
           imageUrl: url, width: 44, height: 44, fit: BoxFit.cover),
+    );
+  }
+}
+
+/// Per-line price rows: main product (± variant label) and each add-on.
+class _OrderItemPriceBreakdown extends StatelessWidget {
+  final OrderItem item;
+
+  const _OrderItemPriceBreakdown({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final qty = item.quantity <= 0 ? 1 : item.quantity;
+    final productSub = item.price * qty;
+    final hasVariant =
+        item.variantName != null && item.variantName!.trim().isNotEmpty;
+    final mainLabel =
+        hasVariant ? '${item.productName} · ${item.variantName}' : item.productName;
+
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.only(top: 6),
+      decoration: const BoxDecoration(
+        border: Border(
+          top: BorderSide(color: Color(0x1A2C2520), width: 1),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _bdRow(
+            label: mainLabel,
+            calc: '₱${item.price.toStringAsFixed(2)} × $qty',
+            amount: '₱${productSub.toStringAsFixed(2)}',
+            emphasize: true,
+          ),
+          ...item.addons.map((a) {
+            final aQty = a.quantity <= 0 ? 1 : a.quantity;
+            return Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: _bdRow(
+                label: '+ ${a.name}${aQty > 1 ? ' ×$aQty' : ''}',
+                calc: '₱${a.price.toStringAsFixed(2)} × $aQty',
+                amount: '₱${a.total.toStringAsFixed(2)}',
+                imageUrl: a.imageUrl,
+              ),
+            );
+          }),
+        ],
+      ),
+    );
+  }
+
+  Widget _bdRow({
+    required String label,
+    required String calc,
+    required String amount,
+    bool emphasize = false,
+    String? imageUrl,
+  }) {
+    final labelStyle = GoogleFonts.dmSans(
+      fontSize: 11,
+      fontWeight: emphasize ? FontWeight.w500 : FontWeight.w400,
+      color: emphasize ? AppColors.charcoal : AppColors.muted,
+    );
+    final metaStyle = GoogleFonts.dmSans(
+      fontSize: 10,
+      color: AppColors.muted,
+    );
+    final amtStyle = GoogleFonts.dmSans(
+      fontSize: 11,
+      fontWeight: FontWeight.w500,
+      color: AppColors.charcoal,
+    );
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        if (imageUrl != null && imageUrl.isNotEmpty) ...[
+          _AddonThumb(url: imageUrl),
+          const SizedBox(width: 8),
+        ] else if (!emphasize) ...[
+          _AddonThumb(url: null),
+          const SizedBox(width: 8),
+        ],
+        Expanded(
+          child: Text(
+            label,
+            style: labelStyle,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+        const SizedBox(width: 6),
+        Text(calc, style: metaStyle),
+        const SizedBox(width: 8),
+        Text(amount, style: amtStyle),
+      ],
+    );
+  }
+}
+
+class _AddonThumb extends StatelessWidget {
+  final String? url;
+  const _AddonThumb({required this.url});
+
+  @override
+  Widget build(BuildContext context) {
+    if (url == null || url!.isEmpty) {
+      return Container(
+        width: 22,
+        height: 22,
+        decoration: BoxDecoration(
+          color: AppColors.cream,
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(color: AppColors.border),
+        ),
+        child: const Icon(Icons.card_giftcard, size: 12, color: AppColors.muted),
+      );
+    }
+    final thumb = CloudinaryService.isCloudinaryUrl(url!)
+        ? CloudinaryService.getThumbnailUrl(url!, size: 44)
+        : url!;
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(5),
+      child: CachedNetworkImage(
+        imageUrl: thumb,
+        width: 22,
+        height: 22,
+        fit: BoxFit.cover,
+        errorWidget: (_, __, ___) => Container(
+          width: 22,
+          height: 22,
+          color: AppColors.cream,
+          child: const Icon(Icons.card_giftcard, size: 12, color: AppColors.muted),
+        ),
+      ),
     );
   }
 }

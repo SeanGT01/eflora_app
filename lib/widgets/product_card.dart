@@ -256,53 +256,16 @@ class ProductCard extends StatelessWidget {
     );
   }
 
-  /// Build action button based on product stock status
-  /// Matches web: if main product or any variant has stock, + opens the
-  /// quick-add modal. Fully out of stock goes to product details.
+  /// Always show quick-add (+) — modal lists OOS options as disabled.
   Widget _buildActionButton(BuildContext context, Product product) {
     final btn = context.s(28).clamp(26.0, 34.0);
     final icon = context.s(15).clamp(13.0, 18.0);
 
-    if (product.hasAnySellableStock) {
-      return GradientCircleButton(
-        icon: Icons.add,
-        size: btn,
-        iconSize: icon,
-        onPressed: onAddToCart,
-      );
-    }
-
-    return _outlineAction(
-      context,
-      Icons.arrow_forward,
-      iconSize: context.s(13),
-      onTap: onTap,
-    );
-  }
-
-  Widget _outlineAction(
-    BuildContext context,
-    IconData icon, {
-    double? iconSize,
-    VoidCallback? onTap,
-  }) {
-    final size = context.s(28).clamp(26.0, 34.0);
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: size,
-        height: size,
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.7),
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.glassBorder),
-        ),
-        child: Icon(
-          icon,
-          color: AppColors.dustyRose,
-          size: iconSize ?? context.s(15),
-        ),
-      ),
+    return GradientCircleButton(
+      icon: Icons.add,
+      size: btn,
+      iconSize: icon,
+      onPressed: onAddToCart,
     );
   }
 }

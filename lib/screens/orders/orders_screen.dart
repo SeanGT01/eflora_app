@@ -11,6 +11,7 @@ import '../../providers/cart_provider.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/cancel_order_reason_sheet.dart';
 import 'order_detail_screen.dart';
 import '../checkout/checkout_modal.dart';
 
@@ -71,7 +72,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
-  Future<void> _loadOrders() async {
+  Future<void> _loadOrders({bool silent = false}) async {
     if (!context.read<AuthProvider>().isLoggedIn) {
       if (_loading || _orders.isNotEmpty || _cartItems.isNotEmpty) {
         setState(() {
@@ -82,7 +83,9 @@ class _OrdersScreenState extends State<OrdersScreen> {
       }
       return;
     }
-    setState(() => _loading = true);
+    if (!silent) {
+      setState(() => _loading = true);
+    }
 
     // Handle "to_ship" filter: includes preparing, done_preparing, accepted
     String? apiStatus;
@@ -135,6 +138,37 @@ class _OrdersScreenState extends State<OrdersScreen> {
     } else {
       setState(() => _loading = false);
     }
+  }
+
+  void _applyCancelledLocally(int orderId) {
+    setState(() {
+      _orders = _orders
+          .map((o) => o.id == orderId ? o.copyWith(status: 'cancelled') : o)
+          .where((o) {
+            if (_statusFilter == 'pending') return o.displayKey == 'pending';
+            if (_statusFilter == 'to_ship') return o.displayKey == 'processing';
+            if (_statusFilter == 'on_delivery') {
+              return o.displayKey == 'on_delivery';
+            }
+            if (_statusFilter == 'delivered') return o.displayKey == 'delivered';
+            if (_statusFilter == 'completed') return o.displayKey == 'completed';
+            return true;
+          })
+          .toList();
+    });
+  }
+
+  Future<void> _onOrderCancelled(int orderId) async {
+    _applyCancelledLocally(orderId);
+    await _loadOrders(silent: true);
+  }
+
+  /// After marking delivered → completed, follow the order into the Completed tab.
+  Future<void> _onOrderCompleted() async {
+    if (_statusFilter == 'delivered') {
+      setState(() => _statusFilter = 'completed');
+    }
+    await _loadOrders(silent: true);
   }
 
   @override
@@ -212,12 +246,14 @@ class _OrdersScreenState extends State<OrdersScreen> {
                                               OrderDetailScreen(order: order)),
                                     );
                                     if (changed == true && mounted) {
-                                      _loadOrders();
+                                      await _onOrderCompleted();
                                     }
                                   },
                                   child: _OrderTile(
                                     order: order,
                                     onOrderUpdated: _loadOrders,
+                                    onOrderCompleted: _onOrderCompleted,
+                                    onOrderCancelled: _onOrderCancelled,
                                   ),
                                 );
                               },
@@ -348,7 +384,14 @@ class _StatusPill extends StatelessWidget {
 class _OrderTile extends StatefulWidget {
   final Order order;
   final Future<void> Function()? onOrderUpdated;
-  const _OrderTile({required this.order, this.onOrderUpdated});
+  final Future<void> Function()? onOrderCompleted;
+  final Future<void> Function(int orderId)? onOrderCancelled;
+  const _OrderTile({
+    required this.order,
+    this.onOrderUpdated,
+    this.onOrderCompleted,
+    this.onOrderCancelled,
+  });
 
   @override
   State<_OrderTile> createState() => _OrderTileState();
@@ -359,6 +402,7 @@ class _OrderTileState extends State<_OrderTile> {
   bool _storeRated = false;
   bool _ratingsLoaded = false;
   bool _expandedItems = false;
+  bool _buyAgainBusy = false;
 
   DateTime _toPhilippineTime(DateTime dateTime) {
     // Convert UTC DateTime to Philippine time (UTC+8)
@@ -396,11 +440,98 @@ class _OrderTileState extends State<_OrderTile> {
       _storeRated &&
       widget.order.items.every((i) => _existingRatings.containsKey(i.id));
 
+  /// Mirrors web `reorderItems`: fetch order lines, add each as qty 1.
+  Future<void> _buyAgain() async {
+    if (_buyAgainBusy) return;
+    setState(() => _buyAgainBusy = true);
+
+    final messenger = ScaffoldMessenger.of(context);
+    messenger.hideCurrentSnackBar();
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Adding items to cart…')),
+    );
+
+    try {
+      final res = await ApiService.getOrder(widget.order.id);
+      if (!mounted) return;
+
+      List<OrderItem> items = widget.order.items;
+      if (res.isSuccess && res.data is Map) {
+        final parsed = Order.fromJson(Map<String, dynamic>.from(res.data as Map));
+        if (parsed.items.isNotEmpty) items = parsed.items;
+      }
+
+      if (items.isEmpty) {
+        messenger.hideCurrentSnackBar();
+        messenger.showSnackBar(
+          const SnackBar(content: Text('No items found in this order.')),
+        );
+        return;
+      }
+
+      final cart = context.read<CartProvider>();
+      var added = 0;
+      var skipped = 0;
+
+      for (final item in items) {
+        if (item.productId <= 0) {
+          skipped++;
+          continue;
+        }
+        final err = await cart.addItem(
+          item.productId,
+          qty: 1,
+          variantId: item.variantId,
+          addonOptionIds: item.reorderAddonOptionIds.isEmpty
+              ? null
+              : item.reorderAddonOptionIds,
+        );
+        if (err == null) {
+          added++;
+        } else {
+          skipped++;
+        }
+      }
+
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      if (added > 0) {
+        messenger.showSnackBar(
+          SnackBar(
+            content: Text(
+              '$added item${added == 1 ? '' : 's'} added to cart'
+              '${skipped > 0 ? ' ($skipped out of stock)' : ''}',
+            ),
+          ),
+        );
+      } else {
+        messenger.showSnackBar(
+          const SnackBar(content: Text('All items are out of stock.')),
+        );
+      }
+    } catch (_) {
+      if (!mounted) return;
+      messenger.hideCurrentSnackBar();
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Failed to reorder. Please try again.')),
+      );
+    } finally {
+      if (mounted) setState(() => _buyAgainBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final order = widget.order;
-    final computedTotal = order.subtotalAmount + order.deliveryFee;
-    final totalToShow = (order.totalAmount <= 0 ||
+    final itemsSubtotal = order.items.fold<double>(0, (s, i) => s + i.lineTotal);
+    final hasAddons = order.items.any((i) => i.addons.isNotEmpty || i.addonsTotal > 0);
+    final subtotalToUse = (hasAddons && itemsSubtotal > 0)
+        ? itemsSubtotal
+        : (itemsSubtotal > order.subtotalAmount + 0.009
+            ? itemsSubtotal
+            : order.subtotalAmount);
+    final computedTotal = subtotalToUse + order.deliveryFee;
+    final totalToShow = (hasAddons || order.totalAmount <= 0 ||
             (order.totalAmount - computedTotal).abs() > 0.05)
         ? computedTotal
         : order.totalAmount;
@@ -563,13 +694,7 @@ class _OrderTileState extends State<_OrderTile> {
                         if (order.status == 'delivered' ||
                             order.status == 'completed')
                           GestureDetector(
-                            onTap: () async {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                    content: Text(
-                                        'Order Again feature coming soon')),
-                              );
-                            },
+                            onTap: _buyAgainBusy ? null : _buyAgain,
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 14, vertical: 7),
@@ -580,14 +705,23 @@ class _OrderTileState extends State<_OrderTile> {
                                 borderRadius:
                                     BorderRadius.circular(AppRadius.pill),
                               ),
-                              child: Text(
-                                'Buy Again',
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.charcoal,
-                                ),
-                              ),
+                              child: _buyAgainBusy
+                                  ? const SizedBox(
+                                      width: 12,
+                                      height: 12,
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: AppColors.charcoal,
+                                      ),
+                                    )
+                                  : Text(
+                                      'Buy Again',
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.w600,
+                                        color: AppColors.charcoal,
+                                      ),
+                                    ),
                             ),
                           ),
                         const SizedBox(width: 8),
@@ -598,14 +732,7 @@ class _OrderTileState extends State<_OrderTile> {
                             _ratingsLoaded &&
                             !_allRated)
                           GestureDetector(
-                            onTap: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                    builder: (_) =>
-                                        OrderDetailScreen(order: order)),
-                              );
-                            },
+                            onTap: _openOrderForRating,
                             child: Container(
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 14, vertical: 7),
@@ -688,52 +815,24 @@ class _OrderTileState extends State<_OrderTile> {
   }
 
   Future<void> _cancelOrderFromCard() async {
-    final ok = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(AppRadius.lg),
-            ),
-            title: Text(
-              'Cancel order?',
-              style: GoogleFonts.cormorantGaramond(
-                fontWeight: FontWeight.w600,
-                color: AppColors.charcoal,
-              ),
-            ),
-            content: Text(
-              'This cannot be undone. The store will be notified.',
-              style: GoogleFonts.dmSans(color: AppColors.muted, height: 1.4),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: Text('Keep order',
-                    style: GoogleFonts.dmSans(color: AppColors.muted)),
-              ),
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: Text(
-                  'Cancel order',
-                  style: GoogleFonts.dmSans(
-                    color: const Color(0xFF9B1C1C),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ) ??
-        false;
-    if (!ok || !mounted) return;
+    final reason = await showCancelOrderReasonSheet(context);
+    if (reason == null || !mounted) return;
 
-    final res = await ApiService.cancelOrder(widget.order.id);
+    final res = await ApiService.cancelOrder(
+      widget.order.id,
+      reasonCode: reason.reasonCode,
+      reason: reason.reason,
+    );
     if (!mounted) return;
     if (res.statusCode == 200 && res.data?['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Order cancelled.')),
       );
-      await widget.onOrderUpdated?.call();
+      if (widget.onOrderCancelled != null) {
+        await widget.onOrderCancelled!(widget.order.id);
+      } else {
+        await widget.onOrderUpdated?.call();
+      }
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
@@ -744,6 +843,14 @@ class _OrderTileState extends State<_OrderTile> {
     );
   }
 
+  Future<void> _notifyCompleted() async {
+    if (widget.onOrderCompleted != null) {
+      await widget.onOrderCompleted!();
+    } else {
+      await widget.onOrderUpdated?.call();
+    }
+  }
+
   Future<void> _markAsCompletedFromCard() async {
     final res = await ApiService.completeOrder(widget.order.id);
     if (!mounted) return;
@@ -751,7 +858,7 @@ class _OrderTileState extends State<_OrderTile> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Order marked as completed.')),
       );
-      await widget.onOrderUpdated?.call();
+      await _notifyCompleted();
       return;
     }
     ScaffoldMessenger.of(context).showSnackBar(
@@ -760,6 +867,21 @@ class _OrderTileState extends State<_OrderTile> {
               res.data?['error'] ??
               'Failed to complete order')),
     );
+  }
+
+  Future<void> _openOrderForRating() async {
+    final changed = await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => OrderDetailScreen(order: widget.order),
+      ),
+    );
+    if (!mounted) return;
+    if (changed == true) {
+      await _notifyCompleted();
+    } else {
+      await widget.onOrderUpdated?.call();
+    }
   }
 }
 
@@ -806,37 +928,61 @@ class _TikTokProductCard extends StatelessWidget {
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Column(
+                    Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          item.displayName,
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.dmSans(
-                              fontSize: 13,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.charcoal),
+                        Expanded(
+                          child: Text(
+                            item.productName,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.dmSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.charcoal),
+                          ),
                         ),
-                        const SizedBox(height: 4),
-                        Text(
-                          'Qty: ${item.quantity}',
-                          style: GoogleFonts.dmSans(
-                              fontSize: 11, color: AppColors.muted),
-                        ),
+                        if (item.rating != null && item.rating! >= 1) ...[
+                          const SizedBox(width: 6),
+                          _ItemRatingStars(rating: item.rating!),
+                        ],
                       ],
                     ),
-
-                    // Price
+                    if (item.variantName != null &&
+                        item.variantName!.isNotEmpty) ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        'Variant: ${item.variantName}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.deepRose,
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 4),
                     Text(
-                      '₱${(item.price * item.quantity).toStringAsFixed(2)}',
-                      style: GoogleFonts.cormorantGaramond(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.deepRose),
+                      'Qty: ${item.quantity}',
+                      style: GoogleFonts.dmSans(
+                          fontSize: 11, color: AppColors.muted),
                     ),
+                    if (item.addons.isNotEmpty) ...[
+                      const SizedBox(height: 3),
+                      ...item.addons.take(2).map(
+                            (a) => Text(
+                              '+ ${a.name}${a.quantity > 1 ? ' ×${a.quantity}' : ''}',
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.dmSans(
+                                fontSize: 10,
+                                color: AppColors.muted,
+                              ),
+                            ),
+                          ),
+                    ],
                   ],
                 ),
               ),
@@ -844,6 +990,26 @@ class _TikTokProductCard extends StatelessWidget {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _ItemRatingStars extends StatelessWidget {
+  final int rating;
+  const _ItemRatingStars({required this.rating});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(5, (i) {
+        final filled = i < rating;
+        return Icon(
+          filled ? Icons.star_rounded : Icons.star_outline_rounded,
+          size: 13,
+          color: filled ? const Color(0xFFF0B429) : const Color(0x382C2520),
+        );
+      }),
     );
   }
 }
@@ -921,17 +1087,35 @@ class _CartItemTile extends StatelessWidget {
           Row(
             children: [
               Expanded(
-                child: Text(
-                  '${item.name} × ${item.quantity}',
-                  style: GoogleFonts.dmSans(
-                      fontSize: 12.5, color: AppColors.charcoal),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${item.name} × ${item.quantity}',
+                      style: GoogleFonts.dmSans(
+                          fontSize: 12.5, color: AppColors.charcoal),
+                    ),
+                    if (item.addons.isNotEmpty) ...[
+                      const SizedBox(height: 4),
+                      ...item.addons.map(
+                        (a) => Text(
+                          '+ ${a.name}${a.quantity > 1 ? ' ×${a.quantity}' : ''}'
+                          '  ₱${(a.price * a.quantity).toStringAsFixed(2)}',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11,
+                            color: AppColors.muted,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
               Column(
                 crossAxisAlignment: CrossAxisAlignment.end,
                 children: [
                   Text(
-                    '₱${(item.price * item.quantity).toStringAsFixed(2)}',
+                    '₱${item.subtotal.toStringAsFixed(2)}',
                     style: GoogleFonts.dmSans(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,

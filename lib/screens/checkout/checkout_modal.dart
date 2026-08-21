@@ -18,6 +18,7 @@ class CheckoutModal extends StatefulWidget {
   final int? buyNowProductId;
   final int? buyNowVariantId;
   final int buyNowQuantity;
+  final List<int> buyNowAddonOptionIds;
   final String? initialDeliveryDate;
   final String? initialDeliveryTime;
   final int? initialStoreId;
@@ -30,6 +31,7 @@ class CheckoutModal extends StatefulWidget {
     this.buyNowProductId,
     this.buyNowVariantId,
     this.buyNowQuantity = 1,
+    this.buyNowAddonOptionIds = const [],
     this.initialDeliveryDate,
     this.initialDeliveryTime,
     this.initialStoreId,
@@ -51,6 +53,7 @@ class _CheckoutModalState extends State<CheckoutModal> {
         productId: widget.buyNowProductId!,
         variantId: widget.buyNowVariantId,
         quantity: widget.buyNowQuantity,
+        addonOptionIds: widget.buyNowAddonOptionIds,
       );
     }
   }
@@ -263,6 +266,7 @@ void showCheckoutModal(
   int? buyNowProductId,
   int? buyNowVariantId,
   int buyNowQuantity = 1,
+  List<int> buyNowAddonOptionIds = const [],
   String? initialDeliveryDate,
   String? initialDeliveryTime,
   int? initialStoreId,
@@ -277,6 +281,7 @@ void showCheckoutModal(
       buyNowProductId: buyNowProductId,
       buyNowVariantId: buyNowVariantId,
       buyNowQuantity: buyNowQuantity,
+      buyNowAddonOptionIds: buyNowAddonOptionIds,
       initialDeliveryDate: initialDeliveryDate,
       initialDeliveryTime: initialDeliveryTime,
       initialStoreId: initialStoreId,

@@ -236,8 +236,8 @@ Future<bool> _showBirthdayStep(BuildContext context) async {
                       final date = await showDatePicker(
                         context: ctx,
                         initialDate: DateTime(now.year - 18, now.month, now.day),
-                        firstDate: DateTime(now.year - 100),
-                        lastDate: now,
+                        firstDate: DateTime(now.year - 120),
+                        lastDate: DateTime(now.year - 13, now.month, now.day),
                       );
                       if (date != null) setLocal(() => picked = date);
                     },

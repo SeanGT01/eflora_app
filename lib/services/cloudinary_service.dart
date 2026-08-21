@@ -8,7 +8,7 @@ class CloudinaryService {
     int width = 300,
     int height = 300,
     String crop = 'fill',
-    String quality = 'auto',
+    String quality = 'auto:good',
     String format = 'auto',
     bool faceDetection = false,
   }) {
@@ -122,14 +122,14 @@ class CloudinaryService {
     return getOptimizedUrl(url, width: size, height: size);
   }
   
-  /// Get medium size URL (for product details)
-  static String getMediumUrl(String url, {int size = 400}) {
-    return getOptimizedUrl(url, width: size, height: size);
+  /// Get medium size URL (for product cards / grids)
+  static String getMediumUrl(String url, {int size = 600}) {
+    return getOptimizedUrl(url, width: size, height: size, crop: 'limit');
   }
   
-  /// Get large size URL (for fullscreen view)
-  static String getLargeUrl(String url, {int size = 800}) {
-    return getOptimizedUrl(url, width: size, height: size);
+  /// Get large size URL (for product detail / fullscreen)
+  static String getLargeUrl(String url, {int size = 1400}) {
+    return getOptimizedUrl(url, width: size, height: size, crop: 'limit');
   }
   
   /// Get avatar URL with face detection

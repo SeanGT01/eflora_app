@@ -263,11 +263,26 @@ class _PaymentProofCardState extends State<_PaymentProofCard> {
                                     item['variant_name'],
                                     style: GoogleFonts.dmSans(fontSize: 10, color: AppColors.muted),
                                   ),
+                                if ((item['addons'] as List?)?.isNotEmpty == true)
+                                  ...((item['addons'] as List).map((raw) {
+                                    final a = raw is Map
+                                        ? Map<String, dynamic>.from(raw)
+                                        : <String, dynamic>{};
+                                    final name = (a['name'] ?? 'Add-on').toString();
+                                    final q = (a['quantity'] as num?)?.toInt() ?? 1;
+                                    return Text(
+                                      '+ $name${q > 1 ? ' ×$q' : ''}',
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 10,
+                                        color: AppColors.muted,
+                                      ),
+                                    );
+                                  })),
                               ],
                             ),
                           ),
                           Text(
-                            '×${item['quantity']} ₱${item['subtotal'].toStringAsFixed(2)}',
+                            '×${item['quantity']} ₱${((item['subtotal'] as num?)?.toDouble() ?? 0).toStringAsFixed(2)}',
                             style: GoogleFonts.dmSans(fontSize: 11, fontWeight: FontWeight.w600),
                           ),
                         ],

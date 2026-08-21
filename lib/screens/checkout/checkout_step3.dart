@@ -51,6 +51,9 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
   final Map<int, bool> _storeTimeSlotsLoading = {};
   final Map<int, bool> _storeClosedOnDate = {};
   final Map<int, String?> _storeSlotBlockReason = {};
+  /// Weekday names the store is open (`monday`…), from time-slot / schedule API.
+  final Map<int, Set<String>> _storeOpenDays = {};
+  final Map<int, bool> _storeHasSchedule = {};
 
   // Duplicate submission prevention
   bool _isSubmitting = false;
@@ -361,7 +364,20 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
                     final unitPrice = (item['price'] as num?)?.toDouble() ?? 0.0;
                     final origPrice = (item['original_price'] as num?)?.toDouble();
                     final discPct = item['discount_pct'] as int?;
-                    final lineTotal = unitPrice * qty;
+                    final addons = (item['addons'] as List?) ?? const [];
+                    final addonsTotal = (item['addons_total'] as num?)?.toDouble() ??
+                        addons.fold<double>(0, (s, raw) {
+                          final a = raw is Map
+                              ? Map<String, dynamic>.from(raw)
+                              : <String, dynamic>{};
+                          final aPrice = (a['price'] as num?)?.toDouble() ?? 0;
+                          final aQty = (a['quantity'] as num?)?.toInt() ??
+                              (a['units'] as num?)?.toInt() ??
+                              1;
+                          final aTotal = (a['total'] as num?)?.toDouble();
+                          return s + (aTotal ?? aPrice * (aQty <= 0 ? 1 : aQty));
+                        });
+                    final lineTotal = (unitPrice * qty) + addonsTotal;
                     final itemLabel = variantId != null
                         ? 'Product #$productId (Variant #$variantId)'
                         : 'Product #$productId';
@@ -369,6 +385,7 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 6),
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
                             child: Column(
@@ -415,6 +432,53 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
                                     ],
                                   ],
                                 ),
+                                ...addons.map((raw) {
+                                  final a = raw is Map<String, dynamic>
+                                      ? raw
+                                      : Map<String, dynamic>.from(raw as Map);
+                                  final aName = (a['name'] ?? 'Add-on').toString();
+                                  final aGroup = (a['group_name'] ?? '').toString();
+                                  final aPrice = (a['price'] as num?)?.toDouble() ?? 0;
+                                  final aImg = (a['image_url'] ?? '').toString();
+                                  final label = aGroup.isNotEmpty ? '$aGroup: $aName' : aName;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Row(
+                                      children: [
+                                        if (aImg.isNotEmpty)
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(4),
+                                            child: Image.network(
+                                              aImg,
+                                              width: 16,
+                                              height: 16,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                                            ),
+                                          ),
+                                        if (aImg.isNotEmpty) const SizedBox(width: 5),
+                                        Expanded(
+                                          child: Text(
+                                            '+ $label',
+                                            style: GoogleFonts.dmSans(
+                                              fontSize: 10,
+                                              color: AppColors.muted,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        Text(
+                                          '₱${aPrice.toStringAsFixed(2)}',
+                                          style: GoogleFonts.dmSans(
+                                            fontSize: 10,
+                                            color: AppColors.charcoal,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
                               ],
                             ),
                           ),
@@ -998,6 +1062,11 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
           openDays: List<String>.from(result['open_days'] ?? const <String>[]),
           date: normalizedDate,
         );
+        final openDays = (result['open_days'] as List? ?? const [])
+            .map((d) => d.toString().toLowerCase())
+            .toSet();
+        _storeOpenDays[storeId] = openDays;
+        _storeHasSchedule[storeId] = hasSchedule;
         _storeClosedOnDate[storeId] = reason == 'closed';
         _storeSlotBlockReason[storeId] = reason;
         _storeAvailableTimeSlots[storeId] = filteredSlots;
@@ -1012,6 +1081,8 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
         _storeAvailableTimeSlots[storeId] = List<String>.from(result['slots'] ?? <String>[]);
         _storeClosedOnDate[storeId] = false;
         _storeSlotBlockReason[storeId] = 'no_schedule';
+        _storeHasSchedule[storeId] = false;
+        _storeOpenDays[storeId] = {};
         _storeTimeSlots[storeId] = null;
       }
     });
@@ -1162,7 +1233,57 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     );
   }
 
+  bool _isStoreOpenOn(int storeId, DateTime date) {
+    final hasSchedule = _storeHasSchedule[storeId] == true;
+    final openDays = _storeOpenDays[storeId] ?? {};
+    if (!hasSchedule || openDays.isEmpty) return false;
+    const names = [
+      'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday',
+    ];
+    return openDays.contains(names[date.weekday - 1]);
+  }
+
+  /// Ensure open-day set is loaded before the calendar (matches web flatpickr disable).
+  Future<bool> _ensureStoreOpenDays(int storeId) async {
+    if (_storeOpenDays.containsKey(storeId) &&
+        (_storeHasSchedule[storeId] == true) &&
+        (_storeOpenDays[storeId]?.isNotEmpty ?? false)) {
+      return true;
+    }
+    final phToday = CheckoutService.normalizeToPhDate(CheckoutService.getPhilippineTime());
+    final dateStr = DateFormat('yyyy-MM-dd').format(phToday);
+    final result = await CheckoutService.fetchStoreTimeSlots(storeId, dateStr);
+    if (!mounted) return false;
+    if (result['success'] != true) {
+      setState(() {
+        _storeHasSchedule[storeId] = false;
+        _storeOpenDays[storeId] = {};
+      });
+      return false;
+    }
+    final openDays = (result['open_days'] as List? ?? const [])
+        .map((d) => d.toString().toLowerCase())
+        .toSet();
+    final hasSchedule = result['has_schedule'] == true;
+    setState(() {
+      _storeOpenDays[storeId] = openDays;
+      _storeHasSchedule[storeId] = hasSchedule;
+    });
+    return hasSchedule && openDays.isNotEmpty;
+  }
+
   Future<void> _pickStoreDeliveryDate(BuildContext context, int storeId) async {
+    final ready = await _ensureStoreOpenDays(storeId);
+    if (!mounted) return;
+    if (!ready) {
+      showToast(
+        context,
+        'This store has not set delivery hours yet.',
+        isError: true,
+      );
+      return;
+    }
+
     final phToday = CheckoutService.normalizeToPhDate(CheckoutService.getPhilippineTime());
     final maxDate = phToday.add(const Duration(days: 14));
     final current = _storeDates[storeId];
@@ -1172,12 +1293,26 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     if (initialDate.isBefore(phToday)) initialDate = phToday;
     if (initialDate.isAfter(maxDate)) initialDate = maxDate;
 
+    // Snap to first open day (web flatpickr enable list)
+    while (!_isStoreOpenOn(storeId, initialDate) && !initialDate.isAfter(maxDate)) {
+      initialDate = initialDate.add(const Duration(days: 1));
+    }
+    if (!_isStoreOpenOn(storeId, initialDate)) {
+      showToast(
+        context,
+        'No open delivery days in the next 2 weeks.',
+        isError: true,
+      );
+      return;
+    }
+
     final picked = await showDatePicker(
       context: context,
       initialDate: initialDate,
       firstDate: phToday,
       lastDate: maxDate,
       helpText: 'SELECT DELIVERY DATE',
+      selectableDayPredicate: (date) => _isStoreOpenOn(storeId, date),
       builder: (context, child) {
         return Theme(
           data: Theme.of(context).copyWith(
@@ -1216,6 +1351,10 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
 
     if (picked == null || !mounted) return;
     final normalized = CheckoutService.normalizeToPhDate(picked);
+    if (!_isStoreOpenOn(storeId, normalized)) {
+      showToast(context, 'Store is closed on this day. Pick another date.', isError: true);
+      return;
+    }
     setState(() {
       _storeDates[storeId] = normalized;
       _storeTimeSlots[storeId] = null;

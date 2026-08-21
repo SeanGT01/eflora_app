@@ -69,7 +69,7 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                   );
                 }),
                 const SizedBox(height: 24),
-                _buildGrandTotalSection(context),
+                _buildGrandTotalSection(context, cartItems),
                 const SizedBox(height: 24),
                 if (_validationResponse.warnings != null &&
                     _validationResponse.warnings!.isNotEmpty)
@@ -181,6 +181,9 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
     int index,
     List<CartItem> cartItems,
   ) {
+    final displaySubtotal = _storeSubtotalIncludingAddons(storeOrder, cartItems);
+    final displayTotal = displaySubtotal + storeOrder.deliveryFee;
+
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
       decoration: BoxDecoration(
@@ -255,9 +258,49 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                     final unitPrice = (item['price'] as num?)?.toDouble() ?? 0.0;
                     final origPrice = (item['original_price'] as num?)?.toDouble();
                     final discPct = item['discount_pct'] as int?;
-                    final lineTotal = unitPrice * qty;
                     final productId = item['product_id'] as int?;
                     final variantId = item['variant_id'] as int?;
+                    final addons = (item['addons'] as List?) ?? const [];
+                    final addonsTotal = (item['addons_total'] as num?)?.toDouble() ??
+                        addons.fold<double>(0, (s, raw) {
+                          final a = raw is Map
+                              ? Map<String, dynamic>.from(raw)
+                              : <String, dynamic>{};
+                          final aPrice = (a['price'] as num?)?.toDouble() ?? 0;
+                          final aQty = (a['quantity'] as num?)?.toInt() ??
+                              (a['units'] as num?)?.toInt() ??
+                              1;
+                          final aTotal = (a['total'] as num?)?.toDouble();
+                          return s + (aTotal ?? aPrice * (aQty <= 0 ? 1 : aQty));
+                        });
+                    // Prefer cart line add-ons when validate payload omitted them.
+                    var resolvedAddonsTotal = addonsTotal;
+                    var resolvedAddons = addons;
+                    if ((addons.isEmpty || addonsTotal <= 0) &&
+                        productId != null) {
+                      CartItem? match;
+                      for (final ci in cartItems) {
+                        if (ci.productId == productId &&
+                            ci.variantId == variantId) {
+                          match = ci;
+                          break;
+                        }
+                      }
+                      if (match != null &&
+                          (match.addons.isNotEmpty || match.addonsTotal > 0)) {
+                        resolvedAddons = match.addons
+                            .map((a) => {
+                                  'name': a.name,
+                                  'price': a.price,
+                                  'quantity': a.quantity,
+                                  'image_url': a.imageUrl,
+                                  'group_name': a.groupName,
+                                })
+                            .toList();
+                        resolvedAddonsTotal = match.addonsUnitTotal;
+                      }
+                    }
+                    final lineTotal = (unitPrice * qty) + resolvedAddonsTotal;
                     final resolvedName = _resolveCheckoutItemName(
                       cartItems: cartItems,
                       productId: productId,
@@ -267,6 +310,7 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 6),
                       child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Expanded(
                             child: Column(
@@ -311,6 +355,53 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                                     ],
                                   ],
                                 ),
+                                ...resolvedAddons.map((raw) {
+                                  final a = raw is Map<String, dynamic>
+                                      ? raw
+                                      : Map<String, dynamic>.from(raw as Map);
+                                  final aName = (a['name'] ?? 'Add-on').toString();
+                                  final aGroup = (a['group_name'] ?? '').toString();
+                                  final aPrice = (a['price'] as num?)?.toDouble() ?? 0;
+                                  final aImg = (a['image_url'] ?? '').toString();
+                                  final label = aGroup.isNotEmpty ? '$aGroup: $aName' : aName;
+                                  return Padding(
+                                    padding: const EdgeInsets.only(top: 4),
+                                    child: Row(
+                                      children: [
+                                        if (aImg.isNotEmpty)
+                                          ClipRRect(
+                                            borderRadius: BorderRadius.circular(4),
+                                            child: Image.network(
+                                              aImg,
+                                              width: 18,
+                                              height: 18,
+                                              fit: BoxFit.cover,
+                                              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                                            ),
+                                          ),
+                                        if (aImg.isNotEmpty) const SizedBox(width: 5),
+                                        Expanded(
+                                          child: Text(
+                                            '+ $label',
+                                            style: GoogleFonts.dmSans(
+                                              fontSize: 11,
+                                              color: AppColors.muted,
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                        Text(
+                                          '₱${aPrice.toStringAsFixed(2)}',
+                                          style: GoogleFonts.dmSans(
+                                            fontSize: 11,
+                                            color: AppColors.charcoal,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
                               ],
                             ),
                           ),
@@ -326,7 +417,7 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                   }),
                   const Divider(),
                 ],
-                _buildPriceRow('Subtotal', storeOrder.subtotal),
+                _buildPriceRow('Subtotal', displaySubtotal),
                 const Divider(),
                 _buildPriceRow(
                   'Delivery Fee',
@@ -335,9 +426,12 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                   isFree: storeOrder.canDeliver &&
                       (storeOrder.freeDeliveryApplied || storeOrder.deliveryFee <= 0),
                 ),
-                if (storeOrder.canDeliver) ..._deliveryFeeNotes(storeOrder),
+                if (storeOrder.canDeliver) ..._deliveryFeeNotes(
+                  storeOrder,
+                  subtotalOverride: displaySubtotal,
+                ),
                 const Divider(),
-                _buildPriceRow('Total', storeOrder.total, isBold: true, isTotal: true),
+                _buildPriceRow('Total', displayTotal, isBold: true, isTotal: true),
               ],
             ),
           ),
@@ -346,7 +440,10 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
     );
   }
 
-  List<Widget> _deliveryFeeNotes(StoreOrderTotal storeOrder) {
+  List<Widget> _deliveryFeeNotes(
+    StoreOrderTotal storeOrder, {
+    double? subtotalOverride,
+  }) {
     final applied = storeOrder.freeDeliveryApplied ||
         (storeOrder.deliveryFee <= 0 && storeOrder.freeDeliveryEnabled);
     if (applied) {
@@ -365,8 +462,9 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
 
     if (!storeOrder.freeDeliveryEnabled) return const [];
 
+    final subtotal = subtotalOverride ?? storeOrder.subtotal;
     final remaining = storeOrder.amountToFreeDelivery ??
-        ((storeOrder.freeDeliveryMinimum ?? 0) - storeOrder.subtotal);
+        ((storeOrder.freeDeliveryMinimum ?? 0) - subtotal);
     if (remaining <= 0) return const [];
 
     final minLabel = (storeOrder.freeDeliveryMinimum ?? 0).toStringAsFixed(0);
@@ -381,6 +479,50 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
         ),
       ),
     ];
+  }
+
+  double _storeSubtotalIncludingAddons(
+    StoreOrderTotal storeOrder,
+    List<CartItem> cartItems,
+  ) {
+    final items = storeOrder.items;
+    if (items == null || items.isEmpty) {
+      return storeOrder.subtotal;
+    }
+
+    var sum = 0.0;
+    for (final item in items) {
+      final qty = (item['quantity'] as num?)?.toInt() ?? 1;
+      final unit = (item['price'] as num?)?.toDouble() ?? 0;
+      final productId = item['product_id'] as int?;
+      final variantId = item['variant_id'] as int?;
+      final addons = (item['addons'] as List?) ?? const [];
+      var addonsTotal = (item['addons_total'] as num?)?.toDouble() ??
+          addons.fold<double>(0, (s, raw) {
+            final a = raw is Map
+                ? Map<String, dynamic>.from(raw)
+                : <String, dynamic>{};
+            final aPrice = (a['price'] as num?)?.toDouble() ?? 0;
+            final aQty = (a['quantity'] as num?)?.toInt() ??
+                (a['units'] as num?)?.toInt() ??
+                1;
+            final aTotal = (a['total'] as num?)?.toDouble();
+            return s + (aTotal ?? aPrice * (aQty <= 0 ? 1 : aQty));
+          });
+      if ((addons.isEmpty || addonsTotal <= 0) && productId != null) {
+        for (final ci in cartItems) {
+          if (ci.productId == productId && ci.variantId == variantId) {
+            if (ci.addons.isNotEmpty || ci.addonsTotal > 0) {
+              addonsTotal = ci.addonsUnitTotal;
+            }
+            break;
+          }
+        }
+      }
+      sum += (unit * qty) + addonsTotal;
+    }
+
+    return sum > storeOrder.subtotal ? sum : storeOrder.subtotal;
   }
 
   Widget _buildPriceRow(
@@ -432,7 +574,14 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
     );
   }
 
-  Widget _buildGrandTotalSection(BuildContext context) {
+  Widget _buildGrandTotalSection(BuildContext context, List<CartItem> cartItems) {
+    final grand = _validationResponse.storeOrderTotals.fold<double>(0, (s, st) {
+      final sub = _storeSubtotalIncludingAddons(st, cartItems);
+      return s + sub + st.deliveryFee;
+    });
+    final displayGrand =
+        grand > _validationResponse.grandTotal ? grand : _validationResponse.grandTotal;
+
     return GlassCard(
       padding: const EdgeInsets.all(18),
       radius: AppRadius.xl,
@@ -443,7 +592,7 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
         children: [
           Text('Grand Total', style: Theme.of(context).textTheme.titleMedium),
           Text(
-            '₱${_validationResponse.grandTotal.toStringAsFixed(2)}',
+            '₱${displayGrand.toStringAsFixed(2)}',
             style: GoogleFonts.cormorantGaramond(
               fontSize: 28,
               fontWeight: FontWeight.w600,

@@ -8,7 +8,6 @@ import '../../models/store.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/adaptive_blur.dart';
-import '../../widgets/customer_default_avatar.dart';
 import '../../widgets/glass.dart';
 
 /// Store hero gradient, mirroring the website's store banner panel.
@@ -1235,192 +1234,283 @@ class _StoreMapPin extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// Reviews modal — mirrors web store_detail.html reviews modal
+// Reviews modal — mirrors web store_detail.html / product ratings modal
 // ═══════════════════════════════════════════════════════════════════════════
 
 class _ReviewsModal extends StatelessWidget {
   const _ReviewsModal({required this.store});
   final Store store;
 
+  Map<String, int> get _distribution {
+    final dist = {'5': 0, '4': 0, '3': 0, '2': 0, '1': 0};
+    for (final r in store.reviews) {
+      final key = '${r.rating.clamp(1, 5)}';
+      dist[key] = (dist[key] ?? 0) + 1;
+    }
+    return dist;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    final maxH = MediaQuery.of(context).size.height * 0.88;
     final reviews = store.reviews;
-    final avgRating = store.avgRating;
+    final avg = store.avgRating ?? 0.0;
+    final count = store.reviewCount ?? reviews.length;
 
-    return FractionallySizedBox(
-      heightFactor: 0.88,
-      child: ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-        child: Material(
-          color: const Color(0xFFFFFDF9),
-          child: Column(
-            children: [
-              // Header
-              Container(
-                padding: const EdgeInsets.fromLTRB(16, 14, 12, 12),
-                decoration: const BoxDecoration(
-                  border: Border(bottom: BorderSide(color: Color(0x1F6B4C3B))),
-                  color: Color(0xFFFFFDF9),
+    return Container(
+      constraints: BoxConstraints(maxHeight: maxH),
+      decoration: const BoxDecoration(
+        color: Color(0xFFFBF7F4),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
+      ),
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 14, 8, 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'Store Ratings',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.charcoal,
+                    ),
+                  ),
                 ),
-                child: Row(
+                IconButton(
+                  onPressed: () => Navigator.pop(context),
+                  style: IconButton.styleFrom(
+                    backgroundColor: AppColors.charcoal.withValues(alpha: 0.06),
+                    foregroundColor: AppColors.charcoal,
+                    hoverColor: AppColors.charcoal.withValues(alpha: 0.1),
+                    minimumSize: const Size(32, 32),
+                    maximumSize: const Size(32, 32),
+                    padding: EdgeInsets.zero,
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  icon: const Icon(Icons.close_rounded, size: 18),
+                ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(18, 0, 18, 8),
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: Text.rich(
+                TextSpan(
+                  text: 'Reviews for ',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    color: AppColors.muted,
+                  ),
                   children: [
-                    Container(
-                      width: 36,
-                      height: 36,
-                      decoration: BoxDecoration(
-                        color: const Color(0x1FF0B429),
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                      child: const Icon(Icons.star_half_rounded,
-                          size: 18, color: Color(0xFFA07000)),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            '${store.name} Reviews',
-                            style: GoogleFonts.cormorantGaramond(
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.charcoal,
-                              height: 1.2,
-                            ),
-                          ),
-                          if (avgRating != null && avgRating > 0) ...[
-                            const SizedBox(height: 2),
-                            Row(
-                              children: [
-                                const Icon(Icons.star_rounded,
-                                    size: 13, color: Color(0xFFF0B429)),
-                                const SizedBox(width: 4),
-                                Text(
-                                  avgRating.toStringAsFixed(1),
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w700,
-                                    color: AppColors.charcoal,
-                                  ),
-                                ),
-                                Text(
-                                  '  ·  ${store.reviewCount ?? reviews.length} review${(store.reviewCount ?? reviews.length) != 1 ? 's' : ''}',
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 12,
-                                    color: AppColors.muted,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ],
+                    TextSpan(
+                      text: store.name,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.charcoal,
                       ),
                     ),
-                    IconButton(
-                      onPressed: () => Navigator.pop(context),
-                      icon: const Icon(Icons.close, color: AppColors.deepRose),
-                    ),
+                    const TextSpan(text: '.'),
                   ],
                 ),
               ),
-              // Scrollable reviews list
-              Expanded(
-                child: reviews.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.star_outline_rounded,
-                                size: 48,
-                                color: AppColors.muted),
-                            const SizedBox(height: 12),
-                            Text(
-                              'No reviews yet for this store.',
-                              style: GoogleFonts.dmSans(
-                                  fontSize: 14, color: AppColors.muted),
-                            ),
-                          ],
-                        ),
-                      )
-                    : ListView.separated(
-                        padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + bottomInset),
-                        itemCount: reviews.length,
-                        separatorBuilder: (_, __) => const Divider(
-                          height: 1,
-                          color: Color(0x196B4C3B),
-                        ),
-                        itemBuilder: (_, i) {
-                          final review = reviews[i];
-                          final hasComment = review.comment != null &&
-                              review.comment!.trim().isNotEmpty;
-                          return Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 12),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const CustomerDefaultAvatar(size: 36),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              review.customerName.isNotEmpty
-                                                  ? review.customerName
-                                                  : 'Customer',
-                                              style: GoogleFonts.dmSans(
-                                                fontSize: 13,
-                                                fontWeight: FontWeight.w700,
-                                                color: AppColors.charcoal,
-                                              ),
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 8),
-                                          Row(
-                                            mainAxisSize: MainAxisSize.min,
-                                            children: List.generate(
-                                              5,
-                                              (idx) => Icon(
-                                                idx < review.rating
-                                                    ? Icons.star_rounded
-                                                    : Icons.star_outline_rounded,
-                                                size: 13,
-                                                color: const Color(0xFFE5A62D),
-                                              ),
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                      if (hasComment) ...[
-                                        const SizedBox(height: 4),
-                                        Text(
-                                          '"${review.comment!.trim()}"',
-                                          style: GoogleFonts.dmSans(
-                                            fontSize: 13,
-                                            color: AppColors.charcoal,
-                                            height: 1.5,
-                                            fontStyle: FontStyle.italic,
-                                          ),
-                                        ),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          );
-                        },
-                      ),
-              ),
-            ],
+            ),
           ),
-        ),
+          Expanded(
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(18, 4, 18, 24),
+              children: [
+                _overview(
+                  avg: avg,
+                  count: count,
+                  // Bars are derived from the loaded list only.
+                  barTotal: reviews.isEmpty ? 1 : reviews.length,
+                ),
+                const SizedBox(height: 16),
+                if (reviews.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 28),
+                    child: Column(
+                      children: [
+                        Icon(Icons.chat_bubble_outline_rounded,
+                            size: 36,
+                            color: AppColors.muted.withValues(alpha: 0.5)),
+                        const SizedBox(height: 8),
+                        Text(
+                          'No reviews yet for this store.',
+                          style: GoogleFonts.dmSans(
+                              fontSize: 13, color: AppColors.muted),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  ...reviews.map(_reviewRow),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _overview({
+    required double avg,
+    required int count,
+    required int barTotal,
+  }) {
+    final total = barTotal <= 0 ? 1 : barTotal;
+    final dist = _distribution;
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.7),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            flex: 4,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Average user rating',
+                    style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.muted)),
+                const SizedBox(height: 4),
+                Text.rich(
+                  TextSpan(
+                    text: count == 0 ? '0' : avg.toStringAsFixed(1),
+                    style: GoogleFonts.cormorantGaramond(
+                      fontSize: 34,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.charcoal,
+                    ),
+                    children: [
+                      TextSpan(
+                        text: ' / 5',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.muted,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Row(
+                  children: List.generate(5, (i) {
+                    final filled = i < avg.round();
+                    return Icon(
+                      filled ? Icons.star_rounded : Icons.star_outline_rounded,
+                      size: 16,
+                      color: const Color(0xFFF0B429),
+                    );
+                  }),
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            flex: 6,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Rating breakdown',
+                    style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.muted)),
+                const SizedBox(height: 8),
+                for (final star in [5, 4, 3, 2, 1])
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 5),
+                    child: Row(
+                      children: [
+                        SizedBox(
+                          width: 12,
+                          child: Text('$star',
+                              style: GoogleFonts.dmSans(
+                                  fontSize: 11, color: AppColors.muted)),
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(99),
+                            child: LinearProgressIndicator(
+                              value: (dist['$star'] ?? 0) / total,
+                              minHeight: 7,
+                              backgroundColor: const Color(0xFFEDE3D8),
+                              valueColor: const AlwaysStoppedAnimation(
+                                  Color(0xFFF0B429)),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _reviewRow(StoreReview review) {
+    final name = review.customerName.trim().isNotEmpty
+        ? review.customerName.trim()
+        : 'Anonymous';
+    final comment = (review.comment?.trim().isNotEmpty == true)
+        ? review.comment!.trim()
+        : 'No written comment.';
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: List.generate(
+              5,
+              (i) => Icon(
+                i < review.rating
+                    ? Icons.star_rounded
+                    : Icons.star_outline_rounded,
+                size: 14,
+                color: const Color(0xFFF0B429),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(comment,
+              style: GoogleFonts.dmSans(
+                  fontSize: 13, height: 1.45, color: AppColors.muted)),
+          const SizedBox(height: 6),
+          Text(
+            '— Reviewed by $name',
+            style: GoogleFonts.dmSans(
+              fontSize: 12,
+              fontStyle: FontStyle.italic,
+              color: AppColors.muted,
+            ),
+          ),
+        ],
       ),
     );
   }

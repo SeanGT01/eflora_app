@@ -8,6 +8,7 @@ import 'providers/address_provider.dart';
 import 'providers/category_provider.dart';
 import 'providers/rider_provider.dart';
 import 'providers/chat_provider.dart';
+import 'providers/wishlist_provider.dart';
 import 'screens/main_shell.dart';
 import 'screens/rider/rider_shell.dart';
 import 'services/app_quality.dart';
@@ -50,6 +51,7 @@ class EFlowersApp extends StatelessWidget {
       providers: [
         ChangeNotifierProvider(create: (_) => AuthProvider()),
         ChangeNotifierProvider(create: (_) => CartProvider()),
+        ChangeNotifierProvider(create: (_) => WishlistProvider()),
         ChangeNotifierProvider(create: (_) => addressProvider),
         ChangeNotifierProvider(create: (_) => categoryProvider),
         ChangeNotifierProvider(create: (_) => RiderProvider()),

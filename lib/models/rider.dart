@@ -188,6 +188,9 @@ class RiderOrderItem {
   final int quantity;
   final double price;
   final String? imageUrl;
+  final List<Map<String, dynamic>> addons;
+  final double addonsTotal;
+  final double lineTotal;
 
   const RiderOrderItem({
     required this.id,
@@ -197,17 +200,44 @@ class RiderOrderItem {
     required this.quantity,
     required this.price,
     this.imageUrl,
+    this.addons = const [],
+    this.addonsTotal = 0,
+    this.lineTotal = 0,
   });
 
-  factory RiderOrderItem.fromJson(Map<String, dynamic> j) => RiderOrderItem(
-    id: j['id'] ?? 0,
-    productId: j['product_id'] ?? 0,
-    productName: j['product_name'] ?? j['name'] ?? '',
-    variantName: j['variant_name'],
-    quantity: j['quantity'] ?? 1,
-    price: (j['price'] is int) ? (j['price'] as int).toDouble() : (j['price'] ?? 0.0).toDouble(),
-    imageUrl: j['product_image_url'] ?? j['image_url'],
-  );
+  factory RiderOrderItem.fromJson(Map<String, dynamic> j) {
+    final addons = (j['addons'] as List? ?? [])
+        .whereType<Map>()
+        .map((a) => Map<String, dynamic>.from(a))
+        .toList();
+    final price = (j['price'] is int)
+        ? (j['price'] as int).toDouble()
+        : (j['price'] ?? 0.0).toDouble();
+    final qty = j['quantity'] ?? 1;
+    final addonsTotal = (j['addons_total'] as num?)?.toDouble() ??
+        addons.fold<double>(0, (s, a) {
+          final p = (a['price'] as num?)?.toDouble() ?? 0;
+          final q = (a['quantity'] as num?)?.toInt() ?? 1;
+          return s + ((a['total'] as num?)?.toDouble() ?? (p * q));
+        });
+    final computed = (price * qty) + addonsTotal;
+    final apiLine = (j['total'] as num?)?.toDouble();
+    final lineTotal = apiLine == null
+        ? computed
+        : (apiLine >= computed - 0.009 ? apiLine : computed);
+    return RiderOrderItem(
+      id: j['id'] ?? 0,
+      productId: j['product_id'] ?? 0,
+      productName: j['product_name'] ?? j['name'] ?? '',
+      variantName: j['variant_name'],
+      quantity: qty,
+      price: price,
+      imageUrl: j['product_image_url'] ?? j['image_url'],
+      addons: addons,
+      addonsTotal: addonsTotal,
+      lineTotal: lineTotal,
+    );
+  }
 }
 
 class RiderProfile {
