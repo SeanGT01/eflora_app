@@ -88,41 +88,17 @@ class _CheckoutModalState extends State<CheckoutModal> {
                   child: Column(
                     children: [
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 18, 12, 16),
+                        padding: const EdgeInsets.fromLTRB(20, 14, 8, 8),
                         child: Row(
                           children: [
-                            Container(
-                              width: 42,
-                              height: 42,
-                              decoration: BoxDecoration(
-                                gradient: AppColors.brandGradient,
-                                borderRadius: BorderRadius.circular(14),
-                                boxShadow: AppShadows.roseButton,
-                              ),
-                              child: const Icon(
-                                Icons.local_florist,
-                                color: Colors.white,
-                                size: 20,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    'Checkout',
-                                    style: Theme.of(context).textTheme.headlineMedium,
-                                  ),
-                                  const SizedBox(height: 2),
-                                  Text(
-                                    'Secure your order in three simple steps',
-                                    style: Theme.of(context)
-                                        .textTheme
-                                        .bodySmall
-                                        ?.copyWith(color: AppColors.muted),
-                                  ),
-                                ],
+                              child: Text(
+                                'Checkout',
+                                style: GoogleFonts.cormorantGaramond(
+                                  fontSize: 26,
+                                  fontWeight: FontWeight.w500,
+                                  color: AppColors.charcoal,
+                                ),
                               ),
                             ),
                             IconButton(
@@ -130,15 +106,18 @@ class _CheckoutModalState extends State<CheckoutModal> {
                               style: IconButton.styleFrom(
                                 backgroundColor: AppColors.glassFill,
                                 foregroundColor: AppColors.charcoal,
-                                side: const BorderSide(color: AppColors.glassBorder, width: 1.5),
+                                side: const BorderSide(
+                                  color: AppColors.glassBorder,
+                                  width: 1.5,
+                                ),
                               ),
-                              icon: const Icon(Icons.close),
+                              icon: const Icon(Icons.close, size: 20),
                             ),
                           ],
                         ),
                       ),
                       Padding(
-                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
                         child: _StepIndicator(currentStep: checkoutProvider.currentStep),
                       ),
                       Container(height: 1, color: AppColors.glassBorder),
@@ -240,11 +219,10 @@ class _StepIndicator extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 Text(
-                  labels[i].toUpperCase(),
+                  labels[i],
                   style: GoogleFonts.dmSans(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w700,
-                    letterSpacing: 1.4,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
                     color: i <= currentStep ? AppColors.dustyRose : AppColors.muted,
                   ),
                 ),

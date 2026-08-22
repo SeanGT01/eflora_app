@@ -4,12 +4,14 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
+import '../../providers/cart_provider.dart';
 import '../../providers/checkout_provider.dart';
+import '../../models/cart.dart';
 import '../../models/checkout.dart';
 import '../../services/checkout_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/checkout_summary_line.dart';
 import '../../widgets/common.dart';
-import '../../widgets/glass.dart';
 
 class CheckoutStep3 extends StatefulWidget {
   final VoidCallback onPrevious;
@@ -99,99 +101,86 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
       builder: (context, checkoutProvider, _) {
         final storeTotals = checkoutProvider.validationResponse?.storeOrderTotals ?? [];
         final allStoresReady = storeTotals.every(_storeIsReady);
-        final allCod = storeTotals.isNotEmpty && storeTotals.every(_isCod);
+        final cartItems = context.watch<CartProvider>().items;
 
-        return SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildStepHeader(context, storeTotals.length),
-                const SizedBox(height: 24),
-                if (checkoutProvider.error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: _buildMessageCard(
-                      context,
-                      CheckoutService.humanizeDeliverySlotError(
-                        checkoutProvider.error,
-                      ),
-                      icon: Icons.warning_amber_rounded,
-                      tint: const Color(0xFFc0392b),
-                    ),
-                  ),
-                _buildInstructionsCard(context, storeTotals.length),
-                const SizedBox(height: 24),
-                // Per-store payment proof upload sections
-                ...storeTotals.map((storeOrder) =>
-                    _buildStorePaymentSection(context, storeOrder)),
-                const SizedBox(height: 16),
-                GlassCard(
-                  padding: const EdgeInsets.all(16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Icon(Icons.info_outline, color: AppColors.dustyRose, size: 20),
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: Text(
-                          allCod
-                              ? (storeTotals.length > 1
-                                  ? 'You are ordering from ${storeTotals.length} stores with Cash on Delivery. Prepare the exact amount for each store upon delivery.'
-                                  : 'Cash on Delivery selected. Prepare the exact amount upon delivery.\n\nDo not close this window until you see the confirmation message.')
-                              : storeTotals.length > 1
-                                  ? 'You are ordering from ${storeTotals.length} stores. Choose GCash or Cash on Delivery for each store. GCash orders need a payment screenshot. '
-                                    'Sellers will verify payment within 24 hours.'
-                                  : 'For GCash, submit your proof so the seller can verify payment within 24 hours.\n\n'
-                                    'Do not close this window until you see the confirmation message.',
-                          style: Theme.of(context).textTheme.bodySmall,
+        return Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (checkoutProvider.error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: _buildMessageCard(
+                          context,
+                          CheckoutService.humanizeDeliverySlotError(
+                            checkoutProvider.error,
+                          ),
+                          icon: Icons.warning_amber_rounded,
+                          tint: const Color(0xFFc0392b),
                         ),
                       ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 24),
-                if (checkoutProvider.isProcessing)
-                  Column(
-                    children: [
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                        child: Stack(
+                    ...storeTotals.map((storeOrder) =>
+                        _buildStorePaymentSection(context, storeOrder, cartItems)),
+                    if (checkoutProvider.isProcessing)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: Column(
                           children: [
-                            Container(
-                              height: 8,
-                              decoration: BoxDecoration(
-                                color: AppColors.glassFill,
-                                border: Border.all(color: AppColors.glassBorder),
-                                borderRadius: BorderRadius.circular(AppRadius.pill),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(AppRadius.pill),
+                              child: Stack(
+                                children: [
+                                  Container(
+                                    height: 8,
+                                    decoration: BoxDecoration(
+                                      color: AppColors.glassFill,
+                                      border: Border.all(color: AppColors.glassBorder),
+                                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                                    ),
+                                  ),
+                                  Positioned.fill(
+                                    child: FractionallySizedBox(
+                                      alignment: Alignment.centerLeft,
+                                      widthFactor: _uploadProgress.clamp(0.0, 1.0),
+                                      child: const DecoratedBox(
+                                        decoration: BoxDecoration(
+                                          gradient: AppColors.brandGradientH,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
-                            Positioned.fill(
-                              child: FractionallySizedBox(
-                                alignment: Alignment.centerLeft,
-                                widthFactor: _uploadProgress.clamp(0.0, 1.0),
-                                child: const DecoratedBox(
-                                  decoration: BoxDecoration(
-                                    gradient: AppColors.brandGradientH,
-                                  ),
-                                ),
-                              ),
+                            const SizedBox(height: 8),
+                            Text(
+                              _uploadingStoreId != null
+                                  ? 'Uploading proof for store... ${(_uploadProgress * 100).toStringAsFixed(0)}%'
+                                  : 'Creating orders... ${(_uploadProgress * 100).toStringAsFixed(0)}%',
+                              style: Theme.of(context).textTheme.bodySmall,
                             ),
                           ],
                         ),
                       ),
-                      const SizedBox(height: 8),
-                      Text(
-                        _uploadingStoreId != null
-                            ? 'Uploading proof for store... ${(_uploadProgress * 100).toStringAsFixed(0)}%'
-                            : 'Creating orders... ${(_uploadProgress * 100).toStringAsFixed(0)}%',
-                        style: Theme.of(context).textTheme.bodySmall,
-                      ),
-                      const SizedBox(height: 24),
-                    ],
+                  ],
+                ),
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                decoration: BoxDecoration(
+                  color: AppColors.pageCream.withValues(alpha: 0.92),
+                  border: const Border(
+                    top: BorderSide(color: AppColors.glassBorder),
                   ),
-                Row(
+                ),
+                child: Row(
                   children: [
                     Expanded(
                       child: OutlinedButton(
@@ -204,8 +193,8 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
                       child: _buildSubmitButton(
                         context,
                         label: allStoresReady
-                            ? 'Confirm & Create Order${storeTotals.length > 1 ? 's' : ''}'
-                            : 'Complete all fields to continue',
+                            ? 'Place order'
+                            : 'Complete details',
                         loading: checkoutProvider.isProcessing || _isSubmitting,
                         onPressed: !allStoresReady || checkoutProvider.isProcessing || _isSubmitting
                             ? null
@@ -214,9 +203,9 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
                     ),
                   ],
                 ),
-              ],
+              ),
             ),
-          ),
+          ],
         );
       },
     );
@@ -275,7 +264,11 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
   }
 
   // ── Per-store delivery & payment section ────────────────────────────────────
-  Widget _buildStorePaymentSection(BuildContext context, StoreOrderTotal storeOrder) {
+  Widget _buildStorePaymentSection(
+    BuildContext context,
+    StoreOrderTotal storeOrder,
+    List<CartItem> cartItems,
+  ) {
     final storeId = storeOrder.storeId;
     final storeName = storeOrder.storeName;
     final total = storeOrder.total;
@@ -307,14 +300,8 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Store header
-          Container(
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white.withOpacity(0.45),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(19)),
-              border: Border(bottom: BorderSide(color: AppColors.glassBorder)),
-            ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
             child: Row(
               children: [
                 const Icon(Icons.storefront_outlined, size: 18, color: AppColors.labelPink),
@@ -323,7 +310,7 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
                   child: Text(
                     storeName,
                     style: GoogleFonts.dmSans(
-                      fontSize: 13,
+                      fontSize: 12,
                       fontWeight: FontWeight.w700,
                       color: AppColors.labelPink,
                       letterSpacing: 0.1,
@@ -347,154 +334,27 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
           ),
           if (storeOrder.items != null && (storeOrder.items as List).isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
-              child: Container(
-                padding: const EdgeInsets.all(10),
-                decoration: BoxDecoration(
-                  color: AppColors.warmWhite,
-                  border: Border.all(color: AppColors.border),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Column(
-                  children: (storeOrder.items as List).map<Widget>((rawItem) {
-                    final item = rawItem as Map<String, dynamic>;
-                    final productId = item['product_id'];
-                    final variantId = item['variant_id'];
-                    final qty = (item['quantity'] as num?)?.toInt() ?? 1;
-                    final unitPrice = (item['price'] as num?)?.toDouble() ?? 0.0;
-                    final origPrice = (item['original_price'] as num?)?.toDouble();
-                    final discPct = item['discount_pct'] as int?;
-                    final addons = (item['addons'] as List?) ?? const [];
-                    final addonsTotal = (item['addons_total'] as num?)?.toDouble() ??
-                        addons.fold<double>(0, (s, raw) {
-                          final a = raw is Map
-                              ? Map<String, dynamic>.from(raw)
-                              : <String, dynamic>{};
-                          final aPrice = (a['price'] as num?)?.toDouble() ?? 0;
-                          final aQty = (a['quantity'] as num?)?.toInt() ??
-                              (a['units'] as num?)?.toInt() ??
-                              1;
-                          final aTotal = (a['total'] as num?)?.toDouble();
-                          return s + (aTotal ?? aPrice * (aQty <= 0 ? 1 : aQty));
-                        });
-                    final lineTotal = (unitPrice * qty) + addonsTotal;
-                    final itemLabel = variantId != null
-                        ? 'Product #$productId (Variant #$variantId)'
-                        : 'Product #$productId';
-
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 6),
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  itemLabel,
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 12,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.charcoal,
-                                  ),
-                                ),
-                                Row(
-                                  children: [
-                                    Text(
-                                      'Qty: $qty x ₱${unitPrice.toStringAsFixed(2)}',
-                                      style: GoogleFonts.dmSans(fontSize: 11, color: AppColors.muted),
-                                    ),
-                                    if (origPrice != null) ...[
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '₱${origPrice.toStringAsFixed(2)}',
-                                        style: GoogleFonts.dmSans(
-                                          fontSize: 10,
-                                          color: AppColors.muted,
-                                          decoration: TextDecoration.lineThrough,
-                                        ),
-                                      ),
-                                    ],
-                                    if (discPct != null) ...[
-                                      const SizedBox(width: 4),
-                                      Container(
-                                        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                                        decoration: BoxDecoration(
-                                          color: AppColors.deepRose,
-                                          borderRadius: BorderRadius.circular(20),
-                                        ),
-                                        child: Text(
-                                          '$discPct% off',
-                                          style: GoogleFonts.dmSans(fontSize: 8, fontWeight: FontWeight.w700, color: Colors.white),
-                                        ),
-                                      ),
-                                    ],
-                                  ],
-                                ),
-                                ...addons.map((raw) {
-                                  final a = raw is Map<String, dynamic>
-                                      ? raw
-                                      : Map<String, dynamic>.from(raw as Map);
-                                  final aName = (a['name'] ?? 'Add-on').toString();
-                                  final aGroup = (a['group_name'] ?? '').toString();
-                                  final aPrice = (a['price'] as num?)?.toDouble() ?? 0;
-                                  final aImg = (a['image_url'] ?? '').toString();
-                                  final label = aGroup.isNotEmpty ? '$aGroup: $aName' : aName;
-                                  return Padding(
-                                    padding: const EdgeInsets.only(top: 4),
-                                    child: Row(
-                                      children: [
-                                        if (aImg.isNotEmpty)
-                                          ClipRRect(
-                                            borderRadius: BorderRadius.circular(4),
-                                            child: Image.network(
-                                              aImg,
-                                              width: 16,
-                                              height: 16,
-                                              fit: BoxFit.cover,
-                                              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
-                                            ),
-                                          ),
-                                        if (aImg.isNotEmpty) const SizedBox(width: 5),
-                                        Expanded(
-                                          child: Text(
-                                            '+ $label',
-                                            style: GoogleFonts.dmSans(
-                                              fontSize: 10,
-                                              color: AppColors.muted,
-                                            ),
-                                            maxLines: 1,
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        Text(
-                                          '₱${aPrice.toStringAsFixed(2)}',
-                                          style: GoogleFonts.dmSans(
-                                            fontSize: 10,
-                                            color: AppColors.charcoal,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  );
-                                }),
-                              ],
-                            ),
-                          ),
-                          Text(
-                            '₱${lineTotal.toStringAsFixed(2)}',
-                            style: GoogleFonts.dmSans(
-                              fontSize: 12.5,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.charcoal,
-                            ),
-                          ),
-                        ],
-                      ),
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Items',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.muted,
+                      letterSpacing: 0.2,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  ...(storeOrder.items as List).map((rawItem) {
+                    return CheckoutSummaryLine.fromCheckoutItem(
+                      item: Map<String, dynamic>.from(rawItem as Map),
+                      cartItems: cartItems,
                     );
-                  }).toList(),
-                ),
+                  }),
+                ],
               ),
             ),
           // Per-store delivery date + time (web-style grid)
@@ -770,7 +630,7 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Upload Payment Receipt',
+            'Receipt',
             style: GoogleFonts.dmSans(
               fontSize: 13,
               fontWeight: FontWeight.w600,
@@ -1223,11 +1083,6 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
               ),
             ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            'Closed days, past dates, and past hours are locked based on this store\'s open schedule.',
-            style: GoogleFonts.dmSans(fontSize: 11, color: AppColors.muted, height: 1.35),
-          ),
         ],
       ),
     );
@@ -1451,83 +1306,6 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
             }
           },
         ),
-      ),
-    );
-  }
-
-  Widget _buildStepHeader(BuildContext context, int storeCount) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.warmWhite,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              gradient: AppColors.roseGradient,
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: Center(
-              child: Text(
-                '3',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(color: Colors.white),
-              ),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('Delivery & Payment', style: Theme.of(context).textTheme.headlineSmall),
-                const SizedBox(height: 4),
-                Text(
-                  storeCount > 1
-                      ? 'Choose delivery schedule and payment method for each store ($storeCount stores).'
-                      : 'Choose your delivery schedule and payment method.',
-                  style: Theme.of(context).textTheme.bodySmall,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildInstructionsCard(BuildContext context, int storeCount) {
-    return Container(
-      padding: const EdgeInsets.all(18),
-      decoration: BoxDecoration(
-        color: AppColors.cream,
-        borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: AppColors.border),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Instructions', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 10),
-          Text(
-            storeCount > 1
-                ? '1. Select delivery date & time for each store\n'
-                  '2. Choose GCash or Cash on Delivery for each store\n'
-                  '3. For GCash, pay that store and upload the screenshot\n'
-                  '4. For Cash on Delivery, no receipt is needed\n'
-                  '5. Each seller will confirm the order within 24 hours'
-                : '1. Select your preferred delivery date & time\n'
-                  '2. Choose GCash or Cash on Delivery\n'
-                  '3. For GCash, upload a screenshot of your transfer\n'
-                  '4. For Cash on Delivery, prepare the exact amount on delivery\n'
-                  '5. The seller will confirm your order within 24 hours',
-            style: Theme.of(context).textTheme.bodySmall?.copyWith(height: 1.7),
-          ),
-        ],
       ),
     );
   }

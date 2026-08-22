@@ -80,13 +80,18 @@ class AuthGlassCard extends StatelessWidget {
     super.key,
     required this.child,
     this.padding = const EdgeInsets.fromLTRB(22, 24, 22, 24),
+    this.flat = false,
   });
 
   final Widget child;
   final EdgeInsetsGeometry padding;
+  final bool flat;
 
   @override
   Widget build(BuildContext context) {
+    if (flat) {
+      return child;
+    }
     return GlassCard(
       radius: 24,
       blur: 18,
@@ -123,12 +128,16 @@ class AuthBrandMark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final compact = MediaQuery.sizeOf(context).height < 720 ||
+        MediaQuery.sizeOf(context).width < 380;
+    final markSize = compact ? 52.0 : 68.0;
+
     return Column(
       children: [
         if (showLogo) ...[
           Container(
-            width: 68,
-            height: 68,
+            width: markSize,
+            height: markSize,
             padding: const EdgeInsets.all(2),
             decoration: BoxDecoration(
               gradient: AppColors.brandGradient,
@@ -136,7 +145,7 @@ class AuthBrandMark extends StatelessWidget {
               boxShadow: AppShadows.roseButton,
             ),
             child: icon != null
-                ? Icon(icon, color: Colors.white, size: 32)
+                ? Icon(icon, color: Colors.white, size: compact ? 26 : 32)
                 : ClipOval(
                     child: Container(
                       color: Colors.white,
@@ -147,14 +156,14 @@ class AuthBrandMark extends StatelessWidget {
                     ),
                   ),
           ),
-          const SizedBox(height: 16),
+          SizedBox(height: compact ? 10 : 16),
         ],
         Text(
           'E-FLORA',
           style: GoogleFonts.cormorantGaramond(
-            fontSize: 30,
+            fontSize: compact ? 24 : 30,
             fontWeight: FontWeight.w500,
-            letterSpacing: 6,
+            letterSpacing: compact ? 4 : 6,
             color: AppColors.charcoal,
           ),
         ),
@@ -173,24 +182,148 @@ class AuthBrandMark extends StatelessWidget {
   }
 }
 
+const LinearGradient _authHeroGradient = LinearGradient(
+  begin: Alignment.topLeft,
+  end: Alignment.bottomRight,
+  colors: [
+    Color(0xFFC24E68),
+    Color(0xFFD878A0),
+    Color(0xFFB888D0),
+  ],
+  stops: [0.0, 0.45, 1.0],
+);
+
+/// Pink marketing header used at the top of the phone auth sheet.
+class AuthHeroBanner extends StatelessWidget {
+  const AuthHeroBanner({
+    super.key,
+    required this.eyebrow,
+    required this.headline,
+    this.description,
+  });
+
+  final String eyebrow;
+  final InlineSpan headline;
+  final String? description;
+
+  @override
+  Widget build(BuildContext context) {
+    return Stack(
+        children: [
+          Positioned(
+            top: -60,
+            left: -40,
+            child: Container(
+              width: 180,
+              height: 180,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: Colors.white.withValues(alpha: 0.14),
+              ),
+            ),
+          ),
+          Positioned(
+            right: -30,
+            bottom: -50,
+            child: Container(
+              width: 140,
+              height: 140,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: const Color(0xFFB888D0).withValues(alpha: 0.35),
+              ),
+            ),
+          ),
+          Padding(
+            padding: EdgeInsets.fromLTRB(
+              22,
+              MediaQuery.paddingOf(context).top + 16,
+              22,
+              24,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'E-FLORA',
+                  style: GoogleFonts.cormorantGaramond(
+                    fontSize: 18,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: 1.2,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text(
+                  eyebrow.toUpperCase(),
+                  style: GoogleFonts.dmSans(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700,
+                    letterSpacing: 2.2,
+                    color: Colors.white.withValues(alpha: 0.72),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Text.rich(
+                  headline,
+                  style: GoogleFonts.cormorantGaramond(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w400,
+                    height: 1.08,
+                    color: Colors.white,
+                  ),
+                ),
+                if (description != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    description!,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13,
+                      height: 1.5,
+                      color: Colors.white.withValues(alpha: 0.78),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+    );
+  }
+}
+
 /// Shared page chrome for the auth flow: cream atmosphere, drifting flowers,
 /// a glass back/close affordance and a centred, width-capped column.
+/// On phone widths, this becomes a bottom sheet with an optional pink hero.
 class AuthScaffold extends StatelessWidget {
   const AuthScaffold({
     super.key,
     required this.children,
+    this.hero,
     this.leadingIcon = Icons.close_rounded,
     this.onLeadingTap,
     this.padding = const EdgeInsets.fromLTRB(22, 8, 22, 36),
   });
 
   final List<Widget> children;
+  final Widget? hero;
   final IconData leadingIcon;
   final VoidCallback? onLeadingTap;
   final EdgeInsetsGeometry padding;
 
+  bool _sheetLayout(Size size) => size.width < 960 && hero != null;
+
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    if (_sheetLayout(size)) {
+      return _buildSheet(context, size);
+    }
+
+    final compact = size.width < 400 || size.height < 720;
+    final hPad = compact ? 16.0 : 22.0;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       extendBodyBehindAppBar: true,
@@ -207,29 +340,101 @@ class AuthScaffold extends StatelessWidget {
       ),
       body: AppBackground(
         child: SafeArea(
-          child: SingleChildScrollView(
-            padding: padding,
-            child: Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 440),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: children,
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              return SingleChildScrollView(
+                padding: EdgeInsets.fromLTRB(
+                  hPad,
+                  compact ? 4 : 8,
+                  hPad,
+                  compact ? 20 : 36,
                 ),
-              ),
-            ),
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    minHeight: constraints.maxHeight - (compact ? 24 : 44),
+                    maxWidth: size.width >= 900 ? 480 : 440,
+                  ),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 480),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: children,
+                      ),
+                    ),
+                  ),
+                ),
+              );
+            },
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildSheet(BuildContext context, Size size) {
+    final topInset = MediaQuery.paddingOf(context).top;
+    final bottomInset = MediaQuery.paddingOf(context).bottom;
+    return Scaffold(
+      backgroundColor: Colors.transparent,
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(gradient: _authHeroGradient),
+            ),
+          ),
+          CustomScrollView(
+            slivers: [
+              SliverToBoxAdapter(child: hero!),
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Material(
+                  color: Colors.white,
+                  elevation: 12,
+                  shadowColor: const Color(0x2E5A2850),
+                  borderRadius: const BorderRadius.vertical(
+                    top: Radius.circular(32),
+                  ),
+                  clipBehavior: Clip.antiAlias,
+                  child: Padding(
+                    padding: EdgeInsets.fromLTRB(
+                      22,
+                      28,
+                      22,
+                      24 + bottomInset,
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: children,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          Positioned(
+            top: topInset + 8,
+            right: 12,
+            child: _GlassIconButton(
+              icon: leadingIcon,
+              onTap: onLeadingTap,
+              light: true,
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
 class _GlassIconButton extends StatelessWidget {
-  const _GlassIconButton({required this.icon, this.onTap});
+  const _GlassIconButton({required this.icon, this.onTap, this.light = false});
 
   final IconData icon;
   final VoidCallback? onTap;
+  final bool light;
 
   @override
   Widget build(BuildContext context) {
@@ -239,10 +444,16 @@ class _GlassIconButton extends StatelessWidget {
         width: 40,
         height: 40,
         decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.6),
+          color: light
+              ? Colors.white.withValues(alpha: 0.22)
+              : Colors.white.withValues(alpha: 0.6),
           shape: BoxShape.circle,
-          border: Border.all(color: AppColors.glassBorder),
-          boxShadow: AppShadows.glass,
+          border: Border.all(
+            color: light
+                ? Colors.white.withValues(alpha: 0.45)
+                : AppColors.glassBorder,
+          ),
+          boxShadow: light ? null : AppShadows.glass,
         ),
         child: Material(
           color: Colors.transparent,
@@ -250,7 +461,11 @@ class _GlassIconButton extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: onTap,
-            child: Icon(icon, size: 19, color: AppColors.charcoal),
+            child: Icon(
+              icon,
+              size: 19,
+              color: light ? Colors.white : AppColors.charcoal,
+            ),
           ),
         ),
       ),
@@ -273,7 +488,7 @@ class AuthHeading extends StatelessWidget {
           title,
           textAlign: TextAlign.center,
           style: GoogleFonts.cormorantGaramond(
-            fontSize: 36,
+            fontSize: MediaQuery.sizeOf(context).width < 380 ? 28 : 36,
             fontWeight: FontWeight.w400,
             height: 1.15,
             color: AppColors.charcoal,

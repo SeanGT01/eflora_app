@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:eflowers/models/product.dart';
 import 'package:eflowers/services/api_service.dart';
 
 class StockReductionForm extends StatefulWidget {

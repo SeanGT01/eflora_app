@@ -8,9 +8,9 @@ import '../../utils/lowercase_email_formatter.dart';
 import '../../widgets/auth_chrome.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/auth_required_sheet.dart';
 import '../main_shell.dart';
 import 'forgot_password_otp_screen.dart';
-import 'register_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final VoidCallback? onRegisterTap;
@@ -36,17 +36,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
   void _goToRegister() {
     if (!mounted) return;
-
-    if (widget.onRegisterTap != null) {
-      widget.onRegisterTap!();
-      return;
-    }
-
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => const RegisterScreen(),
-      ),
-    );
+    pushRegisterScreen(context, replace: true);
   }
 
   Future<void> _forgotPassword() async {
@@ -176,18 +166,45 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final auth = context.watch<AuthProvider>();
     final busy = auth.loading || _sendingReset;
+    final sheet = MediaQuery.sizeOf(context).width < 960;
     return AuthScaffold(
       onLeadingTap: () => Navigator.pop(context),
-      children: [
-        const SizedBox(height: 8),
-        const AuthBrandMark(),
-        const SizedBox(height: 26),
-        const AuthHeading(
-          title: 'Welcome back',
-          subtitle: 'Sign in to your E-FLORA account',
+      hero: AuthHeroBanner(
+        eyebrow: 'Welcome back',
+        headline: TextSpan(
+          children: [
+            const TextSpan(text: 'Where every\nbloom '),
+            TextSpan(
+              text: 'finds\nits home',
+              style: GoogleFonts.cormorantGaramond(
+                fontStyle: FontStyle.italic,
+                color: Colors.white.withValues(alpha: 0.92),
+              ),
+            ),
+          ],
         ),
-        const SizedBox(height: 22),
+        description:
+            'Sign in to browse handpicked flowers, track your orders, and support local florists near you.',
+      ),
+      children: [
+        if (!sheet) ...[
+          SizedBox(height: MediaQuery.sizeOf(context).height < 720 ? 0 : 8),
+          const AuthBrandMark(),
+          SizedBox(height: MediaQuery.sizeOf(context).height < 720 ? 12 : 26),
+          const AuthHeading(
+            title: 'Welcome back',
+            subtitle: 'Sign in to your E-FLORA account',
+          ),
+          SizedBox(height: MediaQuery.sizeOf(context).height < 720 ? 12 : 22),
+        ] else ...[
+          const AuthHeading(
+            title: 'Welcome back',
+            subtitle: 'Enter your credentials to access your account.',
+          ),
+          const SizedBox(height: 16),
+        ],
         AuthGlassCard(
+          flat: sheet,
           child: Form(
             key: _formKey,
             child: Column(
@@ -294,8 +311,9 @@ class _LoginScreenState extends State<LoginScreen> {
                 const SizedBox(height: 20),
                 const AuthDivider(label: 'or'),
                 const SizedBox(height: 10),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
                       "Don't have an account?",

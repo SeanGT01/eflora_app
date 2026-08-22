@@ -51,23 +51,23 @@ class CheckoutSuccess extends StatelessWidget {
 
             // Success message
             Text(
-              'Order Placed Successfully!',
-              style: GoogleFonts.playfairDisplay(
+              'Order placed',
+              style: GoogleFonts.cormorantGaramond(
                 fontSize: 28,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
                 color: AppColors.charcoal,
               ),
               textAlign: TextAlign.center,
             ),
 
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
 
             Text(
-              'Your payment proof has been submitted and is awaiting seller verification.',
+              'Sellers will confirm payment within 24 hours.',
               style: GoogleFonts.dmSans(
                 fontSize: 14,
                 color: AppColors.muted,
-                height: 1.5,
+                height: 1.4,
               ),
               textAlign: TextAlign.center,
             ),
@@ -256,7 +256,7 @@ class CheckoutSuccess extends StatelessWidget {
                       const SizedBox(width: 10),
                       Expanded(
                         child: Text(
-                          'What Happens Next?',
+                          'Next',
                           style: GoogleFonts.dmSans(
                             fontWeight: FontWeight.w700,
                             fontSize: 13,
@@ -268,10 +268,7 @@ class CheckoutSuccess extends StatelessWidget {
                   ),
                   const SizedBox(height: 10),
                   Text(
-                    '• Sellers verify your payment within 24 hours\n'
-                    '• You\'ll get SMS confirmation when verified\n'
-                    '• Track orders in My Orders section\n'
-                    '• Delivery on your selected date & time',
+                    'Sellers verify GCash within 24 hours. Track status in Orders.',
                     style: GoogleFonts.dmSans(
                       fontSize: 12,
                       color: const Color(0xFF9A5B00),

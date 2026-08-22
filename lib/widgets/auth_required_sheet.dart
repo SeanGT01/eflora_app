@@ -29,39 +29,44 @@ Future<void> showAuthRequiredSheet(
       },
       onRegister: () {
         Navigator.pop(sheetContext);
-        _pushRegister(context);
+        pushRegisterScreen(context);
       },
     ),
   );
 }
 
-void _pushLogin(BuildContext context) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => LoginScreen(
-        onRegisterTap: () {
-          Navigator.pop(context);
-          _pushRegister(context);
-        },
-      ),
+void pushLoginScreen(
+  BuildContext context, {
+  bool replace = false,
+  String? initialEmail,
+}) {
+  final route = MaterialPageRoute<void>(
+    builder: (_) => LoginScreen(
+      initialEmail: initialEmail,
+      onRegisterTap: () => pushRegisterScreen(context, replace: true),
     ),
   );
+  if (replace) {
+    Navigator.of(context).pushReplacement(route);
+  } else {
+    Navigator.of(context).push(route);
+  }
 }
 
-void _pushRegister(BuildContext context) {
-  Navigator.push(
-    context,
-    MaterialPageRoute(
-      builder: (_) => RegisterScreen(
-        onLoginTap: () {
-          Navigator.pop(context);
-          _pushLogin(context);
-        },
-      ),
+void pushRegisterScreen(BuildContext context, {bool replace = false}) {
+  final route = MaterialPageRoute<void>(
+    builder: (_) => RegisterScreen(
+      onLoginTap: () => pushLoginScreen(context, replace: true),
     ),
   );
+  if (replace) {
+    Navigator.of(context).pushReplacement(route);
+  } else {
+    Navigator.of(context).push(route);
+  }
 }
+
+void _pushLogin(BuildContext context) => pushLoginScreen(context);
 
 class _AuthRequiredSheet extends StatelessWidget {
   const _AuthRequiredSheet({

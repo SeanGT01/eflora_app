@@ -94,29 +94,42 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
           _syncCheckoutAddress(checkoutProvider, addressProvider);
         });
 
-        return SingleChildScrollView(
-          child: Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                _buildStepHeader(context),
-                const SizedBox(height: 24),
-                if (checkoutProvider.error != null)
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 16),
-                    child: _buildMessageCard(
-                      context,
-                      checkoutProvider.error!,
-                      icon: Icons.warning_amber_rounded,
-                      tint: AppColors.error,
-                    ),
+        return Column(
+          children: [
+            Expanded(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (checkoutProvider.error != null)
+                      Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: _buildMessageCard(
+                          context,
+                          checkoutProvider.error!,
+                          icon: Icons.warning_amber_rounded,
+                          tint: AppColors.error,
+                        ),
+                      ),
+                    _buildAddressSection(context, checkoutProvider, addressProvider),
+                    const SizedBox(height: 16),
+                    _buildNotesSection(context, checkoutProvider),
+                  ],
+                ),
+              ),
+            ),
+            SafeArea(
+              top: false,
+              child: Container(
+                padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                decoration: BoxDecoration(
+                  color: AppColors.pageCream.withValues(alpha: 0.92),
+                  border: const Border(
+                    top: BorderSide(color: AppColors.glassBorder),
                   ),
-                _buildAddressSection(context, checkoutProvider, addressProvider),
-                const SizedBox(height: 24),
-                _buildNotesSection(context, checkoutProvider),
-                const SizedBox(height: 24),
-                Row(
+                ),
+                child: Row(
                   children: [
                     Expanded(
                       child: OutlinedButton(
@@ -127,7 +140,7 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: GradientButton(
-                        label: 'Next: Review Order',
+                        label: 'Continue',
                         loading: checkoutProvider.isProcessing,
                         onPressed: checkoutProvider.isProcessing
                             ? null
@@ -136,66 +149,11 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
                     ),
                   ],
                 ),
-              ],
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildStepHeader(BuildContext context) {
-    return GlassCard(
-      padding: const EdgeInsets.all(18),
-      radius: AppRadius.xl,
-      child: Row(
-        children: [
-          Container(
-            width: 44,
-            height: 44,
-            decoration: BoxDecoration(
-              gradient: AppColors.brandGradient,
-              borderRadius: BorderRadius.circular(14),
-              boxShadow: AppShadows.roseButton,
-            ),
-            child: Center(
-              child: Text(
-                '1',
-                style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                      color: Colors.white,
-                    ),
               ),
             ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'STEP 1 OF 3',
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                        color: AppColors.dustyRose,
-                        letterSpacing: 2,
-                      ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  'Delivery details',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  'Choose your address, delivery schedule, and any special notes.',
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: AppColors.muted,
-                      ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+          ],
+        );
+      },
     );
   }
 
@@ -206,12 +164,10 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
   ) {
     return _buildSectionCard(
       context,
-      title: 'Delivery Address',
-      subtitle: 'Your default delivery address is selected automatically.',
-      trailing: TextButton.icon(
+      title: 'Address',
+      trailing: TextButton(
         onPressed: () => _openAddressPicker(context, provider),
-        icon: const Icon(Icons.edit_location_alt_outlined, size: 18),
-        label: const Text('Manage'),
+        child: const Text('Change'),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -255,7 +211,7 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
                 ),
                 const SizedBox(height: 12),
                 GradientButton(
-                  label: 'Add Your First Address',
+                  label: 'Add address',
                   icon: Icons.add_location_alt_outlined,
                   height: 46,
                   onPressed: () => _openAddressPicker(context, provider),
@@ -317,13 +273,12 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
   Widget _buildNotesSection(BuildContext context, CheckoutProvider provider) {
     return _buildSectionCard(
       context,
-      title: 'Delivery Notes',
-      subtitle: 'Optional instructions for the rider or florist.',
+      title: 'Notes',
       child: TextField(
         controller: _notesController,
-        maxLines: 3,
+        maxLines: 2,
         decoration: const InputDecoration(
-          hintText: 'E.g., Leave at gate, ring doorbell, etc.',
+          hintText: 'Optional — gate code, landmark…',
         ),
         onChanged: (value) => provider.setDeliveryNotes(value),
       ),
@@ -380,38 +335,24 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
   Widget _buildSectionCard(
     BuildContext context, {
     required String title,
-    required String subtitle,
     required Widget child,
     Widget? trailing,
   }) {
     return GlassCard(
-      padding: const EdgeInsets.all(18),
-      radius: AppRadius.xl,
+      padding: const EdgeInsets.all(16),
+      radius: AppRadius.lg,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(title, style: Theme.of(context).textTheme.headlineSmall),
-                    const SizedBox(height: 4),
-                    Text(
-                      subtitle,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodySmall
-                          ?.copyWith(color: AppColors.muted),
-                    ),
-                  ],
-                ),
+                child: Text(title, style: Theme.of(context).textTheme.titleMedium),
               ),
               if (trailing != null) trailing,
             ],
           ),
-          const SizedBox(height: 16),
+          const SizedBox(height: 12),
           child,
         ],
       ),

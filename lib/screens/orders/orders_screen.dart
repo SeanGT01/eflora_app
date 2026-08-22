@@ -22,25 +22,56 @@ class OrdersScreen extends StatefulWidget {
 }
 
 class _OrdersScreenState extends State<OrdersScreen> {
+  List<Order> _allOrders = [];
   List<Order> _orders = [];
   List<CartItem> _cartItems = [];
   bool _loading = true;
   String _statusFilter = '';
   bool _hasLoadedForUser = false;
   String? _lastUserId;
+  final _statusScroll = ScrollController();
 
   final _statusTabs = [
     {'id': '', 'label': 'All'},
     {'id': 'pending', 'label': 'To Pay'},
     {'id': 'to_ship', 'label': 'To Ship'},
-    {'id': 'on_delivery', 'label': 'In Transit'},
+    {'id': 'on_delivery', 'label': 'To Receive'},
     {'id': 'delivered', 'label': 'Delivered'},
     {'id': 'completed', 'label': 'Completed'},
+    {'id': 'cancelled', 'label': 'Cancelled'},
   ];
+
+  int _countFor(String id) {
+    final cartN = _cartItems.length;
+    if (id.isEmpty) return cartN + _allOrders.length;
+    if (id == 'pending') {
+      return cartN +
+          _allOrders.where((o) => o.displayKey == 'pending').length;
+    }
+    final key = id == 'to_ship' ? 'processing' : id;
+    return _allOrders.where((o) => o.displayKey == key).length;
+  }
+
+  List<Order> _filtered(List<Order> source) {
+    if (_statusFilter.isEmpty) return List<Order>.from(source);
+    if (_statusFilter == 'to_ship') {
+      return source.where((o) => o.displayKey == 'processing').toList();
+    }
+    if (_statusFilter == 'pending') {
+      return source.where((o) => o.displayKey == 'pending').toList();
+    }
+    return source.where((o) => o.displayKey == _statusFilter).toList();
+  }
 
   @override
   void initState() {
     super.initState();
+  }
+
+  @override
+  void dispose() {
+    _statusScroll.dispose();
+    super.dispose();
   }
 
   @override
@@ -64,6 +95,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       _hasLoadedForUser = false;
       if (_loading || _orders.isNotEmpty || _cartItems.isNotEmpty) {
         setState(() {
+          _allOrders = [];
           _orders = [];
           _cartItems = [];
           _loading = false;
@@ -76,6 +108,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (!context.read<AuthProvider>().isLoggedIn) {
       if (_loading || _orders.isNotEmpty || _cartItems.isNotEmpty) {
         setState(() {
+          _allOrders = [];
           _orders = [];
           _cartItems = [];
           _loading = false;
@@ -87,52 +120,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
       setState(() => _loading = true);
     }
 
-    // Handle "to_ship" filter: includes preparing, done_preparing, accepted
-    String? apiStatus;
-    if (_statusFilter.isEmpty) {
-      apiStatus = null;
-    } else if (_statusFilter == 'to_ship') {
-      apiStatus = null; // Load all, then filter locally
-    } else if (_statusFilter == 'pending') {
-      apiStatus = null; // Load all to show with cart items
-    } else {
-      apiStatus = _statusFilter;
-    }
+    await context.read<CartProvider>().load();
 
-    // Load cart items ONLY if viewing "To Pay" or "All" tabs
-    if (_statusFilter == 'pending' || _statusFilter == '') {
-      await context.read<CartProvider>().load();
-    }
-
-    final result = await ApiService.getOrders(status: apiStatus);
+    final allOrders = await _fetchAllOrderPages();
     if (!mounted) return;
-    if (result.isSuccess) {
-      final data = result.data;
-      List<dynamic> list =
-          data is List ? data : (data is Map ? (data['orders'] ?? []) : []);
-      List<Order> orders =
-          list.map((e) => Order.fromJson(e as Map<String, dynamic>)).toList();
-
-      // Filter based on display state (aligned with website purchase history)
-      if (_statusFilter == 'to_ship') {
-        orders = orders.where((o) => o.displayKey == 'processing').toList();
-      } else if (_statusFilter == 'pending') {
-        // To Pay: unpaid GCash / cart — exclude COD awaiting confirmation
-        orders = orders.where((o) => o.displayKey == 'pending').toList();
-      } else if (_statusFilter == 'on_delivery') {
-        orders = orders.where((o) => o.displayKey == 'on_delivery').toList();
-      } else if (_statusFilter == 'delivered') {
-        orders = orders.where((o) => o.displayKey == 'delivered').toList();
-      } else if (_statusFilter == 'completed') {
-        orders = orders.where((o) => o.displayKey == 'completed').toList();
-      }
-
+    if (allOrders != null) {
       setState(() {
-        _orders = orders;
-        // Only keep cart items if viewing "To Pay" or "All" tabs
-        _cartItems = (_statusFilter == 'pending' || _statusFilter == '')
-            ? context.read<CartProvider>().items
-            : [];
+        _allOrders = allOrders;
+        _cartItems = context.read<CartProvider>().items;
+        _orders = _filtered(allOrders);
         _loading = false;
       });
     } else {
@@ -140,21 +136,35 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
+  Future<List<Order>?> _fetchAllOrderPages() async {
+    final collected = <Order>[];
+    var page = 1;
+    while (page <= 50) {
+      final result = await ApiService.getOrders(page: page);
+      if (!result.isSuccess) {
+        return page == 1 ? null : collected;
+      }
+      final data = result.data;
+      final list = data is List
+          ? data
+          : (data is Map ? (data['orders'] ?? []) : []);
+      collected.addAll(
+        (list as List)
+            .map((e) => Order.fromJson(e as Map<String, dynamic>)),
+      );
+      final hasNext = data is Map && data['has_next'] == true;
+      if (!hasNext) break;
+      page++;
+    }
+    return collected;
+  }
+
   void _applyCancelledLocally(int orderId) {
     setState(() {
-      _orders = _orders
+      _allOrders = _allOrders
           .map((o) => o.id == orderId ? o.copyWith(status: 'cancelled') : o)
-          .where((o) {
-            if (_statusFilter == 'pending') return o.displayKey == 'pending';
-            if (_statusFilter == 'to_ship') return o.displayKey == 'processing';
-            if (_statusFilter == 'on_delivery') {
-              return o.displayKey == 'on_delivery';
-            }
-            if (_statusFilter == 'delivered') return o.displayKey == 'delivered';
-            if (_statusFilter == 'completed') return o.displayKey == 'completed';
-            return true;
-          })
           .toList();
+      _orders = _filtered(_allOrders);
     });
   }
 
@@ -169,6 +179,40 @@ class _OrdersScreenState extends State<OrdersScreen> {
       setState(() => _statusFilter = 'completed');
     }
     await _loadOrders(silent: true);
+  }
+
+  void _selectStatus(String id) {
+    setState(() {
+      _statusFilter = id;
+      _orders = _filtered(_allOrders);
+    });
+  }
+
+  Widget _buildStatusChipRow() {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          height: 46,
+          child: ListView.builder(
+            controller: _statusScroll,
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            scrollDirection: Axis.horizontal,
+            itemCount: _statusTabs.length,
+            itemBuilder: (_, i) {
+              final tab = _statusTabs[i];
+              return _StatusTab(
+                label: tab['label']!,
+                count: _countFor(tab['id']!),
+                selected: _statusFilter == tab['id'],
+                onTap: () => _selectStatus(tab['id']!),
+              );
+            },
+          ),
+        ),
+        const Divider(height: 1, thickness: 0.6, color: Color(0x1A2C2520)),
+      ],
+    );
   }
 
   @override
@@ -187,34 +231,15 @@ class _OrdersScreenState extends State<OrdersScreen> {
           top: false,
           child: Column(
             children: [
-              // Status tabs — wrap like the web filter row
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 4, 16, 4),
-                child: Wrap(
-                  spacing: 8,
-                  runSpacing: 8,
-                  children: [
-                    for (final tab in _statusTabs)
-                      _StatusTab(
-                        label: tab['label']!,
-                        selected: _statusFilter == tab['id'],
-                        onTap: () {
-                          setState(() => _statusFilter = tab['id']!);
-                          if (context.read<AuthProvider>().isLoggedIn) {
-                            _loadOrders();
-                          }
-                        },
-                      ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 2),
+              _buildStatusChipRow(),
+              const SizedBox(height: 4),
               Expanded(
                 child: _loading
                     ? const Center(
                         child:
                             CircularProgressIndicator(color: AppColors.roseCta))
-                    : (_orders.isEmpty && _cartItems.isEmpty)
+                    : _isListEmpty
                         ? _buildEmpty()
                         : RefreshIndicator(
                             color: AppColors.roseCta,
@@ -267,6 +292,13 @@ class _OrdersScreenState extends State<OrdersScreen> {
     );
   }
 
+  bool get _isListEmpty {
+    final showCart =
+        _statusFilter == 'pending' || _statusFilter.isEmpty;
+    if (showCart) return _orders.isEmpty && _cartItems.isEmpty;
+    return _orders.isEmpty;
+  }
+
   Widget _buildEmpty() {
     return Center(
       child: Column(
@@ -305,40 +337,98 @@ class _OrdersScreenState extends State<OrdersScreen> {
   }
 }
 
-/// Inactive = translucent white pill with hairline border; active = brand gradient.
 class _StatusTab extends StatelessWidget {
   final String label;
+  final int count;
   final bool selected;
   final VoidCallback onTap;
 
-  const _StatusTab(
-      {required this.label, required this.selected, required this.onTap});
+  const _StatusTab({
+    required this.label,
+    required this.count,
+    required this.selected,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    return GestureDetector(
+    final showBadge = count > 0;
+    return InkWell(
       onTap: onTap,
-      child: AnimatedContainer(
-        duration: AppMotion.fast,
-        curve: AppMotion.curve,
-        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-        decoration: BoxDecoration(
-          gradient: selected ? AppColors.brandGradient : null,
-          color: selected ? null : AppColors.glassFill,
-          borderRadius: BorderRadius.circular(AppRadius.pill),
-          border: Border.all(
-            color: selected ? Colors.transparent : AppColors.glassBorder,
-            width: 1,
-          ),
-          boxShadow: selected ? AppShadows.roseButton : null,
+      splashColor: AppColors.roseCta.withValues(alpha: 0.08),
+      highlightColor: Colors.transparent,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Padding(
+                  padding: EdgeInsets.only(
+                    top: 8,
+                    right: showBadge ? 12 : 0,
+                    bottom: 8,
+                  ),
+                  child: Text(
+                    label,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 14,
+                      fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                      color: selected ? AppColors.roseCta : AppColors.muted,
+                      height: 1.1,
+                    ),
+                  ),
+                ),
+                if (showBadge)
+                  Positioned(
+                    top: 2,
+                    right: -2,
+                    child: _StatusCountBadge(count: count),
+                  ),
+              ],
+            ),
+            AnimatedContainer(
+              duration: AppMotion.fast,
+              curve: AppMotion.curve,
+              height: 2.5,
+              width: selected ? 22 : 0,
+              decoration: BoxDecoration(
+                color: AppColors.roseCta,
+                borderRadius: BorderRadius.circular(99),
+              ),
+            ),
+          ],
         ),
-        child: Text(
-          label,
-          style: GoogleFonts.dmSans(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: selected ? Colors.white : AppColors.muted,
-          ),
+      ),
+    );
+  }
+}
+
+class _StatusCountBadge extends StatelessWidget {
+  final int count;
+
+  const _StatusCountBadge({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final text = count > 99 ? '99+' : '$count';
+    return Container(
+      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+      padding: EdgeInsets.symmetric(horizontal: text.length > 1 ? 4 : 0),
+      alignment: Alignment.center,
+      decoration: const BoxDecoration(
+        color: AppColors.roseCta,
+        borderRadius: BorderRadius.all(Radius.circular(99)),
+      ),
+      child: Text(
+        text,
+        style: GoogleFonts.dmSans(
+          fontSize: 9,
+          fontWeight: FontWeight.w700,
+          color: Colors.white,
+          height: 1,
         ),
       ),
     );

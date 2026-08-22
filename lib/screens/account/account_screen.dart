@@ -11,8 +11,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/customer_default_avatar.dart';
-import '../auth/login_screen.dart';
-import '../auth/register_screen.dart';
+import '../../widgets/auth_required_sheet.dart';
 import '../orders/orders_screen.dart';
 import '../cart/cart_screen.dart';
 import '../wishlist/wishlist_screen.dart';
@@ -76,25 +75,12 @@ class _GuestView extends StatelessWidget {
             const SizedBox(height: 28),
             RoseButton(
               label: 'Sign In',
-              onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => LoginScreen(
-                      onRegisterTap: () {
-                        Navigator.pop(context);
-                        Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                                builder: (_) => const RegisterScreen()));
-                      },
-                    ),
-                  )),
+              onPressed: () => pushLoginScreen(context),
               width: double.infinity,
             ),
             const SizedBox(height: 12),
             OutlinedButton(
-              onPressed: () => Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const RegisterScreen())),
+              onPressed: () => pushRegisterScreen(context),
               style: OutlinedButton.styleFrom(
                   minimumSize: const Size(double.infinity, 50)),
               child: const Text('Create Account'),

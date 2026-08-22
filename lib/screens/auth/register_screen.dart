@@ -8,8 +8,8 @@ import '../../theme/app_theme.dart';
 import '../../widgets/auth_chrome.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/auth_required_sheet.dart';
 import 'otp_verification_screen.dart';
-import 'login_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
   final VoidCallback? onLoginTap;
@@ -69,18 +69,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   void _goToLogin({String? loginId}) {
     if (!mounted) return;
-
-    if (widget.onLoginTap != null) {
-      widget.onLoginTap!();
-      return;
-    }
-
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute(
-        builder: (_) => LoginScreen(
-          initialEmail: loginId ?? _identifierCtrl.text.trim(),
-        ),
-      ),
+    pushLoginScreen(
+      context,
+      replace: true,
+      initialEmail: loginId ?? _identifierCtrl.text.trim(),
     );
   }
 
@@ -151,18 +143,46 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final auth = context.watch<AuthProvider>();
     final fieldStyle = GoogleFonts.dmSans(fontSize: 14, color: AppColors.charcoal);
 
+    final sheet = MediaQuery.sizeOf(context).width < 960;
     return AuthScaffold(
       onLeadingTap: () => Navigator.pop(context),
-      children: [
-        const SizedBox(height: 4),
-        const AuthBrandMark(),
-        const SizedBox(height: 24),
-        const AuthHeading(
-          title: 'Create your account',
-          subtitle: 'Join E-FLORA and start sending blooms',
+      hero: AuthHeroBanner(
+        eyebrow: 'Join the community',
+        headline: TextSpan(
+          children: [
+            const TextSpan(text: 'Start your\n'),
+            TextSpan(
+              text: 'blooming',
+              style: GoogleFonts.cormorantGaramond(
+                fontStyle: FontStyle.italic,
+                color: Colors.white.withValues(alpha: 0.92),
+              ),
+            ),
+            const TextSpan(text: '\njourney today'),
+          ],
         ),
-        const SizedBox(height: 22),
+        description:
+            'Create a free account and discover fresh flowers, potted plants, and arrangements delivered right to your door.',
+      ),
+      children: [
+        if (!sheet) ...[
+          SizedBox(height: MediaQuery.sizeOf(context).height < 720 ? 0 : 4),
+          const AuthBrandMark(),
+          SizedBox(height: MediaQuery.sizeOf(context).height < 720 ? 10 : 24),
+          const AuthHeading(
+            title: 'Create your account',
+            subtitle: 'Join E-FLORA and start sending blooms',
+          ),
+          SizedBox(height: MediaQuery.sizeOf(context).height < 720 ? 12 : 22),
+        ] else ...[
+          const AuthHeading(
+            title: 'Create your account',
+            subtitle: 'Join thousands of flower lovers today.',
+          ),
+          const SizedBox(height: 16),
+        ],
         AuthGlassCard(
+          flat: sheet,
           child: Form(
             key: _formKey,
             child: Column(

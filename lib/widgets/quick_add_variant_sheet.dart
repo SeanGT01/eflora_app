@@ -469,7 +469,9 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  ..._productAddons.map((a) => _buildAddonCard(a, 'Add-on')),
+                  _extrasGrid(
+                    _productAddons.map((a) => _buildAddonCard(a, 'Add-on')).toList(),
+                  ),
                 ],
                 if (_ymalAddons.isNotEmpty) ...[
                   const SizedBox(height: 14),
@@ -483,7 +485,9 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
                     ),
                   ),
                   const SizedBox(height: 10),
-                  ..._ymalAddons.map((a) => _buildAddonCard(a, 'YMAL')),
+                  _extrasGrid(
+                    _ymalAddons.map((a) => _buildAddonCard(a, 'YMAL')).toList(),
+                  ),
                 ],
               ],
             ),
@@ -580,6 +584,21 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
     );
   }
 
+  Widget _extrasGrid(List<Widget> tiles) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const gap = 8.0;
+        const cols = 4;
+        final w = (constraints.maxWidth - gap * (cols - 1)) / cols;
+        return Wrap(
+          spacing: gap,
+          runSpacing: gap,
+          children: [for (final t in tiles) SizedBox(width: w, child: t)],
+        );
+      },
+    );
+  }
+
   Widget _buildOptionCard(_QuickAddOption opt) {
     final qty = _optionQty[opt.key] ?? 0;
     final selected = qty > 0;
@@ -612,7 +631,12 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
                   padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
                   child: Row(
                     children: [
-                      _Thumb(url: opt.imageUrl, size: 44, radius: 10),
+                      _Thumb(
+                        url: opt.imageUrl,
+                        size: 52,
+                        radius: 10,
+                        fit: BoxFit.contain,
+                      ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: Column(
@@ -688,78 +712,96 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
     final selected = qty > 0;
     final ok = a.stock > 0;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Opacity(
-        opacity: ok ? 1 : 0.48,
-        child: Container(
-          decoration: BoxDecoration(
+    return Opacity(
+      opacity: ok ? 1 : 0.48,
+      child: Container(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
             color: selected
-                ? AppColors.dustyRose.withValues(alpha: 0.10)
-                : Colors.white.withValues(alpha: 0.72),
-            borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: selected
-                  ? AppColors.roseCta
-                  : AppColors.blush.withValues(alpha: 0.55),
-              width: selected ? 1.6 : 1.2,
-            ),
+                ? AppColors.roseCta
+                : AppColors.blush.withValues(alpha: 0.55),
+            width: selected ? 1.6 : 1.2,
           ),
-          child: Column(
-            children: [
-              InkWell(
-                onTap: ok ? () => _toggleAddon(a.id, a.stock) : null,
-                borderRadius: BorderRadius.circular(14),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-                  child: Row(
-                    children: [
-                      _Thumb(url: a.imageUrl, size: 44, radius: 10),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              a.name,
-                              style: GoogleFonts.dmSans(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.charcoal,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              '${a.groupName.isNotEmpty ? a.groupName : section} · ${ok ? '${a.stock} left' : 'Out of stock'}',
-                              style: GoogleFonts.dmSans(
-                                fontSize: 11.5,
-                                color: ok ? AppColors.muted : AppColors.error,
-                              ),
-                            ),
-                          ],
-                        ),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            InkWell(
+              onTap: ok ? () => _toggleAddon(a.id, a.stock) : null,
+              borderRadius: BorderRadius.circular(12),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(3, 4, 3, 2),
+                child: Column(
+                  children: [
+                    SizedBox(
+                      height: 46,
+                      width: double.infinity,
+                      child: _Thumb(
+                        url: a.imageUrl,
+                        size: 46,
+                        radius: 7,
+                        fit: BoxFit.contain,
+                        expand: true,
+                        background: Colors.white,
                       ),
-                      Text(
-                        '₱${_peso.format(a.price)}',
-                        style: GoogleFonts.cormorantGaramond(
-                          fontSize: 18,
+                    ),
+                    const SizedBox(height: 3),
+                    SizedBox(
+                      height: 20,
+                      child: Text(
+                        a.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        textAlign: TextAlign.center,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 9.5,
                           fontWeight: FontWeight.w600,
-                          color: AppColors.deepRose,
+                          height: 1.15,
+                          color: AppColors.charcoal,
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    Text(
+                      ok ? '${a.stock} left' : 'Out of stock',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 8.5,
+                        height: 1.15,
+                        color: ok ? AppColors.muted : AppColors.error,
+                      ),
+                    ),
+                    Text(
+                      '₱${_peso.format(a.price)}',
+                      style: GoogleFonts.cormorantGaramond(
+                        fontSize: 12,
+                        height: 1.1,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.deepRose,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              if (selected)
-                _InlineQty(
-                  qty: qty,
-                  max: a.stock,
-                  onMinus: () => _changeAddonQty(a.id, -1, a.stock),
-                  onPlus: () => _changeAddonQty(a.id, 1, a.stock),
-                ),
-            ],
-          ),
+            ),
+            // Always reserve qty height (web: visibility hidden until selected).
+            Visibility(
+              visible: selected,
+              maintainSize: true,
+              maintainAnimation: true,
+              maintainState: true,
+              child: _InlineQty(
+                qty: qty,
+                max: a.stock,
+                compact: true,
+                onMinus: () => _changeAddonQty(a.id, -1, a.stock),
+                onPlus: () => _changeAddonQty(a.id, 1, a.stock),
+              ),
+            ),
+          ],
         ),
       ),
     );
@@ -811,42 +853,49 @@ class _InlineQty extends StatelessWidget {
   final int max;
   final VoidCallback onMinus;
   final VoidCallback onPlus;
+  final bool compact;
 
   const _InlineQty({
     required this.qty,
     required this.max,
     required this.onMinus,
     required this.onPlus,
+    this.compact = false,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 10),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          _InlineQtyBtn(
-            label: '−',
-            onTap: qty > 0 ? onMinus : null,
-          ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 14),
-            child: Text(
-              '$qty',
-              style: GoogleFonts.dmSans(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: AppColors.deepRose,
-              ),
+    final row = Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _InlineQtyBtn(
+          label: '−',
+          onTap: qty > 0 ? onMinus : null,
+          size: compact ? 20 : 28,
+        ),
+        Padding(
+          padding: EdgeInsets.symmetric(horizontal: compact ? 3 : 14),
+          child: Text(
+            '$qty',
+            style: GoogleFonts.dmSans(
+              fontSize: compact ? 11 : 14,
+              fontWeight: FontWeight.w600,
+              color: AppColors.deepRose,
             ),
           ),
-          _InlineQtyBtn(
-            label: '+',
-            onTap: qty < max ? onPlus : null,
-          ),
-        ],
-      ),
+        ),
+        _InlineQtyBtn(
+          label: '+',
+          onTap: qty < max ? onPlus : null,
+          size: compact ? 20 : 28,
+        ),
+      ],
+    );
+
+    return Padding(
+      padding: EdgeInsets.only(bottom: compact ? 3 : 10, left: 2, right: 2),
+      child: row,
     );
   }
 }
@@ -854,7 +903,12 @@ class _InlineQty extends StatelessWidget {
 class _InlineQtyBtn extends StatelessWidget {
   final String label;
   final VoidCallback? onTap;
-  const _InlineQtyBtn({required this.label, required this.onTap});
+  final double size;
+  const _InlineQtyBtn({
+    required this.label,
+    required this.onTap,
+    this.size = 28,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -865,13 +919,13 @@ class _InlineQtyBtn extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(6),
         child: SizedBox(
-          width: 28,
-          height: 28,
+          width: size,
+          height: size,
           child: Center(
             child: Text(
               label,
               style: TextStyle(
-                fontSize: 18,
+                fontSize: size > 24 ? 18 : 15,
                 height: 1,
                 color: enabled
                     ? AppColors.deepRose
@@ -889,20 +943,31 @@ class _Thumb extends StatelessWidget {
   final String? url;
   final double size;
   final double radius;
-  const _Thumb({required this.url, required this.size, required this.radius});
+  final BoxFit fit;
+  final bool expand;
+  final Color background;
+  const _Thumb({
+    required this.url,
+    required this.size,
+    required this.radius,
+    this.fit = BoxFit.contain,
+    this.expand = false,
+    this.background = const Color(0xFFF5EDE6),
+  });
 
   @override
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(radius),
       child: Container(
-        width: size,
+        width: expand ? double.infinity : size,
         height: size,
-        color: const Color(0xFFF5EDE6),
+        color: background,
+        alignment: Alignment.center,
         child: url != null && url!.isNotEmpty
             ? CachedNetworkImage(
                 imageUrl: url!,
-                fit: BoxFit.cover,
+                fit: fit,
                 errorWidget: (_, __, ___) => const Icon(
                   Icons.local_florist_outlined,
                   color: AppColors.muted,

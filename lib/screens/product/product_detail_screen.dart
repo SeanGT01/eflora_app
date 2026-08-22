@@ -1034,6 +1034,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   if (p.description != null && p.description!.isNotEmpty) ...[
                     const SizedBox(height: 18),
                     GlassCard(
+                      fill: const Color(0x66F5EDE6),
                       padding: const EdgeInsets.all(18),
                       radius: AppRadius.lg,
                       child: Column(
@@ -1172,6 +1173,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
                     // Calendar button (glass, matching the web outline CTA)
                     GlassCard(
+                      fill: const Color(0x66F5EDE6),
                       radius: AppRadius.md,
                       padding: const EdgeInsets.symmetric(vertical: 13),
                       onTap: _showCalendarPicker,
@@ -1340,6 +1342,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   Widget _buildInfoAccordion({required String title, required Widget child}) {
     return GlassCard(
+      fill: const Color(0x66F5EDE6),
       radius: AppRadius.lg,
       padding: EdgeInsets.zero,
       child: Theme(
@@ -1901,6 +1904,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   Widget _noticeCard({required IconData icon, required String text}) {
     return GlassCard(
+      fill: const Color(0x66F5EDE6),
       radius: AppRadius.md,
       padding: const EdgeInsets.all(14),
       child: Row(
@@ -2628,6 +2632,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         if (_selectedVariant != null) ...[
           const SizedBox(height: 12),
           GlassCard(
+            fill: const Color(0x66F5EDE6),
             padding: const EdgeInsets.all(12),
             radius: AppRadius.md,
             child: Row(

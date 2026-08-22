@@ -21,8 +21,6 @@ import '../../widgets/product_card.dart';
 import '../../widgets/auth_required_sheet.dart';
 import '../../widgets/quick_add_variant_sheet.dart';
 import '../product/product_detail_screen.dart';
-import '../auth/login_screen.dart';
-import '../auth/register_screen.dart';
 import '../search/search_screen.dart';
 import '../cart/cart_screen.dart';
 import '../store/store_page.dart';
@@ -481,31 +479,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     showAuthRequiredSheet(context);
   }
 
-  void _navigateToLogin() {
-    Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => LoginScreen(
-            onRegisterTap: () {
-              Navigator.pop(context);
-              _navigateToRegister();
-            },
-          ),
-        ));
-  }
+  void _navigateToLogin() => pushLoginScreen(context);
 
-  void _navigateToRegister() {
-    Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => RegisterScreen(
-            onLoginTap: () {
-              Navigator.pop(context);
-              _navigateToLogin();
-            },
-          ),
-        ));
-  }
+  void _navigateToRegister() => pushRegisterScreen(context);
 
   Future<bool> _showBrowseLimitationsModal() async {
     bool dontShowAgain = false;

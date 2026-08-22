@@ -44,8 +44,8 @@ class _AtmosphereWash extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(color: AppColors.pageCream),
+    return const DecoratedBox(
+      decoration: BoxDecoration(color: AppColors.pageCream),
       child: Stack(
         fit: StackFit.expand,
         children: [
@@ -53,16 +53,16 @@ class _AtmosphereWash extends StatelessWidget {
           DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(
-                begin: const Alignment(-0.9, -0.55),
-                end: const Alignment(0.95, 0.8),
+                begin: Alignment(-0.9, -0.55),
+                end: Alignment(0.95, 0.8),
                 colors: [
-                  const Color.fromRGBO(242, 196, 206, 0.18),
-                  const Color.fromRGBO(255, 252, 248, 0.92),
-                  const Color.fromRGBO(255, 253, 250, 0.96),
-                  const Color.fromRGBO(248, 250, 246, 0.92),
-                  const Color.fromRGBO(196, 214, 198, 0.16),
+                  Color.fromRGBO(242, 196, 206, 0.18),
+                  Color.fromRGBO(255, 252, 248, 0.92),
+                  Color.fromRGBO(255, 253, 250, 0.96),
+                  Color.fromRGBO(248, 250, 246, 0.92),
+                  Color.fromRGBO(196, 214, 198, 0.16),
                 ],
-                stops: const [0.0, 0.22, 0.50, 0.78, 1.0],
+                stops: [0.0, 0.22, 0.50, 0.78, 1.0],
               ),
             ),
           ),
@@ -71,13 +71,13 @@ class _AtmosphereWash extends StatelessWidget {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
-                  center: const Alignment(-0.84, -0.60),
+                  center: Alignment(-0.84, -0.60),
                   radius: 0.85,
                   colors: [
-                    const Color.fromRGBO(242, 196, 206, 0.16),
-                    const Color.fromRGBO(242, 196, 206, 0.0),
+                    Color.fromRGBO(242, 196, 206, 0.16),
+                    Color.fromRGBO(242, 196, 206, 0.0),
                   ],
-                  stops: const [0.0, 0.70],
+                  stops: [0.0, 0.70],
                 ),
               ),
             ),
@@ -86,13 +86,13 @@ class _AtmosphereWash extends StatelessWidget {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
-                  center: const Alignment(0.84, -0.40),
+                  center: Alignment(0.84, -0.40),
                   radius: 0.80,
                   colors: [
-                    const Color.fromRGBO(122, 158, 126, 0.12),
-                    const Color.fromRGBO(122, 158, 126, 0.0),
+                    Color.fromRGBO(122, 158, 126, 0.12),
+                    Color.fromRGBO(122, 158, 126, 0.0),
                   ],
-                  stops: const [0.0, 0.70],
+                  stops: [0.0, 0.70],
                 ),
               ),
             ),
@@ -101,13 +101,13 @@ class _AtmosphereWash extends StatelessWidget {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
-                  center: const Alignment(0.0, 0.70),
+                  center: Alignment(0.0, 0.70),
                   radius: 0.90,
                   colors: [
-                    const Color.fromRGBO(212, 120, 138, 0.06),
-                    const Color.fromRGBO(212, 120, 138, 0.0),
+                    Color.fromRGBO(212, 120, 138, 0.06),
+                    Color.fromRGBO(212, 120, 138, 0.0),
                   ],
-                  stops: const [0.0, 0.65],
+                  stops: [0.0, 0.65],
                 ),
               ),
             ),
@@ -116,13 +116,13 @@ class _AtmosphereWash extends StatelessWidget {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 gradient: RadialGradient(
-                  center: const Alignment(0.40, -0.80),
+                  center: Alignment(0.40, -0.80),
                   radius: 0.70,
                   colors: [
-                    const Color.fromRGBO(196, 214, 198, 0.10),
-                    const Color.fromRGBO(196, 214, 198, 0.0),
+                    Color.fromRGBO(196, 214, 198, 0.10),
+                    Color.fromRGBO(196, 214, 198, 0.0),
                   ],
-                  stops: const [0.0, 0.70],
+                  stops: [0.0, 0.70],
                 ),
               ),
             ),
