@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -13,6 +14,7 @@ import '../../widgets/glass.dart';
 import '../../widgets/chat_drawer.dart';
 import '../../widgets/cancel_order_reason_sheet.dart';
 import '../product/product_detail_screen.dart';
+import '../../widgets/live_delivery_map.dart';
 
 /// Pill badge using the web's per-status fill / text / border trio.
 class _StatusPill extends StatelessWidget {
@@ -82,6 +84,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   bool _storeRated = false;
   bool _ratingsLoaded = false;
   bool _buyAgainBusy = false;
+  Timer? _statusPoll;
+  int? _etaMin;
 
   @override
   void initState() {
@@ -90,15 +94,31 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     _loadLatestOrder();
     final s = _order.status;
     if (s == 'delivered' || s == 'completed') _loadExistingRatings();
+    if (s == 'done_preparing' || s == 'on_delivery' || s == 'confirmed') {
+      _statusPoll = Timer.periodic(
+        const Duration(seconds: 12),
+        (_) => _loadLatestOrder(),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _statusPoll?.cancel();
+    super.dispose();
   }
 
   Future<void> _loadLatestOrder() async {
     final res = await ApiService.getOrder(widget.order.id);
     if (!mounted) return;
     if (res.statusCode == 200 && res.data is Map<String, dynamic>) {
-      setState(() {
-        _order = Order.fromJson(res.data as Map<String, dynamic>);
-      });
+      final next = Order.fromJson(res.data as Map<String, dynamic>);
+      setState(() => _order = next);
+      if (next.status != 'on_delivery' &&
+          next.status != 'done_preparing' &&
+          next.status != 'confirmed') {
+        _statusPoll?.cancel();
+      }
     }
   }
 
@@ -233,431 +253,531 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           scrolledUnderElevation: 0,
         ),
         body: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          padding: EdgeInsets.only(
+            bottom: 16 + MediaQuery.paddingOf(context).bottom,
+          ),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              // Order Header
-              GlassCard(
-                radius: AppRadius.xl,
-                tinted: true,
-                padding: const EdgeInsets.all(18),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Flexible(
-                          child: Text(
-                            'Order #${order.id.toString().padLeft(6, '0')}',
-                            style: Theme.of(context).textTheme.headlineSmall,
-                          ),
-                        ),
-                        const SizedBox(width: 8),
-                        _StatusPill(
-                          label: order.statusLabel,
-                          background: order.statusBackgroundColor,
-                          foreground: order.statusColor,
-                          borderColor: order.statusBorderColor,
+              if (order.status == 'on_delivery') ...[
+                LiveDeliveryMap(
+                  compactHero: true,
+                  orderId: order.id,
+                  riderName: order.riderName,
+                  onChat: () => _openRiderChat(context, order),
+                  onEtaChanged: (m) {
+                    if (_etaMin != m) setState(() => _etaMin = m);
+                  },
+                  onStatusChanged: (status) {
+                    if (status != _order.status) _loadLatestOrder();
+                  },
+                ),
+                Transform.translate(
+                  offset: const Offset(0, -32),
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: Color(0xF7FFFCF8),
+                      borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Color(0x14000000),
+                          blurRadius: 18,
+                          offset: Offset(0, -6),
                         ),
                       ],
                     ),
-                    const SizedBox(height: 8),
-                    Text(
-                      dateStr,
-                      style: GoogleFonts.dmSans(
-                          fontSize: 13, color: AppColors.muted),
+                    padding: const EdgeInsets.fromLTRB(20, 8, 20, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Center(
+                          child: Container(
+                            width: 36,
+                            height: 4,
+                            margin: const EdgeInsets.only(bottom: 14),
+                            decoration: BoxDecoration(
+                              color: AppColors.blush.withOpacity(0.9),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                          ),
+                        ),
+                        _liveHeader(context, order, dateStr),
+                        const SizedBox(height: 16),
+                        ..._orderSections(
+                          context,
+                          order,
+                          subtotalToUse: subtotalToUse,
+                          totalToShow: totalToShow,
+                          showRiderCard: false,
+                        ),
+                      ],
                     ),
-                    if (order.storeName != null) ...[
-                      const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Container(
-                            width: 26,
-                            height: 26,
-                            decoration: const BoxDecoration(
-                              gradient: AppColors.brandGradient,
-                              shape: BoxShape.circle,
-                            ),
-                            child: const Icon(Icons.storefront_outlined,
-                                size: 14, color: Colors.white),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              order.storeName!.toUpperCase(),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                              style: GoogleFonts.dmSans(
-                                fontSize: 10,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.labelPink,
-                                letterSpacing: 1.4,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ],
+                  ),
                 ),
-              ),
-              const SizedBox(height: 20),
-
-              if (order.status == 'cancelled' &&
-                  (order.cancellationReason?.trim().isNotEmpty ?? false)) ...[
-                GlassCard(
-                  padding: const EdgeInsets.all(14),
-                  radius: AppRadius.lg,
+              ] else
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 8, 20, 0),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        'Cancellation reason',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: 0.6,
-                          color: AppColors.muted,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        order.cancellationReason!,
-                        style: GoogleFonts.dmSans(
-                          fontSize: 13.5,
-                          height: 1.45,
-                          color: AppColors.charcoal,
-                        ),
+                      _orderHeaderCard(context, order, dateStr),
+                      const SizedBox(height: 16),
+                      ..._orderSections(
+                        context,
+                        order,
+                        subtotalToUse: subtotalToUse,
+                        totalToShow: totalToShow,
+                        showRiderCard: true,
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 16),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _liveHeader(BuildContext context, Order order, String dateStr) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Order #${order.id.toString().padLeft(6, '0')}',
+                    style: GoogleFonts.cormorantGaramond(
+                      fontSize: 26,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.charcoal,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    [
+                      if (_etaMin != null) '$_etaMin min away',
+                      if (order.riderName != null) order.riderName!,
+                      if (order.storeName != null) order.storeName,
+                    ].join('  ·  '),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13,
+                      color: AppColors.muted,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            _StatusPill(
+              label: order.statusLabel,
+              background: order.statusBackgroundColor,
+              foreground: order.statusColor,
+              borderColor: order.statusBorderColor,
+            ),
+          ],
+        ),
+        if (order.riderName != null) ...[
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () => _openRiderChat(context, order),
+                  icon: const Icon(Icons.chat_bubble_outline_rounded, size: 16),
+                  label: const Text('Chat rider'),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.deepRose,
+                    side: BorderSide(color: AppColors.deepRose.withOpacity(0.28)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Tap map to expand',
+                style: GoogleFonts.dmSans(fontSize: 11, color: AppColors.muted),
+              ),
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _orderHeaderCard(BuildContext context, Order order, String dateStr) {
+    return GlassCard(
+      radius: AppRadius.xl,
+      tinted: true,
+      padding: const EdgeInsets.all(18),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'Order #${order.id.toString().padLeft(6, '0')}',
+                  style: Theme.of(context).textTheme.headlineSmall,
+                ),
+              ),
+              _StatusPill(
+                label: order.statusLabel,
+                background: order.statusBackgroundColor,
+                foreground: order.statusColor,
+                borderColor: order.statusBorderColor,
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Text(
+            dateStr,
+            style: GoogleFonts.dmSans(fontSize: 13, color: AppColors.muted),
+          ),
+          if (order.storeName != null) ...[
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Container(
+                  width: 26,
+                  height: 26,
+                  decoration: const BoxDecoration(
+                    gradient: AppColors.brandGradient,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.storefront_outlined,
+                      size: 14, color: Colors.white),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    order.storeName!.toUpperCase(),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.labelPink,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                ),
               ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
 
-              // Order Items
-              const GlassSectionTitle(
-                  eyebrow: 'Your bouquet', title: 'Order Items'),
-              const SizedBox(height: 12),
-              GlassCard(
-                padding: EdgeInsets.zero,
-                radius: AppRadius.xl,
-                child: Column(
-                  children: order.items.asMap().entries.map((e) {
-                    final i = e.key;
-                    final item = e.value;
-                    return Column(
-                      children: [
-                        GestureDetector(
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => ProductDetailScreen(
-                                    productId: item.productId),
-                              ),
-                            );
-                          },
-                          child: Padding(
-                            padding: const EdgeInsets.all(14),
-                            child: Row(
-                              children: [
-                                // Product Image
-                                _buildOrderItemImage(item),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        item.productName,
-                                        style: GoogleFonts.dmSans(
-                                          fontSize: 14,
-                                          fontWeight: FontWeight.w600,
-                                          color: AppColors.charcoal,
-                                        ),
-                                        maxLines: 2,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      if (item.variantName != null &&
-                                          item.variantName!.isNotEmpty) ...[
-                                        const SizedBox(height: 2),
-                                        Text(
-                                          'Variant: ${item.variantName}',
-                                          style: GoogleFonts.dmSans(
-                                            fontSize: 12,
-                                            fontWeight: FontWeight.w500,
-                                            color: AppColors.deepRose,
-                                          ),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                        ),
-                                      ],
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        'Qty: ${item.quantity}',
-                                        style: GoogleFonts.dmSans(
-                                            fontSize: 12,
-                                            color: AppColors.muted),
-                                      ),
-                                      const SizedBox(height: 8),
-                                      _OrderItemPriceBreakdown(item: item),
-                                    ],
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
+  List<Widget> _orderSections(
+    BuildContext context,
+    Order order, {
+    required double subtotalToUse,
+    required double totalToShow,
+    required bool showRiderCard,
+  }) {
+    return [
+      if (order.status == 'cancelled' &&
+          (order.cancellationReason?.trim().isNotEmpty ?? false)) ...[
+        GlassCard(
+          padding: const EdgeInsets.all(14),
+          radius: AppRadius.lg,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Cancellation reason',
+                style: GoogleFonts.dmSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 0.6,
+                  color: AppColors.muted,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                order.cancellationReason!,
+                style: GoogleFonts.dmSans(
+                  fontSize: 13.5,
+                  height: 1.45,
+                  color: AppColors.charcoal,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+      ],
+      GlassCard(
+        padding: EdgeInsets.zero,
+        radius: AppRadius.lg,
+        child: Column(
+          children: [
+            ...order.items.asMap().entries.map((e) {
+              final i = e.key;
+              final item = e.value;
+              return Column(
+                children: [
+                  GestureDetector(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) =>
+                              ProductDetailScreen(productId: item.productId),
                         ),
-                        if (i < order.items.length - 1)
-                          const Divider(
-                              height: 1,
-                              indent: 14,
-                              endIndent: 14,
-                              color: AppColors.glassBorder),
-                      ],
-                    );
-                  }).toList(),
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Order Summary
-              GlassCard(
-                padding: const EdgeInsets.all(18),
-                radius: AppRadius.xl,
-                child: Column(
-                  children: [
-                    _SummaryRow(
-                      label: 'Subtotal',
-                      value: '₱${subtotalToUse.toStringAsFixed(2)}',
-                    ),
-                    const SizedBox(height: 8),
-                    _SummaryRow(
-                      label: 'Delivery Fee',
-                      value: '₱${order.deliveryFee.toStringAsFixed(2)}',
-                    ),
-                    const SizedBox(height: 8),
-                    _SummaryRow(
-                      label: 'Discount',
-                      value: '—',
-                      valueColor: AppColors.muted,
-                    ),
-                    const Divider(height: 16, color: AppColors.glassBorder),
-                    _SummaryRow(
-                      label: 'Total Amount',
-                      value: '₱${totalToShow.toStringAsFixed(2)}',
-                      isBold: true,
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 20),
-
-              // Rider Info (if available)
-              if (order.riderName != null) ...[
-                const GlassSectionTitle(
-                    eyebrow: 'On its way', title: 'Delivery'),
-                const SizedBox(height: 12),
-                GlassCard(
-                  padding: const EdgeInsets.all(16),
-                  radius: AppRadius.xl,
-                  child: Column(
-                    children: [
-                      Row(
+                      );
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.all(14),
+                      child: Row(
                         children: [
-                          Container(
-                            width: 48,
-                            height: 48,
-                            decoration: const BoxDecoration(
-                              gradient: AppColors.brandGradient,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Center(
-                              child: Text(
-                                order.riderName!.substring(0, 1).toUpperCase(),
-                                style: const TextStyle(
-                                  fontSize: 20,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ),
+                          _buildOrderItemImage(item),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Rider',
-                                  style: GoogleFonts.dmSans(
-                                      fontSize: 11, color: AppColors.muted),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  order.riderName!,
+                                  item.productName,
                                   style: GoogleFonts.dmSans(
                                     fontSize: 14,
-                                    fontWeight: FontWeight.w700,
+                                    fontWeight: FontWeight.w600,
                                     color: AppColors.charcoal,
                                   ),
+                                  maxLines: 2,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
+                                if (item.variantName != null &&
+                                    item.variantName!.isNotEmpty) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    item.variantName!,
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: AppColors.deepRose,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 4),
+                                Text(
+                                  'Qty ${item.quantity}',
+                                  style: GoogleFonts.dmSans(
+                                      fontSize: 12, color: AppColors.muted),
+                                ),
+                                const SizedBox(height: 8),
+                                _OrderItemPriceBreakdown(item: item),
                               ],
                             ),
                           ),
-                          const Icon(Icons.directions_bike_outlined,
-                              color: AppColors.sage, size: 20),
                         ],
                       ),
-                      const SizedBox(height: 12),
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          onPressed: () => _openRiderChat(context, order),
-                          icon: const Icon(Icons.message_outlined, size: 18),
-                          label: const Text('Chat with rider'),
-                          style: OutlinedButton.styleFrom(
-                            foregroundColor: AppColors.deepRose,
-                            side: BorderSide(
-                              color: AppColors.deepRose.withOpacity(0.35),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
+                    ),
                   ),
+                  if (i < order.items.length - 1)
+                    const Divider(
+                      height: 1,
+                      indent: 14,
+                      endIndent: 14,
+                      color: AppColors.glassBorder,
+                    ),
+                ],
+              );
+            }),
+            const Divider(height: 1, color: AppColors.glassBorder),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                children: [
+                  _SummaryRow(
+                    label: 'Subtotal',
+                    value: '₱${subtotalToUse.toStringAsFixed(2)}',
+                  ),
+                  const SizedBox(height: 8),
+                  _SummaryRow(
+                    label: 'Delivery',
+                    value: '₱${order.deliveryFee.toStringAsFixed(2)}',
+                  ),
+                  const Divider(height: 16, color: AppColors.glassBorder),
+                  _SummaryRow(
+                    label: 'Total',
+                    value: '₱${totalToShow.toStringAsFixed(2)}',
+                    isBold: true,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+      if (showRiderCard && order.riderName != null) ...[
+        const SizedBox(height: 16),
+        GlassCard(
+          padding: const EdgeInsets.all(14),
+          radius: AppRadius.lg,
+          child: Row(
+            children: [
+              Container(
+                width: 44,
+                height: 44,
+                decoration: const BoxDecoration(
+                  gradient: AppColors.brandGradient,
+                  shape: BoxShape.circle,
                 ),
-                const SizedBox(height: 20),
-              ],
-
-              // Status Timeline
-              const GlassSectionTitle(
-                  eyebrow: 'Track progress', title: 'Order Status'),
-              const SizedBox(height: 10),
-              _buildStatusTimeline(
-                  order.status,
-                  order.paymentProofUrl,
-                  order.deliveryProofUrl,
-                  order.deliveryProof2Url,
-                  order.donePreparingProofUrl,
-                  context),
-              const SizedBox(height: 20),
-
-              // Rate order (delivered or completed, hidden once store + products rated)
-              if (order.status == 'delivered') ...[
-                Container(
-                  width: double.infinity,
-                  height: 50,
-                  decoration: BoxDecoration(
-                    color: AppColors.glassFill,
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                    border:
-                        Border.all(color: AppColors.glassBorder, width: 1.5),
-                  ),
-                  child: Material(
-                    color: Colors.transparent,
-                    child: InkWell(
-                      onTap: _markOrderAsCompleted,
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                      child: Center(
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(Icons.check_circle_outline,
-                                size: 18, color: AppColors.deepSage),
-                            const SizedBox(width: 8),
-                            Text(
-                              'Mark as completed',
-                              style: GoogleFonts.dmSans(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w700,
-                                color: AppColors.charcoal,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
+                child: Center(
+                  child: Text(
+                    order.riderName!.substring(0, 1).toUpperCase(),
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
                     ),
                   ),
                 ),
-                const SizedBox(height: 12),
-              ],
-              if ((order.status == 'delivered' ||
-                      order.status == 'completed') &&
-                  !_allRated) ...[
-                GradientButton(
-                  label: 'Rate order',
-                  icon: Icons.star_border_rounded,
-                  onPressed: () => _openRatingSheet(context),
-                ),
-                const SizedBox(height: 12),
-              ],
-              if (order.status == 'delivered' ||
-                  order.status == 'completed') ...[
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: OutlinedButton.icon(
-                    onPressed: _buyAgainBusy ? null : _buyAgain,
-                    icon: _buyAgainBusy
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.refresh_rounded, size: 18),
-                    label: Text(
-                      'Buy Again',
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      order.riderName!,
                       style: GoogleFonts.dmSans(
                         fontSize: 14,
                         fontWeight: FontWeight.w700,
+                        color: AppColors.charcoal,
                       ),
                     ),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.charcoal,
-                      side: const BorderSide(color: AppColors.glassBorder),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-              if (order.canCancel) ...[
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 50,
-                  child: OutlinedButton(
-                    onPressed: _cancelOrder,
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: const Color(0xFF9B1C1C),
-                      side: const BorderSide(color: Color(0x40C24E68)),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(AppRadius.pill),
-                      ),
-                    ),
-                    child: Text(
-                      'Cancel order',
+                    Text(
+                      'Your rider',
                       style: GoogleFonts.dmSans(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                      ),
+                          fontSize: 12, color: AppColors.muted),
                     ),
-                  ),
+                  ],
                 ),
-              ],
-
-              const SizedBox(height: 40),
+              ),
+              TextButton(
+                onPressed: () => _openRiderChat(context, order),
+                child: const Text('Chat'),
+              ),
             ],
           ),
         ),
+      ],
+      const SizedBox(height: 18),
+      Text(
+        'Status',
+        style: GoogleFonts.dmSans(
+          fontSize: 13,
+          fontWeight: FontWeight.w700,
+          color: AppColors.muted,
+          letterSpacing: 0.3,
+        ),
       ),
-    );
+      const SizedBox(height: 8),
+      _buildStatusTimeline(
+        order.status,
+        order.paymentProofUrl,
+        order.deliveryProofUrl,
+        order.deliveryProof2Url,
+        order.donePreparingProofUrl,
+        context,
+      ),
+      const SizedBox(height: 18),
+      if (order.status == 'delivered') ...[
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: _markOrderAsCompleted,
+            icon: const Icon(Icons.check_circle_outline, size: 18),
+            label: const Text('Mark as completed'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.deepSage,
+              side: const BorderSide(color: AppColors.glassBorder),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+      ],
+      if ((order.status == 'delivered' || order.status == 'completed') &&
+          !_allRated) ...[
+        GradientButton(
+          label: 'Rate order',
+          icon: Icons.star_border_rounded,
+          onPressed: () => _openRatingSheet(context),
+        ),
+        const SizedBox(height: 10),
+      ],
+      if (order.status == 'delivered' || order.status == 'completed') ...[
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: OutlinedButton.icon(
+            onPressed: _buyAgainBusy ? null : _buyAgain,
+            icon: _buyAgainBusy
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.refresh_rounded, size: 18),
+            label: Text(
+              'Buy Again',
+              style: GoogleFonts.dmSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.charcoal,
+              side: const BorderSide(color: AppColors.glassBorder),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+              ),
+            ),
+          ),
+        ),
+      ],
+      if (order.canCancel) ...[
+        const SizedBox(height: 10),
+        SizedBox(
+          width: double.infinity,
+          height: 48,
+          child: OutlinedButton(
+            onPressed: _cancelOrder,
+            style: OutlinedButton.styleFrom(
+              foregroundColor: const Color(0xFF9B1C1C),
+              side: const BorderSide(color: Color(0x40C24E68)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+              ),
+            ),
+            child: Text(
+              'Cancel order',
+              style: GoogleFonts.dmSans(
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ),
+      ],
+      const SizedBox(height: 24),
+    ];
   }
 
   Future<void> _openRiderChat(BuildContext context, Order order) async {

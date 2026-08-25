@@ -21,8 +21,12 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _lastNameCtrl;
   late TextEditingController _loginIdCtrl;
   late TextEditingController _birthdayCtrl;
+  late TextEditingController _phoneCtrl;
+  late TextEditingController _phoneOtpCtrl;
   DateTime? _birthday;
   bool _saving = false;
+  bool _phoneOtpSent = false;
+  bool _savingPhone = false;
   File? _selectedImage;
   bool _uploadingAvatar = false;
 
@@ -47,6 +51,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _lastNameCtrl = TextEditingController(
         text: lastSpace > 0 ? fullName.substring(lastSpace + 1) : '');
     _loginIdCtrl = TextEditingController(text: user?.email ?? '');
+    _phoneCtrl = TextEditingController(text: user?.phone ?? '');
+    _phoneOtpCtrl = TextEditingController();
     _birthday = _parseBirthday(user?.birthday);
     _birthdayCtrl = TextEditingController(
       text: _birthday == null ? '' : _formatBirthday(_birthday!),
@@ -173,6 +179,49 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
   }
 
+  Future<void> _sendPhoneOtp() async {
+    final phone = _phoneCtrl.text.trim();
+    if (phone.isEmpty) {
+      showToast(context, 'Enter a valid Philippine mobile number', isError: true);
+      return;
+    }
+    setState(() => _savingPhone = true);
+    final res = await ApiService.sendProfilePhoneOtp(phone: phone);
+    if (!mounted) return;
+    setState(() => _savingPhone = false);
+    if (!res.isSuccess) {
+      showToast(context, res.errorMessage ?? 'Could not send code', isError: true);
+      return;
+    }
+    setState(() => _phoneOtpSent = true);
+    showToast(context, (res.data is Map ? res.data['message'] : null)?.toString() ?? 'Code sent');
+  }
+
+  Future<void> _verifyPhoneOtp() async {
+    final otp = _phoneOtpCtrl.text.trim();
+    if (otp.length != 6) {
+      showToast(context, 'Enter the 6-digit SMS code', isError: true);
+      return;
+    }
+    setState(() => _savingPhone = true);
+    final res = await ApiService.verifyProfilePhoneOtp(otpCode: otp);
+    if (!mounted) return;
+    setState(() => _savingPhone = false);
+    if (!res.isSuccess) {
+      showToast(context, res.errorMessage ?? 'Verification failed', isError: true);
+      return;
+    }
+    await context.read<AuthProvider>().refreshUser();
+    if (!mounted) return;
+    setState(() {
+      _phoneOtpSent = false;
+      _phoneOtpCtrl.clear();
+      final phone = res.data is Map ? res.data['phone'] : null;
+      if (phone != null) _phoneCtrl.text = phone.toString();
+    });
+    showToast(context, 'Phone number saved');
+  }
+
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -226,6 +275,8 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _lastNameCtrl.dispose();
     _loginIdCtrl.dispose();
     _birthdayCtrl.dispose();
+    _phoneCtrl.dispose();
+    _phoneOtpCtrl.dispose();
     super.dispose();
   }
 
@@ -349,6 +400,48 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     helperText: 'Login identity — cannot be changed',
                     prefixIcon: Icon(Icons.badge_outlined, size: 20),
                   ),
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  decoration: const InputDecoration(
+                    labelText: 'Delivery phone number',
+                    helperText: 'Required for riders. Changing it sends a 6-digit SMS code.',
+                    prefixIcon: Icon(Icons.phone_outlined, size: 20),
+                  ),
+                ),
+                if (_phoneOtpSent) ...[
+                  const SizedBox(height: 10),
+                  TextFormField(
+                    controller: _phoneOtpCtrl,
+                    keyboardType: TextInputType.number,
+                    maxLength: 6,
+                    decoration: const InputDecoration(
+                      labelText: '6-digit SMS code',
+                      prefixIcon: Icon(Icons.sms_outlined, size: 20),
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: OutlinedButton(
+                        onPressed: _savingPhone ? null : _sendPhoneOtp,
+                        child: Text(_phoneOtpSent ? 'Resend code' : 'Send code'),
+                      ),
+                    ),
+                    if (_phoneOtpSent) ...[
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: _savingPhone ? null : _verifyPhoneOtp,
+                          child: const Text('Verify'),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
                 const SizedBox(height: 14),
                 TextFormField(

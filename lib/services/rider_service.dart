@@ -206,6 +206,14 @@ class RiderService {
     double startLat, double startLng,
     double endLat, double endLng,
   ) async {
+    final info = await getRouteInfo(startLat, startLng, endLat, endLng);
+    return info?.points;
+  }
+
+  static Future<OsrmRouteInfo?> getRouteInfo(
+    double startLat, double startLng,
+    double endLat, double endLng,
+  ) async {
     try {
       final url = 'https://router.project-osrm.org/route/v1/driving/'
           '$startLng,$startLat;$endLng,$endLat'
@@ -215,8 +223,16 @@ class RiderService {
         final data = jsonDecode(res.body);
         final routes = data['routes'] as List?;
         if (routes != null && routes.isNotEmpty) {
-          final coords = routes[0]['geometry']['coordinates'] as List;
-          return coords.map<List<double>>((c) => [c[1].toDouble(), c[0].toDouble()]).toList();
+          final route = routes[0] as Map<String, dynamic>;
+          final coords = route['geometry']['coordinates'] as List;
+          final points = coords
+              .map<List<double>>((c) => [c[1].toDouble(), c[0].toDouble()])
+              .toList();
+          return OsrmRouteInfo(
+            points: points,
+            durationSec: (route['duration'] as num?)?.toDouble(),
+            distanceM: (route['distance'] as num?)?.toDouble(),
+          );
         }
       }
       return null;
@@ -224,4 +240,11 @@ class RiderService {
       return null;
     }
   }
+}
+
+class OsrmRouteInfo {
+  final List<List<double>> points;
+  final double? durationSec;
+  final double? distanceM;
+  const OsrmRouteInfo({required this.points, this.durationSec, this.distanceM});
 }

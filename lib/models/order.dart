@@ -141,6 +141,10 @@ class Order {
   final List<OrderItem> items;
   final DateTime? createdAt;
   final String? riderName;
+  final double? customerLatitude;
+  final double? customerLongitude;
+  final double? storeLatitude;
+  final double? storeLongitude;
   final String? paymentProofUrl;
   final String? deliveryProofUrl;
   final String? deliveryProof2Url;
@@ -162,6 +166,8 @@ class Order {
     required this.id, required this.status, required this.subtotalAmount, required this.totalAmount,
     required this.deliveryFee,
     this.storeName, required this.items, this.createdAt, this.riderName,
+    this.customerLatitude, this.customerLongitude,
+    this.storeLatitude, this.storeLongitude,
     this.paymentProofUrl, this.deliveryProofUrl, this.deliveryProof2Url, this.donePreparingProofUrl,
     this.paymentMethod, this.paymentStatus,
     this.pendingAt, this.acceptedAt, this.preparingAt, this.donePreparingAt,
@@ -183,6 +189,10 @@ class Order {
       items: items,
       createdAt: j['created_at'] != null ? DateTime.tryParse(j['created_at']) : null,
       riderName: j['rider_name'],
+      customerLatitude: j['customer_latitude'] != null ? _safeDbl(j['customer_latitude']) : null,
+      customerLongitude: j['customer_longitude'] != null ? _safeDbl(j['customer_longitude']) : null,
+      storeLatitude: j['store_latitude'] != null ? _safeDbl(j['store_latitude']) : null,
+      storeLongitude: j['store_longitude'] != null ? _safeDbl(j['store_longitude']) : null,
       paymentProofUrl: j['payment_proof_url'],
       deliveryProofUrl: j['delivery_proof_url'],
       deliveryProof2Url: j['delivery_proof_2_url'],
@@ -211,6 +221,10 @@ class Order {
       items: items,
       createdAt: createdAt,
       riderName: riderName,
+      customerLatitude: customerLatitude,
+      customerLongitude: customerLongitude,
+      storeLatitude: storeLatitude,
+      storeLongitude: storeLongitude,
       paymentProofUrl: paymentProofUrl,
       deliveryProofUrl: deliveryProofUrl,
       deliveryProof2Url: deliveryProof2Url,

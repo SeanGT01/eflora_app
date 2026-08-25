@@ -322,6 +322,54 @@ class ApiService {
     }
   }
 
+  static ApiResult _parseHttp(http.Response res) {
+    final raw = res.body;
+    final trimmed = raw.trimLeft();
+    if (trimmed.startsWith('<!') || trimmed.toLowerCase().startsWith('<html')) {
+      return ApiResult(
+        statusCode: res.statusCode == 0 ? 502 : res.statusCode,
+        error: 'Could not reach the phone verification service. Please try again.',
+      );
+    }
+    if (raw.isEmpty) {
+      return ApiResult(statusCode: res.statusCode, error: 'Empty response from server');
+    }
+    try {
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(raw));
+    } on FormatException {
+      return ApiResult(
+        statusCode: res.statusCode,
+        error: 'Could not reach the phone verification service. Please try again.',
+      );
+    }
+  }
+
+  static Future<ApiResult> sendProfilePhoneOtp({required String phone}) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_api/auth/profile/phone/send-otp'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({'phone': phone}),
+      ).timeout(const Duration(seconds: 20));
+      return _parseHttp(res);
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Could not send the code. Check your connection and try again.');
+    }
+  }
+
+  static Future<ApiResult> verifyProfilePhoneOtp({required String otpCode}) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_api/auth/profile/phone/verify'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({'otp_code': otpCode}),
+      ).timeout(const Duration(seconds: 20));
+      return _parseHttp(res);
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Could not verify the code. Check your connection and try again.');
+    }
+  }
+
   static Future<ApiResult> changePassword({
     required String currentPassword,
     required String newPassword,
@@ -819,6 +867,18 @@ class ApiService {
       return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
     } catch (e) {
       print('❌ GetOrder error: $e');
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  static Future<ApiResult> getOrderTracking(int id) async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_api/customer/orders/$id/tracking'),
+        headers: await _headers(auth: true),
+      ).timeout(const Duration(seconds: 10));
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+    } catch (e) {
       return ApiResult(statusCode: 0, error: 'Network error: $e');
     }
   }

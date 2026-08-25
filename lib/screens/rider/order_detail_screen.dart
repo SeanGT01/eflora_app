@@ -9,6 +9,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/chat_drawer.dart';
 import '../../services/api_service.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'delivery_tracking_screen.dart' show DeliveryTrackingScreen, DeliveryProofDialog;
 
 class OrderDetailScreen extends StatelessWidget {
@@ -106,12 +107,36 @@ class OrderDetailScreen extends StatelessWidget {
                 label: 'Name',
                 value: order.customerName ?? 'N/A',
               ),
-              if (order.customerContact != null) ...[
+              if ((order.customerContact ?? order.customerPhone) != null) ...[
                 const Divider(height: 20),
-                _DetailRow(
-                  icon: Icons.phone_outlined,
-                  label: 'Contact',
-                  value: order.customerContact!,
+                Row(
+                  children: [
+                    Expanded(
+                      child: _DetailRow(
+                        icon: Icons.phone_outlined,
+                        label: order.customerTel != null ? 'Phone' : 'Contact',
+                        value: order.customerPhone ?? order.customerContact ?? '',
+                      ),
+                    ),
+                    if (order.customerTel != null ||
+                        (order.customerPhone ?? '').startsWith('09'))
+                      Padding(
+                        padding: const EdgeInsets.only(left: 8),
+                        child: Material(
+                          color: AppColors.deepRose,
+                          shape: const CircleBorder(),
+                          child: InkWell(
+                            customBorder: const CircleBorder(),
+                            onTap: () => _callCustomer(context, order),
+                            child: const SizedBox(
+                              width: 44,
+                              height: 44,
+                              child: Icon(Icons.phone, color: Colors.white, size: 20),
+                            ),
+                          ),
+                        ),
+                      ),
+                  ],
                 ),
                 const SizedBox(height: 10),
                 SizedBox(
@@ -488,6 +513,19 @@ class OrderDetailScreen extends StatelessWidget {
         );
       },
     );
+  }
+
+  Future<void> _callCustomer(BuildContext context, RiderOrder order) async {
+    final tel = order.customerTel ??
+        (order.customerPhone != null && order.customerPhone!.startsWith('09')
+            ? 'tel:+63${order.customerPhone!.substring(1)}'
+            : null);
+    if (tel == null) return;
+    final uri = Uri.parse(tel);
+    final ok = await launchUrl(uri);
+    if (!ok && context.mounted) {
+      showToast(context, 'Could not start a phone call', isError: true);
+    }
   }
 
   Future<void> _openOrderChat(BuildContext context) async {

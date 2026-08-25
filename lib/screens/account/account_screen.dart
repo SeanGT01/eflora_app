@@ -18,6 +18,8 @@ import '../wishlist/wishlist_screen.dart';
 import '../notifications/notifications_screen.dart';
 import 'edit_profile_screen.dart';
 import 'change_password_screen.dart';
+import 'help_eflora_screen.dart';
+import 'about_eflora_screen.dart';
 import '../address/address_list_screen.dart';
 
 class AccountScreen extends StatelessWidget {
@@ -150,19 +152,6 @@ class _LoggedInView extends StatelessWidget {
                     context,
                     MaterialPageRoute(
                         builder: (_) => const ChangePasswordScreen()))),
-            if (liveUser.role == 'customer')
-              _MenuItem(
-                  icon: Icons.storefront_outlined,
-                  label: 'Become a Seller',
-                  color: AppColors.sage,
-                  onTap: () async {
-                    final url = Uri.parse(
-                        'https://eflora-system-production.up.railway.app/seller/signup');
-                    if (await canLaunchUrl(url)) {
-                      await launchUrl(url,
-                          mode: LaunchMode.externalApplication);
-                    }
-                  }),
             if (liveUser.role == 'seller')
               _MenuItem(
                   icon: Icons.dashboard_outlined,
@@ -188,11 +177,14 @@ class _LoggedInView extends StatelessWidget {
                         builder: (_) => const NotificationsScreen()))),
             _MenuItem(
                 icon: Icons.help_outline,
-                label: 'Help & Support',
-                onTap: () =>
-                    showToast(context, 'Contact us at support@eflowers.ph')),
+                label: 'Help E-FLORA',
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const HelpEfloraScreen()))),
             _MenuItem(
-                icon: Icons.info_outline, label: 'About E-FLORA', onTap: () {}),
+                icon: Icons.info_outline,
+                label: 'About E-FLORA',
+                onTap: () => Navigator.push(context,
+                    MaterialPageRoute(builder: (_) => const AboutEfloraScreen()))),
             _MenuItem(
               icon: Icons.logout_outlined,
               label: 'Sign Out',
@@ -226,7 +218,7 @@ class _LoggedInView extends StatelessWidget {
           const SizedBox(height: 40),
           Center(
             child: Text(
-              'E-FLOWERS v1.0.0',
+              'E-FLORA v1.0.0',
               style:
                   Theme.of(context).textTheme.bodySmall?.copyWith(fontSize: 11),
             ),

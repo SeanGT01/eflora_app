@@ -24,6 +24,8 @@ class RiderOrder {
   final String? storeAddress;
   final String? customerName;
   final String? customerContact;
+  final String? customerTel;
+  final String? customerPhone;
   final String? storeName;
   final String? riderName;
   final double? distanceFromStoreKm;
@@ -59,6 +61,8 @@ class RiderOrder {
     this.storeAddress,
     this.customerName,
     this.customerContact,
+    this.customerTel,
+    this.customerPhone,
     this.storeName,
     this.riderName,
     this.distanceFromStoreKm,
@@ -98,6 +102,8 @@ class RiderOrder {
       storeAddress: j['store_address'],
       customerName: j['customer_name'],
       customerContact: j['customer_contact'],
+      customerTel: j['customer_tel'],
+      customerPhone: j['customer_phone']?.toString(),
       storeName: j['store_name'],
       riderName: j['rider_name'],
       distanceFromStoreKm: j['distance_from_store_km']?.toDouble(),

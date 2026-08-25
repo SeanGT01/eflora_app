@@ -84,7 +84,7 @@ class _SellerApplicationStatusScreenState extends State<SellerApplicationStatusS
               ),
               const SizedBox(height: 20),
               Text(
-                'Start Selling on E-FLOWERS',
+                'Start Selling on E-FLORA',
                 style: GoogleFonts.cormorantGaramond(fontSize: 22, fontWeight: FontWeight.w600, color: AppColors.charcoal),
               ),
               const SizedBox(height: 8),

@@ -1436,7 +1436,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
     final desc = (store.description != null && store.description!.trim().isNotEmpty)
         ? store.description!.trim()
-        : 'A trusted local florist on E-FLOWERS, committed to delivering fresh and beautiful arrangements with care.';
+        : 'A trusted local florist on E-FLORA, committed to delivering fresh and beautiful arrangements with care.';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [

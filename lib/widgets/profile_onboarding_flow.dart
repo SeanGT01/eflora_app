@@ -53,6 +53,8 @@ Future<void> maybeRunProfileOnboarding(BuildContext context) async {
     var user = auth.user;
     final needsGender = (user?.gender ?? '').trim().isEmpty;
     final needsBirthday = (user?.birthday ?? '').trim().isEmpty;
+    final needsPhone = user?.needsPhone == true ||
+        ((user?.phone ?? '').trim().isEmpty && (user?.email ?? '').contains('@'));
 
     final addresses = context.read<AddressProvider>();
     if (addresses.addresses.isEmpty) {
@@ -61,7 +63,7 @@ Future<void> maybeRunProfileOnboarding(BuildContext context) async {
     if (!context.mounted) return;
     final needsAddress = addresses.addresses.isEmpty;
 
-    if (!needsGender && !needsBirthday && !needsAddress) return;
+    if (!needsGender && !needsBirthday && !needsPhone && !needsAddress) return;
 
     if (needsGender) {
       final ok = await _showGenderStep(context);
@@ -78,6 +80,18 @@ Future<void> maybeRunProfileOnboarding(BuildContext context) async {
       await auth.refreshUser();
     }
 
+    final phoneStillMissing = auth.user?.needsPhone == true ||
+        ((auth.user?.phone ?? '').trim().isEmpty &&
+            (auth.user?.email ?? '').contains('@'));
+    if (phoneStillMissing) {
+      if (!context.mounted) return;
+      final ok = await _showPhoneStep(context);
+      if (!ok || !context.mounted) return;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      if (!context.mounted) return;
+      await auth.refreshUser();
+    }
+
     if (!context.mounted) return;
     if (addresses.addresses.isEmpty) {
       await addresses.loadAddresses();
@@ -85,7 +99,7 @@ Future<void> maybeRunProfileOnboarding(BuildContext context) async {
     if (!context.mounted) return;
     if (addresses.addresses.isEmpty) {
       showToast(context, 'Please add your delivery address to continue.');
-      await Navigator.of(context).push(
+      await Navigator.of(context, rootNavigator: true).push(
         MaterialPageRoute(
           builder: (_) => const AddEditAddressScreen(),
           fullscreenDialog: true,
@@ -98,102 +112,12 @@ Future<void> maybeRunProfileOnboarding(BuildContext context) async {
 }
 
 Future<bool> _showGenderStep(BuildContext context) async {
-  String? selected;
-  final otherCtrl = TextEditingController();
-
   final result = await showDialog<bool>(
     context: context,
     barrierDismissible: false,
     useRootNavigator: true,
-    builder: (ctx) {
-      return StatefulBuilder(
-        builder: (ctx, setLocal) {
-          return PopScope(
-            canPop: false,
-            child: AlertDialog(
-              title: Text(
-                'What’s your gender?',
-                style: GoogleFonts.dmSans(fontWeight: FontWeight.w700),
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Text(
-                    'Step 1 of 2 — required to continue.',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 12.5,
-                      color: AppColors.muted,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  for (final opt in const [
-                    ('male', 'Male'),
-                    ('female', 'Female'),
-                    ('other', 'Other'),
-                  ])
-                    RadioListTile<String>(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      title: Text(opt.$2, style: GoogleFonts.dmSans(fontSize: 14)),
-                      value: opt.$1,
-                      groupValue: selected,
-                      onChanged: (v) => setLocal(() => selected = v),
-                    ),
-                  if (selected == 'other') ...[
-                    const SizedBox(height: 8),
-                    TextField(
-                      controller: otherCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Please specify',
-                        hintText: 'e.g., Non-binary',
-                      ),
-                    ),
-                  ],
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () async {
-                    if (selected == null) {
-                      showToast(ctx, 'Please select your gender', isError: true);
-                      return;
-                    }
-                    var gender = selected!;
-                    if (gender == 'other') {
-                      final other = otherCtrl.text.trim();
-                      if (other.isEmpty) {
-                        showToast(ctx, 'Please specify your gender', isError: true);
-                        return;
-                      }
-                      gender = other;
-                    }
-                    final res = await ApiService.updateProfile(
-                      firstName: _splitName(ctx).$1,
-                      lastName: _splitName(ctx).$2,
-                      gender: gender,
-                    );
-                    if (!ctx.mounted) return;
-                    if (!res.isSuccess) {
-                      showToast(
-                        ctx,
-                        res.errorMessage ?? 'Failed to save',
-                        isError: true,
-                      );
-                      return;
-                    }
-                    Navigator.of(ctx, rootNavigator: true).pop(true);
-                  },
-                  child: const Text('Continue'),
-                ),
-              ],
-            ),
-          );
-        },
-      );
-    },
+    builder: (_) => const _GenderOnboardingDialog(),
   );
-  otherCtrl.dispose();
   return result == true;
 }
 
@@ -223,7 +147,7 @@ Future<bool> _showBirthdayStep(BuildContext context) async {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   Text(
-                    'Step 2 of 2 — required to continue.',
+                    'Step 2 of 4 — required to continue.',
                     style: GoogleFonts.dmSans(
                       fontSize: 12.5,
                       color: AppColors.muted,
@@ -294,6 +218,16 @@ Future<bool> _showBirthdayStep(BuildContext context) async {
   return result == true;
 }
 
+Future<bool> _showPhoneStep(BuildContext context) async {
+  final result = await showDialog<bool>(
+    context: context,
+    barrierDismissible: false,
+    useRootNavigator: true,
+    builder: (_) => const _PhoneOnboardingDialog(),
+  );
+  return result == true;
+}
+
 (String, String) _splitName(BuildContext context) {
   final full = (context.read<AuthProvider>().user?.fullName ?? '').trim();
   final i = full.lastIndexOf(' ');
@@ -309,4 +243,233 @@ int _ageYears(DateTime birthday) {
     age--;
   }
   return age;
+}
+
+class _GenderOnboardingDialog extends StatefulWidget {
+  const _GenderOnboardingDialog();
+
+  @override
+  State<_GenderOnboardingDialog> createState() => _GenderOnboardingDialogState();
+}
+
+class _GenderOnboardingDialogState extends State<_GenderOnboardingDialog> {
+  final _otherCtrl = TextEditingController();
+  String? _selected;
+
+  @override
+  void dispose() {
+    _otherCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _continue() async {
+    if (_selected == null) {
+      showToast(context, 'Please select your gender', isError: true);
+      return;
+    }
+    var gender = _selected!;
+    if (gender == 'other') {
+      final other = _otherCtrl.text.trim();
+      if (other.isEmpty) {
+        showToast(context, 'Please specify your gender', isError: true);
+        return;
+      }
+      gender = other;
+    }
+    final res = await ApiService.updateProfile(
+      firstName: _splitName(context).$1,
+      lastName: _splitName(context).$2,
+      gender: gender,
+    );
+    if (!mounted) return;
+    if (!res.isSuccess) {
+      showToast(context, res.errorMessage ?? 'Failed to save', isError: true);
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    Navigator.of(context, rootNavigator: true).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        title: Text(
+          'What’s your gender?',
+          style: GoogleFonts.dmSans(fontWeight: FontWeight.w700),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Text(
+              'Step 1 of 4 — required to continue.',
+              style: GoogleFonts.dmSans(
+                fontSize: 12.5,
+                color: AppColors.muted,
+              ),
+            ),
+            const SizedBox(height: 14),
+            for (final opt in const [
+              ('male', 'Male'),
+              ('female', 'Female'),
+              ('other', 'Other'),
+            ])
+              RadioListTile<String>(
+                dense: true,
+                contentPadding: EdgeInsets.zero,
+                title: Text(opt.$2, style: GoogleFonts.dmSans(fontSize: 14)),
+                value: opt.$1,
+                groupValue: _selected,
+                onChanged: (v) => setState(() => _selected = v),
+              ),
+            if (_selected == 'other') ...[
+              const SizedBox(height: 8),
+              TextField(
+                controller: _otherCtrl,
+                decoration: const InputDecoration(
+                  labelText: 'Please specify',
+                  hintText: 'e.g., Non-binary',
+                ),
+              ),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: _continue,
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PhoneOnboardingDialog extends StatefulWidget {
+  const _PhoneOnboardingDialog();
+
+  @override
+  State<_PhoneOnboardingDialog> createState() => _PhoneOnboardingDialogState();
+}
+
+class _PhoneOnboardingDialogState extends State<_PhoneOnboardingDialog> {
+  final _phoneCtrl = TextEditingController();
+  final _otpCtrl = TextEditingController();
+  var _otpSent = false;
+  var _hint = '';
+  var _busy = false;
+
+  @override
+  void dispose() {
+    _phoneCtrl.dispose();
+    _otpCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _sendCode() async {
+    if (_busy) return;
+    final phone = _phoneCtrl.text.trim();
+    if (phone.isEmpty) {
+      showToast(context, 'Enter a valid mobile number', isError: true);
+      return;
+    }
+    setState(() => _busy = true);
+    final res = await ApiService.sendProfilePhoneOtp(phone: phone);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!res.isSuccess) {
+      showToast(context, res.errorMessage ?? 'Could not send code', isError: true);
+      return;
+    }
+    final msg = (res.data is Map ? res.data['message'] : null)?.toString();
+    setState(() {
+      _otpSent = true;
+      _hint = msg ?? 'Enter the 6-digit SMS code.';
+    });
+    showToast(context, msg ?? 'Code sent');
+  }
+
+  Future<void> _verify() async {
+    if (_busy) return;
+    final otp = _otpCtrl.text.trim();
+    if (otp.length != 6) {
+      showToast(context, 'Enter the 6-digit code', isError: true);
+      return;
+    }
+    setState(() => _busy = true);
+    final res = await ApiService.verifyProfilePhoneOtp(otpCode: otp);
+    if (!mounted) return;
+    setState(() => _busy = false);
+    if (!res.isSuccess) {
+      showToast(context, res.errorMessage ?? 'Verification failed', isError: true);
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+    Navigator.of(context, rootNavigator: true).pop(true);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return PopScope(
+      canPop: false,
+      child: AlertDialog(
+        title: Text(
+          'Add your mobile number',
+          style: GoogleFonts.dmSans(fontWeight: FontWeight.w700),
+        ),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(
+                'Step 3 of 4 — riders use this number for delivery. Enter the 6-digit SMS code here (not a separate screen).',
+                style: GoogleFonts.dmSans(
+                  fontSize: 12.5,
+                  color: AppColors.muted,
+                ),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: _phoneCtrl,
+                keyboardType: TextInputType.phone,
+                enabled: !_busy,
+                decoration: const InputDecoration(
+                  labelText: 'Philippine mobile number',
+                  hintText: '09171234567',
+                ),
+              ),
+              if (_otpSent) ...[
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _otpCtrl,
+                  keyboardType: TextInputType.number,
+                  maxLength: 6,
+                  enabled: !_busy,
+                  decoration: InputDecoration(
+                    labelText: '6-digit code',
+                    helperText: _hint.isEmpty ? null : _hint,
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: _busy ? null : _sendCode,
+            child: Text(_otpSent ? 'Resend' : 'Send code'),
+          ),
+          if (_otpSent)
+            TextButton(
+              onPressed: _busy ? null : _verify,
+              child: const Text('Verify'),
+            ),
+        ],
+      ),
+    );
+  }
 }

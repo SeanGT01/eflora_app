@@ -5,6 +5,7 @@ import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/wishlist.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/wishlist_provider.dart';
+import '../../utils/responsive.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -102,11 +103,15 @@ class _WishlistScreenState extends State<WishlistScreen> {
                             padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
                             physics: const AlwaysScrollableScrollPhysics(),
                             gridDelegate:
-                                const SliverGridDelegateWithFixedCrossAxisCount(
-                              crossAxisCount: 2,
-                              mainAxisSpacing: 12,
-                              crossAxisSpacing: 12,
-                              childAspectRatio: 0.68,
+                                SliverGridDelegateWithFixedCrossAxisCount(
+                              crossAxisCount:
+                                  context.responsive.productCrossAxisCount,
+                              mainAxisSpacing:
+                                  context.responsive.productMainSpacing,
+                              crossAxisSpacing:
+                                  context.responsive.productCrossSpacing,
+                              childAspectRatio:
+                                  context.responsive.productAspectRatio,
                             ),
                             itemCount: wishlist.items.length,
                             itemBuilder: (_, i) =>

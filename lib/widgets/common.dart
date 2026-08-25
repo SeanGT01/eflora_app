@@ -182,8 +182,12 @@ class RoseButton extends StatelessWidget {
 
 // Toast helper
 void showToast(BuildContext context, String msg, {bool isError = false}) {
-  ScaffoldMessenger.of(context).showSnackBar(
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  if (messenger == null) return;
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(
     SnackBar(
+      behavior: SnackBarBehavior.floating,
       content: Text(msg),
       backgroundColor: isError ? AppColors.error : AppColors.charcoal,
       margin: const EdgeInsets.all(16),

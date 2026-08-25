@@ -1204,6 +1204,7 @@ class _PinnedMapBox extends StatelessWidget {
       child: Stack(
         children: [
           FlutterMap(
+            key: const ValueKey('pinned-address-map'),
             mapController: mapController,
             options: mapOptions,
             children: [

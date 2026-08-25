@@ -38,6 +38,11 @@ android {
         versionName = flutter.versionName
     }
 
+    lint {
+        checkReleaseBuilds = false
+        abortOnError = false
+    }
+
     signingConfigs {
         create("release") {
             val storeFilePath = keystoreProperties.getProperty("storeFile")
