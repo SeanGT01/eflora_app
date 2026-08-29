@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as Math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:provider/provider.dart';
@@ -11,6 +12,7 @@ import '../../models/rider.dart';
 import '../../providers/rider_provider.dart';
 import '../../services/rider_service.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/rider_heading_marker.dart';
 import '../../widgets/common.dart';
 
 class DeliveryTrackingScreen extends StatefulWidget {
@@ -25,6 +27,8 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
   final MapController _mapController = MapController();
   List<LatLng> _routePoints = [];
   LatLng? _riderPosition;
+  LatLng? _previousRiderPosition;
+  double? _riderHeading;
   bool _loadingRoute = true;
   bool _markingDelivered = false;
   Timer? _positionTimer;
@@ -59,9 +63,7 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
     // Get current rider location
     final pos = await provider.getCurrentLocation();
     if (pos != null && mounted) {
-      setState(() {
-        _riderPosition = LatLng(pos.latitude, pos.longitude);
-      });
+      _applyRiderFix(LatLng(pos.latitude, pos.longitude), position: pos);
     }
 
     // Start location tracking
@@ -76,9 +78,7 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
           final moved = _riderPosition == null ||
               _calculateDistance(_riderPosition!, nextPosition) * 1000 >= 25;
           if (!moved) return;
-          setState(() {
-            _riderPosition = nextPosition;
-          });
+          _applyRiderFix(nextPosition, position: p);
           await _fetchRoute();
         }
       });
@@ -86,6 +86,20 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
 
     // Fetch route
     await _fetchRoute();
+  }
+
+  void _applyRiderFix(LatLng next, {Position? position}) {
+    final heading = RiderHeadingMarker.resolveHeading(
+      previous: _riderPosition ?? _previousRiderPosition,
+      current: next,
+      position: position,
+      previousHeading: _riderHeading,
+    );
+    setState(() {
+      _previousRiderPosition = _riderPosition;
+      _riderPosition = next;
+      if (heading != null) _riderHeading = heading;
+    });
   }
 
   Future<void> _fetchRoute() async {
@@ -359,11 +373,10 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
                           if (_riderPosition != null)
                             Marker(
                               point: _riderPosition!,
-                              width: 44,
-                              height: 44,
-                              child: const _MapPin(
-                                icon: Icons.delivery_dining,
-                                color: Color(0xFF3498db),
+                              width: 52,
+                              height: 52,
+                              child: RiderHeadingMarker(
+                                headingDegrees: _riderHeading,
                               ),
                             ),
                         ],

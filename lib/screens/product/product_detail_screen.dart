@@ -2156,6 +2156,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     GestureDetector(
+                      behavior: HitTestBehavior.opaque,
                       onTap: (previewUrl != null && previewUrl.isNotEmpty)
                           ? () => _zoomAddonImage(
                                 previewUrl,
@@ -2165,22 +2166,48 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       child: SizedBox(
                         width: previewSize,
                         height: previewSize,
-                        child: Container(
-                          decoration: BoxDecoration(
-                            color: const Color(0xFFFFF8F6),
-                            borderRadius: BorderRadius.circular(AppRadius.md),
-                            border: Border.all(
-                                color: AppColors.deepRose.withOpacity(0.25)),
-                          ),
-                          clipBehavior: Clip.antiAlias,
-                          child: previewUrl != null && previewUrl.isNotEmpty
-                              ? Image.network(
-                                  previewUrl,
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) =>
-                                      _noAddonPlaceholder(),
-                                )
-                              : _noAddonPlaceholder(),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            Container(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFFF8F6),
+                                borderRadius:
+                                    BorderRadius.circular(AppRadius.md),
+                                border: Border.all(
+                                    color:
+                                        AppColors.deepRose.withOpacity(0.25)),
+                              ),
+                              clipBehavior: Clip.antiAlias,
+                              child: previewUrl != null && previewUrl.isNotEmpty
+                                  ? Image.network(
+                                      previewUrl,
+                                      fit: BoxFit.cover,
+                                      errorBuilder: (_, __, ___) =>
+                                          _noAddonPlaceholder(),
+                                    )
+                                  : _noAddonPlaceholder(),
+                            ),
+                            if (previewUrl != null && previewUrl.isNotEmpty)
+                              Positioned(
+                                right: 3,
+                                bottom: 3,
+                                child: DecoratedBox(
+                                  decoration: BoxDecoration(
+                                    color: Colors.black.withOpacity(0.52),
+                                    borderRadius: BorderRadius.circular(4),
+                                  ),
+                                  child: const Padding(
+                                    padding: EdgeInsets.all(2),
+                                    child: Icon(
+                                      Icons.zoom_in_rounded,
+                                      size: 13,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
                         ),
                       ),
                     ),
@@ -2222,35 +2249,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                         8, 8, 6, 8),
                                     child: Row(
                                       children: [
-                                        GestureDetector(
-                                          onTap: (previewUrl != null &&
-                                                  previewUrl.isNotEmpty)
-                                              ? () => _zoomAddonImage(
-                                                    previewUrl,
-                                                    selectedOpt?.name ??
-                                                        group.name,
-                                                  )
-                                              : null,
-                                          child: ClipRRect(
-                                            borderRadius:
-                                                BorderRadius.circular(6),
-                                            child: SizedBox(
-                                              width: 28,
-                                              height: 28,
-                                              child: previewUrl != null &&
-                                                      previewUrl.isNotEmpty
-                                                  ? Image.network(
-                                                      previewUrl,
-                                                      fit: BoxFit.cover,
-                                                      errorBuilder: (_, __,
-                                                              ___) =>
-                                                          _noAddonPlaceholder(),
-                                                    )
-                                                  : _noAddonPlaceholder(),
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
                                         Expanded(
                                           child: Text(
                                             closedLabel,
@@ -2387,54 +2385,97 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             ? AppColors.deepRose.withOpacity(0.08)
             : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(10),
-          onTap: enabled ? onSelect : null,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-            child: Row(
-              children: [
-                GestureDetector(
-                  onTap: hasImage
-                      ? () => _zoomAddonImage(url, imageName ?? label)
-                      : null,
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(6),
-                    child: SizedBox(
-                      width: 36,
-                      height: 36,
-                      child: hasImage
-                          ? Image.network(
-                              url,
-                              fit: BoxFit.cover,
-                              errorBuilder: (_, __, ___) =>
-                                  _noAddonPlaceholder(),
-                            )
-                          : _noAddonPlaceholder(),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          child: Row(
+            children: [
+              _buildAddonZoomThumb(
+                size: 36,
+                imageUrl: url,
+                zoomTitle: hasImage ? (imageName ?? label) : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: enabled ? onSelect : null,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      label,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 13.5,
+                        color: enabled ? AppColors.charcoal : AppColors.muted,
+                        fontWeight:
+                            selected ? FontWeight.w600 : FontWeight.w400,
+                      ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Text(
-                    label,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13.5,
-                      color: enabled ? AppColors.charcoal : AppColors.muted,
-                      fontWeight:
-                          selected ? FontWeight.w600 : FontWeight.w400,
-                    ),
-                  ),
-                ),
-                if (selected)
-                  Icon(Icons.check_rounded,
-                      size: 20, color: AppColors.deepRose),
-              ],
-            ),
+              ),
+              if (selected)
+                Icon(Icons.check_rounded,
+                    size: 20, color: AppColors.deepRose),
+            ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildAddonZoomThumb({
+    required double size,
+    required String? imageUrl,
+    String? zoomTitle,
+  }) {
+    final url = imageUrl;
+    final canZoom =
+        zoomTitle != null && url != null && url.isNotEmpty;
+    final thumb = ClipRRect(
+      borderRadius: BorderRadius.circular(6),
+      child: SizedBox(
+        width: size,
+        height: size,
+        child: canZoom
+            ? Image.network(
+                url,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => _noAddonPlaceholder(),
+              )
+            : _noAddonPlaceholder(),
+      ),
+    );
+
+    if (!canZoom) return thumb;
+
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => _zoomAddonImage(url, zoomTitle),
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          thumb,
+          Positioned(
+            right: 1,
+            bottom: 1,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.52),
+                borderRadius: BorderRadius.circular(3),
+              ),
+              child: const Padding(
+                padding: EdgeInsets.all(1.5),
+                child: Icon(
+                  Icons.zoom_in_rounded,
+                  size: 11,
+                  color: Colors.white,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -2442,6 +2483,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   void _zoomAddonImage(String imageUrl, String title) {
     showDialog<void>(
       context: context,
+      barrierDismissible: true,
       barrierColor: Colors.black.withOpacity(0.85),
       builder: (ctx) {
         final size = MediaQuery.sizeOf(ctx);
@@ -2449,7 +2491,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         final maxH = size.height * 0.82;
         return Dialog(
           backgroundColor: Colors.transparent,
-          insetPadding: const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
+          insetPadding:
+              const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
           child: Center(
             child: ConstrainedBox(
               constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
@@ -2460,21 +2503,25 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   children: [
                     ClipRRect(
                       borderRadius: BorderRadius.circular(12),
-                      child: InteractiveViewer(
-                        constrained: false,
-                        minScale: 1,
-                        maxScale: 4,
-                        child: Image.network(
-                          imageUrl,
-                          fit: BoxFit.contain,
-                          width: maxW,
-                          errorBuilder: (_, __, ___) => Container(
-                            width: 240,
-                            padding: const EdgeInsets.all(24),
-                            color: Colors.black26,
-                            child: Text(
-                              'Unable to load image',
-                              style: GoogleFonts.dmSans(color: Colors.white),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: maxW,
+                          maxHeight: maxH,
+                        ),
+                        child: InteractiveViewer(
+                          minScale: 1,
+                          maxScale: 4,
+                          child: Image.network(
+                            imageUrl,
+                            fit: BoxFit.contain,
+                            errorBuilder: (_, __, ___) => Container(
+                              width: 200,
+                              padding: const EdgeInsets.all(24),
+                              color: Colors.black26,
+                              child: Text(
+                                'Unable to load image',
+                                style: GoogleFonts.dmSans(color: Colors.white),
+                              ),
                             ),
                           ),
                         ),
