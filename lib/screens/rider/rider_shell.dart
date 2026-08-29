@@ -49,100 +49,110 @@ class _RiderShellState extends State<RiderShell> {
   Widget build(BuildContext context) {
     final activeCount = context.watch<RiderProvider>().activeDeliveries.length;
     final availableCount = context.watch<RiderProvider>().availableOrders.length;
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      extendBody: true,
-      body: AppBackground(
-        child: Stack(
-          children: [
-            if (AppQuality.instance.keepTabsAlive)
-              IndexedStack(index: _idx, children: _screens)
-            else
-              KeyedSubtree(
-                key: ValueKey('rider_tab_$_idx'),
-                child: _screens[_idx],
-              ),
-            if (!_chatOpen && (ModalRoute.of(context)?.isCurrent ?? true))
-              FloatingChatButton(
-                onTap: () {
-                  final auth = context.read<AuthProvider>();
-                  if (!auth.isLoggedIn) {
-                    showAuthRequiredSheet(
-                      context,
-                      message: 'Create an account or sign in to use chat',
-                    );
-                    return;
-                  }
-                  setState(() => _chatOpen = true);
-                },
-              ),
-            if (_chatOpen)
-              ChatDrawer(
-                onClose: () => setState(() => _chatOpen = false),
-              ),
-          ],
-        ),
-      ),
-      bottomNavigationBar: ClipRect(
-        child: AdaptiveBlur(
-          sigma: 16,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: AppQuality.instance.useBlur ? AppColors.headerGlass : null,
-              color: AppQuality.instance.useBlur
-                  ? null
-                  : const Color(0xF5FFFAFC),
-              border: const Border(
-                top: BorderSide(color: Color(0x8CFFFFFF), width: 1),
-              ),
+    final showChatFab =
+        !_chatOpen && (ModalRoute.of(context)?.isCurrent ?? true);
+
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: Colors.transparent,
+          extendBody: true,
+          body: AppBackground(
+            child: Stack(
+              children: [
+                if (AppQuality.instance.keepTabsAlive)
+                  IndexedStack(index: _idx, children: _screens)
+                else
+                  KeyedSubtree(
+                    key: ValueKey('rider_tab_$_idx'),
+                    child: _screens[_idx],
+                  ),
+                if (_chatOpen)
+                  ChatDrawer(
+                    onClose: () => setState(() => _chatOpen = false),
+                  ),
+              ],
             ),
-            child: SafeArea(
-              top: false,
-              child: SizedBox(
-                height: kRiderNavBarHeight,
-                child: Row(
-                  children: [
-                    _NavItem(
-                      icon: Icons.dashboard_outlined,
-                      activeIcon: Icons.dashboard,
-                      label: 'Home',
-                      selected: _idx == 0,
-                      onTap: () => setState(() => _idx = 0),
+          ),
+          bottomNavigationBar: ClipRect(
+            child: AdaptiveBlur(
+              sigma: 16,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient: AppQuality.instance.useBlur
+                      ? AppColors.headerGlass
+                      : null,
+                  color: AppQuality.instance.useBlur
+                      ? null
+                      : const Color(0xF5FFFAFC),
+                  border: const Border(
+                    top: BorderSide(color: Color(0x8CFFFFFF), width: 1),
+                  ),
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: SizedBox(
+                    height: kRiderNavBarHeight,
+                    child: Row(
+                      children: [
+                        _NavItem(
+                          icon: Icons.dashboard_outlined,
+                          activeIcon: Icons.dashboard,
+                          label: 'Home',
+                          selected: _idx == 0,
+                          onTap: () => setState(() => _idx = 0),
+                        ),
+                        _BadgeNavItem(
+                          icon: Icons.list_alt_outlined,
+                          activeIcon: Icons.list_alt,
+                          label: 'Available',
+                          selected: _idx == 1,
+                          count: availableCount,
+                          onTap: () => setState(() => _idx = 1),
+                        ),
+                        _BadgeNavItem(
+                          icon: Icons.delivery_dining_outlined,
+                          activeIcon: Icons.delivery_dining,
+                          label: 'Deliveries',
+                          selected: _idx == 2,
+                          count: activeCount,
+                          onTap: () => setState(() => _idx = 2),
+                        ),
+                        _NavItem(
+                          icon: Icons.person_outline,
+                          activeIcon: Icons.person,
+                          label: 'Profile',
+                          selected: _idx == 3,
+                          onTap: () {
+                            setState(() => _idx = 3);
+                            // Refresh counts when opening profile.
+                            context.read<RiderProvider>().loadStats();
+                          },
+                        ),
+                      ],
                     ),
-                    _BadgeNavItem(
-                      icon: Icons.list_alt_outlined,
-                      activeIcon: Icons.list_alt,
-                      label: 'Available',
-                      selected: _idx == 1,
-                      count: availableCount,
-                      onTap: () => setState(() => _idx = 1),
-                    ),
-                    _BadgeNavItem(
-                      icon: Icons.delivery_dining_outlined,
-                      activeIcon: Icons.delivery_dining,
-                      label: 'Deliveries',
-                      selected: _idx == 2,
-                      count: activeCount,
-                      onTap: () => setState(() => _idx = 2),
-                    ),
-                    _NavItem(
-                      icon: Icons.person_outline,
-                      activeIcon: Icons.person,
-                      label: 'Profile',
-                      selected: _idx == 3,
-                      onTap: () {
-                        setState(() => _idx = 3);
-                        // Refresh counts when opening profile.
-                        context.read<RiderProvider>().loadStats();
-                      },
-                    ),
-                  ],
+                  ),
                 ),
               ),
             ),
           ),
         ),
-      ),
+        if (showChatFab)
+          FloatingChatButton(
+            bottomNavClearance: kRiderNavBarHeight,
+            onTap: () {
+              final auth = context.read<AuthProvider>();
+              if (!auth.isLoggedIn) {
+                showAuthRequiredSheet(
+                  context,
+                  message: 'Create an account or sign in to use chat',
+                );
+                return;
+              }
+              setState(() => _chatOpen = true);
+            },
+          ),
+      ],
     );
   }
 }

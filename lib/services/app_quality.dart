@@ -49,17 +49,17 @@ class AppQuality {
 
   /// Unread badge poll while chat is closed.
   Duration get chatUnreadInterval =>
-      _isLite ? const Duration(seconds: 15) : const Duration(seconds: 8);
+      _isLite ? const Duration(seconds: 20) : const Duration(seconds: 15);
 
-  /// Faster poll while chat UI is open.
+  /// Faster poll while chat UI is open (inbox — not an open thread).
   Duration get chatLiveInterval =>
-      _isLite ? const Duration(seconds: 8) : const Duration(seconds: 4);
+      _isLite ? const Duration(seconds: 15) : const Duration(seconds: 12);
 
   Duration get chatInboxSyncInterval =>
-      _isLite ? const Duration(seconds: 15) : const Duration(seconds: 8);
+      _isLite ? const Duration(seconds: 20) : const Duration(seconds: 12);
 
   Duration get chatMessagePollInterval =>
-      _isLite ? const Duration(seconds: 8) : const Duration(seconds: 4);
+      _isLite ? const Duration(seconds: 10) : const Duration(seconds: 7);
 
   int get imagePreloadLimit => _isLite ? 0 : 10;
 

@@ -12,6 +12,7 @@ import '../providers/chat_provider.dart';
 import '../services/app_quality.dart';
 import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
 import 'customer_default_avatar.dart';
 import 'chat_order_context_banner.dart';
 
@@ -44,8 +45,11 @@ class _FloatingChatButtonState extends State<FloatingChatButton>
   static const double _expandedSize = 56;
   static const double _tabWidth = 38;
   static const double _tabHeight = 56;
-  static const double _expandedRight = 20;
+  /// Tight to the trailing edge so it reads next to the Account tab.
+  static const double _expandedRight = 14;
   static const double _dockedRight = 0;
+  /// Breathing room between the FAB and the top of the bottom nav.
+  static const double _gapAboveNav = 8;
 
   late final AnimationController _anim;
 
@@ -146,8 +150,11 @@ class _FloatingChatButtonState extends State<FloatingChatButton>
   @override
   Widget build(BuildContext context) {
     final unread = context.watch<ChatProvider>().totalUnread;
-    final safeBottom = MediaQuery.paddingOf(context).bottom;
-    final bottom = widget.bottomNavClearance + safeBottom;
+    // viewPadding survives Scaffold's extendBody padding removal — padding.bottom
+    // is often 0 in the body, which used to leave the FAB floating too high.
+    final safeBottom = MediaQuery.viewPaddingOf(context).bottom;
+    final navHeight = context.s(widget.bottomNavClearance).clamp(56.0, 70.0);
+    final bottom = safeBottom + navHeight + _gapAboveNav;
     final t = _progress;
 
     // Morph circle → right-edge tab (rounded on the left, flat on the right).
@@ -300,6 +307,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   bool _otherIsTyping = false;
   String? _typingName;
   bool _otherOnline = false;
+  final Map<int, bool> _onlineByUserId = {};
   List<File> _pendingImages = [];
   ChatMessage? _replyingTo; // Track which message is being replied to
   late final ChatProvider _chatProvider;
@@ -307,6 +315,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   Timer? _typingDebounce;
   Timer? _typingKeepAlive;
   Timer? _typingPollTimer;
+  Timer? _onlinePollTimer;
+  Timer? _inboxPresenceTimer;
   DateTime? _lastTypingPing;
   Timer? _inboxSyncTimer;
   bool _loadingInbox = false;
@@ -352,6 +362,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     _typingDebounce?.cancel();
     _typingKeepAlive?.cancel();
     _typingPollTimer?.cancel();
+    _onlinePollTimer?.cancel();
+    _inboxPresenceTimer?.cancel();
     _searchDebounce?.cancel();
     _inboxSyncTimer?.cancel();
     super.dispose();
@@ -409,9 +421,45 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
       final total = merged.fold<int>(0, (sum, c) => sum + c.unreadCount);
       _chatProvider.syncUnreadTotal(total);
       _chatProvider.refreshUnread();
+      if (!_showDetail) {
+        await _refreshInboxPresence();
+        _startInboxPresencePoll();
+      }
     } finally {
       _loadingInbox = false;
     }
+  }
+
+  Future<void> _refreshInboxPresence() async {
+    final ids = _conversations
+        .map((c) => c.otherUser?.id)
+        .whereType<int>()
+        .where((id) => id > 0)
+        .toList();
+    if (ids.isEmpty) return;
+    final map = await ChatService.getPresenceStatus(ids);
+    if (!mounted || map.isEmpty) return;
+    setState(() {
+      _onlineByUserId.addAll(map);
+    });
+  }
+
+  void _startInboxPresencePoll() {
+    _inboxPresenceTimer?.cancel();
+    _inboxPresenceTimer = Timer.periodic(const Duration(seconds: 20), (_) async {
+      if (!mounted || _showDetail) return;
+      await _refreshInboxPresence();
+    });
+  }
+
+  void _stopInboxPresencePoll() {
+    _inboxPresenceTimer?.cancel();
+    _inboxPresenceTimer = null;
+  }
+
+  bool _isPartnerOnline(int? userId) {
+    if (userId == null || userId <= 0) return false;
+    return _onlineByUserId[userId] == true;
   }
 
   void _startInboxSync() {
@@ -494,6 +542,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
 
   void _openConversation(ChatConversation convo) {
     _stopPoll();
+    _stopInboxPresencePoll();
+    _chatProvider.setLiveMode(false);
     setState(() {
       _showDetail = true;
       _activeConversation = convo;
@@ -502,7 +552,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
       _messagesLoading = true;
       _pendingImages.clear();
       _otherIsTyping = false;
-      _otherOnline = false;
+      _otherOnline = _isPartnerOnline(convo.otherUser?.id);
     });
     _loadMessages(forceScroll: true);
     _applyLocalRead(convo.id);
@@ -623,8 +673,10 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
       _pendingImages.clear();
     });
     // Local preview/unread already updated — paint immediately, reconcile in background
+    _chatProvider.setLiveMode(true);
     _chatProvider.refreshUnread();
     _loadInbox();
+    _startInboxPresencePoll();
   }
 
   // ═══════════════════════════════════════════════════════════════════════
@@ -696,23 +748,37 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
 
   Future<void> _checkOnline() async {
     if (_activeConversation == null) return;
-    final otherId =
-        _activeConversation!.otherUser?.id ?? _activeConversation!.sellerId;
+    final convo = _activeConversation!;
+    final otherId = convo.otherUser?.id ??
+        (_myId == convo.customerId ? convo.sellerId : convo.customerId);
+    if (otherId <= 0) return;
     final online = await ChatService.isUserOnline(otherId);
-    if (mounted) setState(() => _otherOnline = online);
+    if (mounted) {
+      setState(() {
+        _otherOnline = online;
+        _onlineByUserId[otherId] = online;
+      });
+    }
   }
 
   void _startPoll() {
     _pollTimer?.cancel();
     _typingPollTimer?.cancel();
+    _onlinePollTimer?.cancel();
     _pollTimer =
         Timer.periodic(AppQuality.instance.chatMessagePollInterval, (_) async {
       await _loadMessages();
     });
-    _typingPollTimer = Timer.periodic(const Duration(seconds: 3), (_) {
+    // Must stay under server typing TTL (~10s)
+    _typingPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       _pollTyping();
     });
+    _onlinePollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!mounted || !_showDetail || _activeConversation == null) return;
+      _checkOnline();
+    });
     _pollTyping();
+    _checkOnline();
   }
 
   void _stopPoll() {
@@ -720,6 +786,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     _pollTimer = null;
     _typingPollTimer?.cancel();
     _typingPollTimer = null;
+    _onlinePollTimer?.cancel();
+    _onlinePollTimer = null;
     _typingKeepAlive?.cancel();
     _typingKeepAlive = null;
   }
@@ -1231,7 +1299,13 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                 child: Row(
                   children: [
-                    _buildAvatar(displayAvatar, displayName, 44, customerDefault: !isSeller),
+                    _buildAvatar(
+                      displayAvatar,
+                      displayName,
+                      44,
+                      customerDefault: !isSeller,
+                      showOnline: _isPartnerOnline(other?.id),
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
@@ -1331,7 +1405,13 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                   icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
                   onPressed: _backToInbox,
                   splashRadius: 18),
-              _buildAvatar(displayAvatar, displayName, 34, customerDefault: !isSeller),
+              _buildAvatar(
+                displayAvatar,
+                displayName,
+                34,
+                customerDefault: !isSeller,
+                showOnline: false,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -1505,6 +1585,11 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                 ),
                 const SizedBox(width: 5),
               ],
+              // Sent: menu sits left of the bubble (toward center), matching web.
+              if (isSent && !msg.isDeleted) ...[
+                _buildMessageMenu(group.first),
+                const SizedBox(width: 4),
+              ],
               Flexible(
                 child: Container(
                   constraints: BoxConstraints(
@@ -1520,8 +1605,35 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                             ? const Color(0xFFE8E8E8)
                             : const Color(0xFFF1F3F5))
                         : (isSent
-                            ? const Color(0xFFDCF8C5)
-                            : const Color(0xFFF1F3F5)),
+                            ? null
+                            : const Color(0xF5FFFFFF)),
+                    gradient: (!msg.isDeleted && isSent)
+                        ? const LinearGradient(
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                            colors: [
+                              Color(0xFFF2D2E1), // match web chat sent bubble
+                              Color(0xFFE8C4DC),
+                            ],
+                          )
+                        : null,
+                    border: Border.all(
+                      color: msg.isDeleted
+                          ? const Color(0x00000000)
+                          : (isSent
+                              ? const Color(0x8CFFFFFF)
+                              : const Color(0xB3FFFFFF)),
+                      width: 1,
+                    ),
+                    boxShadow: (!msg.isDeleted && !isSent)
+                        ? const [
+                            BoxShadow(
+                              color: Color(0x0D502846),
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
+                            ),
+                          ]
+                        : null,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(16),
                       topRight: const Radius.circular(16),
@@ -1607,8 +1719,11 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
-              if (!msg.isDeleted) _buildMessageMenu(group.first),
+              // Received: menu sits right of the bubble (toward center).
+              if (!isSent && !msg.isDeleted) ...[
+                const SizedBox(width: 4),
+                _buildMessageMenu(group.first),
+              ],
             ],
           ),
         ),
@@ -1961,9 +2076,16 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   // HELPERS
   // ═══════════════════════════════════════════════════════════════════════
 
-  Widget _buildAvatar(String? url, String name, double size, {bool customerDefault = true}) {
+  Widget _buildAvatar(
+    String? url,
+    String name,
+    double size, {
+    bool customerDefault = true,
+    bool showOnline = false,
+  }) {
+    final Widget avatar;
     if (url != null && url.isNotEmpty) {
-      return ClipOval(
+      avatar = ClipOval(
         child: CachedNetworkImage(
             imageUrl: url,
             width: size,
@@ -1972,8 +2094,42 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
             errorWidget: (_, __, ___) =>
                 _placeholderAvatar(name, size, customerDefault: customerDefault)),
       );
+    } else {
+      avatar = _placeholderAvatar(name, size, customerDefault: customerDefault);
     }
-    return _placeholderAvatar(name, size, customerDefault: customerDefault);
+
+    if (!showOnline) return avatar;
+
+    final dot = (size * 0.28).clamp(10.0, 14.0);
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          avatar,
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: dot,
+              height: dot,
+              decoration: BoxDecoration(
+                color: const Color(0xFF31A24C),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x4031A24C),
+                    blurRadius: 2,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _placeholderAvatar(String name, double size, {bool customerDefault = true}) {

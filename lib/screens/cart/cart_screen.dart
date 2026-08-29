@@ -796,38 +796,24 @@ class _CartItemTile extends StatelessWidget {
               ],
             ),
           ),
-          // Line total + delete item (web cart-item-side)
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              Text(
-                '₱${item.subtotal.toStringAsFixed(2)}',
-                style: GoogleFonts.cormorantGaramond(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w600,
-                  color: item.isSelected ? AppColors.deepRose : AppColors.muted,
-                ),
+          // Delete item (web cart-item-side — line total removed; price shown on left)
+          GestureDetector(
+            onTap: () => cart.removeItem(item.id),
+            child: Container(
+              width: 26,
+              height: 26,
+              margin: const EdgeInsets.only(top: 2),
+              decoration: BoxDecoration(
+                color: AppColors.glassFill,
+                border: Border.all(color: AppColors.glassBorder, width: 1.5),
+                borderRadius: BorderRadius.circular(AppRadius.pill),
               ),
-              const SizedBox(height: 10),
-              GestureDetector(
-                onTap: () => cart.removeItem(item.id),
-                child: Container(
-                  width: 26,
-                  height: 26,
-                  decoration: BoxDecoration(
-                    color: AppColors.glassFill,
-                    border:
-                        Border.all(color: AppColors.glassBorder, width: 1.5),
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                  ),
-                  child: const Icon(
-                    Icons.delete_outline,
-                    size: 14,
-                    color: AppColors.muted,
-                  ),
-                ),
+              child: const Icon(
+                Icons.delete_outline,
+                size: 14,
+                color: AppColors.muted,
               ),
-            ],
+            ),
           ),
         ],
       ),

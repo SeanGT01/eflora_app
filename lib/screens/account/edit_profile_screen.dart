@@ -29,16 +29,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   bool _savingPhone = false;
   File? _selectedImage;
   bool _uploadingAvatar = false;
+  late String _initialFirstName;
+  late String _initialLastName;
+  late String _initialBirthdayText;
+  late String _initialPhone;
 
-  static DateTime get _minBirthday {
-    final now = DateTime.now();
-    return DateTime(now.year - 120, now.month, now.day);
-  }
-
-  static DateTime get _maxBirthday {
-    final now = DateTime.now();
-    return DateTime(now.year - 13, now.month, now.day);
-  }
+  static const _fieldGap = 12.0;
+  static const _sectionGap = 28.0;
+  static const _sectionTitleGap = 12.0;
 
   @override
   void initState() {
@@ -57,6 +55,69 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _birthdayCtrl = TextEditingController(
       text: _birthday == null ? '' : _formatBirthday(_birthday!),
     );
+    _initialFirstName = _firstNameCtrl.text.trim();
+    _initialLastName = _lastNameCtrl.text.trim();
+    _initialBirthdayText = _birthdayCtrl.text.trim();
+    _initialPhone = _phoneCtrl.text.trim();
+
+    for (final ctrl in [_firstNameCtrl, _lastNameCtrl, _birthdayCtrl, _phoneCtrl, _phoneOtpCtrl]) {
+      ctrl.addListener(_onFormChanged);
+    }
+  }
+
+  void _onFormChanged() {
+    if (mounted) setState(() {});
+  }
+
+  String _normalizePhone(String value) =>
+      value.replaceAll(RegExp(r'[\s\-()]'), '').trim();
+
+  bool get _isProfileDirty =>
+      _firstNameCtrl.text.trim() != _initialFirstName ||
+      _lastNameCtrl.text.trim() != _initialLastName ||
+      _birthdayCtrl.text.trim() != _initialBirthdayText ||
+      _selectedImage != null;
+
+  bool get _isPhoneDirty =>
+      _normalizePhone(_phoneCtrl.text) != _normalizePhone(_initialPhone);
+
+  bool get _canSendPhoneCode =>
+      _isPhoneDirty && _phoneCtrl.text.trim().isNotEmpty && !_savingPhone;
+
+  bool get _canVerifyPhone =>
+      _phoneOtpCtrl.text.trim().length == 6 && !_savingPhone;
+
+  void _captureProfileBaseline() {
+    _initialFirstName = _firstNameCtrl.text.trim();
+    _initialLastName = _lastNameCtrl.text.trim();
+    _initialBirthdayText = _birthdayCtrl.text.trim();
+    setState(() => _selectedImage = null);
+  }
+
+  void _discardChanges() {
+    setState(() {
+      _firstNameCtrl.text = _initialFirstName;
+      _lastNameCtrl.text = _initialLastName;
+      _birthdayCtrl.text = _initialBirthdayText;
+      _birthday = _initialBirthdayText.isEmpty
+          ? null
+          : _parseBirthday(_initialBirthdayText);
+      _phoneCtrl.text = _initialPhone;
+      _phoneOtpSent = false;
+      _phoneOtpCtrl.clear();
+      _selectedImage = null;
+    });
+    showToast(context, 'Changes discarded');
+  }
+
+  static DateTime get _minBirthday {
+    final now = DateTime.now();
+    return DateTime(now.year - 120, now.month, now.day);
+  }
+
+  static DateTime get _maxBirthday {
+    final now = DateTime.now();
+    return DateTime(now.year - 13, now.month, now.day);
   }
 
   DateTime? _parseBirthday(String? raw) {
@@ -217,7 +278,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _phoneOtpSent = false;
       _phoneOtpCtrl.clear();
       final phone = res.data is Map ? res.data['phone'] : null;
-      if (phone != null) _phoneCtrl.text = phone.toString();
+      if (phone != null) {
+        _phoneCtrl.text = phone.toString();
+        _initialPhone = phone.toString().trim();
+      }
     });
     showToast(context, 'Phone number saved');
   }
@@ -260,6 +324,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     if (result.isSuccess) {
       await context.read<AuthProvider>().refreshUser();
       if (mounted) {
+        _captureProfileBaseline();
         showToast(context, 'Profile updated successfully!');
         Navigator.pop(context);
       }
@@ -271,6 +336,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
 
   @override
   void dispose() {
+    for (final ctrl in [_firstNameCtrl, _lastNameCtrl, _loginIdCtrl, _birthdayCtrl, _phoneCtrl, _phoneOtpCtrl]) {
+      ctrl.removeListener(_onFormChanged);
+    }
     _firstNameCtrl.dispose();
     _lastNameCtrl.dispose();
     _loginIdCtrl.dispose();
@@ -280,14 +348,150 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
+  Widget _sectionTitle(BuildContext context, String title) {
+    return Text(title, style: Theme.of(context).textTheme.titleMedium);
+  }
+
+  InputDecoration _fieldDecoration({
+    required String labelText,
+    String? helperText,
+    Widget? prefixIcon,
+    Widget? suffixIcon,
+  }) {
+    return InputDecoration(
+      labelText: labelText,
+      helperText: helperText,
+      helperMaxLines: 2,
+      prefixIcon: prefixIcon,
+      suffixIcon: suffixIcon,
+    );
+  }
+
+  Widget _profileOutlineButton({
+    required String label,
+    required VoidCallback? onPressed,
+  }) {
+    final enabled = onPressed != null;
+    return OutlinedButton(
+      onPressed: onPressed,
+      style: OutlinedButton.styleFrom(
+        foregroundColor: enabled ? AppColors.charcoal : const Color(0xFF808080),
+        disabledForegroundColor: const Color(0xFF808080),
+        backgroundColor: enabled ? null : const Color(0xFFECECEC),
+        disabledBackgroundColor: const Color(0xFFECECEC),
+        side: BorderSide(
+          color: enabled
+              ? AppColors.deepRose.withValues(alpha: 0.28)
+              : const Color(0xFFD0D0D0),
+        ),
+        minimumSize: const Size(0, 44),
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+        ),
+        textStyle: const TextStyle(fontWeight: FontWeight.w500),
+      ),
+      child: Text(label),
+    );
+  }
+
+  Widget _buildPhoneSection(bool isPhoneLogin) {
+    if (isPhoneLogin) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const SizedBox(height: _sectionGap),
+          _sectionTitle(context, 'Login mobile number'),
+          const SizedBox(height: _sectionTitleGap),
+          TextFormField(
+            controller: _phoneCtrl,
+            readOnly: true,
+            keyboardType: TextInputType.phone,
+            decoration: _fieldDecoration(
+              labelText: 'Mobile number',
+              helperText: 'Cannot be changed.',
+              prefixIcon: const Icon(Icons.phone_outlined, size: 20),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: _sectionGap),
+        _sectionTitle(context, 'Delivery phone number'),
+        const SizedBox(height: _sectionTitleGap),
+        Text(
+          'Riders and shops use this number for deliveries. Changing it requires a 6-digit SMS code.',
+          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                color: AppColors.muted,
+                height: 1.45,
+              ),
+        ),
+        const SizedBox(height: _fieldGap),
+        TextFormField(
+          controller: _phoneCtrl,
+          keyboardType: TextInputType.phone,
+          decoration: _fieldDecoration(
+            labelText: 'Mobile number',
+            prefixIcon: const Icon(Icons.phone_outlined, size: 20),
+          ),
+        ),
+        if (_phoneOtpSent) ...[
+          const SizedBox(height: _fieldGap),
+          TextFormField(
+            controller: _phoneOtpCtrl,
+            keyboardType: TextInputType.number,
+            maxLength: 6,
+            decoration: _fieldDecoration(
+              labelText: '6-digit SMS code',
+              prefixIcon: const Icon(Icons.sms_outlined, size: 20),
+            ),
+          ),
+        ],
+        const SizedBox(height: 16),
+        if (!_phoneOtpSent)
+          RoseButton(
+            label: 'Send code',
+            icon: Icons.sms_outlined,
+            onPressed: _canSendPhoneCode ? _sendPhoneOtp : null,
+            loading: _savingPhone,
+            width: double.infinity,
+          )
+        else
+          Row(
+            children: [
+              _profileOutlineButton(
+                label: 'Resend',
+                onPressed: _canSendPhoneCode ? _sendPhoneOtp : null,
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: RoseButton(
+                  label: 'Verify',
+                  onPressed: _canVerifyPhone ? _verifyPhoneOtp : null,
+                  loading: _savingPhone,
+                ),
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final user = context.watch<AuthProvider>().user;
+    final isPhoneLogin = user?.isPhoneLogin ?? false;
+
     return Scaffold(
       backgroundColor: AppColors.pageCream,
       appBar: AppBar(title: const Text('Edit Profile')),
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
+          padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
           child: Form(
             key: _formKey,
             child: Column(
@@ -340,7 +544,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                     color: AppColors.deepRose, width: 2),
                                 boxShadow: [
                                   BoxShadow(
-                                      color: Colors.black.withOpacity(0.15),
+                                      color: Colors.black.withValues(alpha: 0.15),
                                       blurRadius: 8)
                                 ],
                               ),
@@ -366,101 +570,75 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ],
                   ),
                 ),
-                const SizedBox(height: 32),
-                Text('Personal Information',
-                    style: Theme.of(context).textTheme.titleMedium),
-                const SizedBox(height: 16),
+                const SizedBox(height: _sectionGap),
+                _sectionTitle(context, 'Personal Information'),
+                const SizedBox(height: _sectionTitleGap),
                 TextFormField(
                   controller: _firstNameCtrl,
-                  decoration: const InputDecoration(
-                      labelText: 'First name',
-                      prefixIcon: Icon(Icons.person_outline, size: 20)),
+                  decoration: _fieldDecoration(
+                    labelText: 'First name',
+                    prefixIcon: const Icon(Icons.person_outline, size: 20),
+                  ),
                   textCapitalization: TextCapitalization.words,
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'First name is required'
                       : null,
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: _fieldGap),
                 TextFormField(
                   controller: _lastNameCtrl,
-                  decoration: const InputDecoration(
-                      labelText: 'Last name',
-                      prefixIcon: Icon(Icons.person_outline, size: 20)),
+                  decoration: _fieldDecoration(
+                    labelText: 'Last name',
+                    prefixIcon: const Icon(Icons.person_outline, size: 20),
+                  ),
                   textCapitalization: TextCapitalization.words,
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'Last name is required'
                       : null,
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: _fieldGap),
                 TextFormField(
                   controller: _loginIdCtrl,
                   readOnly: true,
-                  decoration: const InputDecoration(
+                  decoration: _fieldDecoration(
                     labelText: 'Email or mobile number',
                     helperText: 'Login identity — cannot be changed',
-                    prefixIcon: Icon(Icons.badge_outlined, size: 20),
+                    prefixIcon: const Icon(Icons.badge_outlined, size: 20),
                   ),
                 ),
-                const SizedBox(height: 14),
-                TextFormField(
-                  controller: _phoneCtrl,
-                  keyboardType: TextInputType.phone,
-                  decoration: const InputDecoration(
-                    labelText: 'Delivery phone number',
-                    helperText: 'Required for riders. Changing it sends a 6-digit SMS code.',
-                    prefixIcon: Icon(Icons.phone_outlined, size: 20),
-                  ),
-                ),
-                if (_phoneOtpSent) ...[
-                  const SizedBox(height: 10),
-                  TextFormField(
-                    controller: _phoneOtpCtrl,
-                    keyboardType: TextInputType.number,
-                    maxLength: 6,
-                    decoration: const InputDecoration(
-                      labelText: '6-digit SMS code',
-                      prefixIcon: Icon(Icons.sms_outlined, size: 20),
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 8),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: _savingPhone ? null : _sendPhoneOtp,
-                        child: Text(_phoneOtpSent ? 'Resend code' : 'Send code'),
-                      ),
-                    ),
-                    if (_phoneOtpSent) ...[
-                      const SizedBox(width: 8),
-                      Expanded(
-                        child: ElevatedButton(
-                          onPressed: _savingPhone ? null : _verifyPhoneOtp,
-                          child: const Text('Verify'),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
-                const SizedBox(height: 14),
+                const SizedBox(height: _fieldGap),
                 TextFormField(
                   controller: _birthdayCtrl,
                   readOnly: true,
                   onTap: _pickBirthday,
-                  decoration: const InputDecoration(
+                  decoration: _fieldDecoration(
                     labelText: 'Birthday',
-                    helperText: 'Must be at least 13 years old',
-                    prefixIcon: Icon(Icons.cake_outlined, size: 20),
-                    suffixIcon: Icon(Icons.calendar_today_outlined, size: 18),
+                    prefixIcon: const Icon(Icons.cake_outlined, size: 20),
+                    suffixIcon:
+                        const Icon(Icons.calendar_today_outlined, size: 18),
                   ),
                 ),
-                const SizedBox(height: 28),
-                RoseButton(
-                    label: 'Save Changes',
-                    onPressed: _save,
-                    loading: _saving,
-                    width: double.infinity),
+                _buildPhoneSection(isPhoneLogin),
+                const SizedBox(height: _sectionGap),
+                Row(
+                  children: [
+                    Expanded(
+                      child: _profileOutlineButton(
+                        label: 'Discard',
+                        onPressed: _isProfileDirty && !_saving ? _discardChanges : null,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      flex: 2,
+                      child: RoseButton(
+                        label: 'Save Changes',
+                        onPressed: _isProfileDirty && !_saving ? _save : null,
+                        loading: _saving,
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

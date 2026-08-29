@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/rider.dart';
 import '../../providers/rider_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/datetime_ph.dart';
 import '../../widgets/common.dart';
 import '../../widgets/chat_drawer.dart';
 import '../../services/api_service.dart';
@@ -18,9 +18,10 @@ class OrderDetailScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateStr = order.createdAt != null
-        ? DateFormat('MMMM d, yyyy  h:mm a').format(order.createdAt!)
-        : '';
+    final dateStr = formatPhilippineDateTime(
+      order.createdAt,
+      'MMMM d, yyyy  h:mm a',
+    );
     final itemsSubtotal = order.items.fold<double>(0, (s, i) => s + i.lineTotal);
     final hasAddons = order.items.any((i) => i.addons.isNotEmpty || i.addonsTotal > 0);
     final subtotalToUse = (hasAddons && itemsSubtotal > 0)
@@ -35,7 +36,7 @@ class OrderDetailScreen extends StatelessWidget {
         : order.totalAmount;
     
     // Format requested delivery date and time
-    final requestedDeliveryStr = _formatRequestedDelivery(
+    final requestedDeliveryStr = formatRequestedDelivery(
       order.requestedDeliveryDate,
       order.requestedDeliveryTime,
     );
@@ -189,7 +190,7 @@ class OrderDetailScreen extends StatelessWidget {
                 _DetailRow(
                   icon: Icons.access_time,
                   label: 'Requested Time',
-                  value: _formatTimeRange(order.requestedDeliveryTime!),
+                  value: formatDeliveryTimeSlot(order.requestedDeliveryTime!),
                 ),
               ],
               if (order.distanceFromStoreKm != null) ...[
@@ -389,47 +390,6 @@ class OrderDetailScreen extends StatelessWidget {
         ),
       ),
     );
-  }
-
-  /// Format time range from 24-hour format (e.g., "08:00-12:00") to 12-hour format (e.g., "8:00am-12:00pm")
-  String _formatTimeRange(String timeStr) {
-    try {
-      final parts = timeStr.split('-');
-      if (parts.length != 2) return timeStr;
-      
-      final startTime = DateFormat('H:mm').parse(parts[0].trim());
-      final endTime = DateFormat('H:mm').parse(parts[1].trim());
-      
-      final startFormatted = DateFormat('h:mma').format(startTime).toLowerCase();
-      final endFormatted = DateFormat('h:mma').format(endTime).toLowerCase();
-      
-      return '$startFormatted-$endFormatted';
-    } catch (e) {
-      return timeStr;
-    }
-  }
-
-  /// Format requested delivery date and time together
-  /// Returns format like: "Apr 02,2026, 6:00am-8:00am"
-  String _formatRequestedDelivery(String? date, String? time) {
-    if (date == null || date.isEmpty) return '';
-    
-    try {
-      // Parse date (expected format: YYYY-MM-DD)
-      final deliveryDate = DateFormat('yyyy-MM-dd').parse(date);
-      final dateFormatted = DateFormat('MMM dd,yyyy').format(deliveryDate);
-      
-      // Format time
-      final timeFormatted = time != null && time.isNotEmpty 
-          ? _formatTimeRange(time) 
-          : '';
-      
-      return timeFormatted.isNotEmpty 
-          ? '$dateFormatted, $timeFormatted' 
-          : dateFormatted;
-    } catch (e) {
-      return date;
-    }
   }
 
   void _showDeliveryProofZoom(BuildContext context, String imageUrl) {

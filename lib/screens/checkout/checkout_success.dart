@@ -157,9 +157,7 @@ class CheckoutSuccess extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 12),
-                  ...orders.asMap().entries.map((entry) {
-                    final index = entry.key;
-                    final order = entry.value;
+                  ...orders.map((order) {
                     return Container(
                       margin: const EdgeInsets.only(bottom: 10),
                       padding: const EdgeInsets.all(14),
@@ -170,25 +168,6 @@ class CheckoutSuccess extends StatelessWidget {
                       ),
                       child: Row(
                         children: [
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: const BoxDecoration(
-                              color: AppColors.deepRose,
-                              shape: BoxShape.circle,
-                            ),
-                            child: Center(
-                              child: Text(
-                                '${index + 1}',
-                                style: GoogleFonts.dmSans(
-                                  fontWeight: FontWeight.w700,
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,

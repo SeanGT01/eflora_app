@@ -11,6 +11,9 @@ class ApiService {
   static const String _base = 'https://eflora-system-production.up.railway.app';
   static const String _api  = '$_base/api/v1';
 
+  /// Public API root for unauthenticated config endpoints.
+  static String get apiRoot => _api;
+
   static Future<String?> getToken() async {
     final p = await SharedPreferences.getInstance();
     return p.getString('jwt_token');

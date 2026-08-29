@@ -12,6 +12,7 @@ import 'providers/wishlist_provider.dart';
 import 'screens/main_shell.dart';
 import 'screens/rider/rider_shell.dart';
 import 'services/app_quality.dart';
+import 'services/presence_service.dart';
 import 'theme/app_background.dart';
 import 'theme/app_theme.dart';
 import 'utils/responsive.dart';
@@ -91,6 +92,9 @@ class _AppRootState extends State<_AppRoot> {
   Future<void> _init() async {
     final auth = context.read<AuthProvider>();
     await auth.tryAutoLogin();
+
+    // Active-session Online presence while the app is in the foreground.
+    PresenceService.instance.attach(auth);
     
     // Setup Address Service interceptors with JWT token (if logged in)
     await setupAddressServiceInterceptors();
@@ -108,6 +112,12 @@ class _AppRootState extends State<_AppRoot> {
       context.read<ChatProvider>().startPolling();
     }
     if (mounted) setState(() => _initialized = true);
+  }
+
+  @override
+  void dispose() {
+    PresenceService.instance.detach();
+    super.dispose();
   }
 
   @override

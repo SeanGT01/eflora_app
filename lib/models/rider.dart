@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/datetime_ph.dart';
 
 /// Rider order model matching backend Order.to_dict() + enriched fields
 class RiderOrder {
@@ -113,7 +114,7 @@ class RiderOrder {
       deliveryProof2PublicId: j['delivery_proof_2_public_id'],
       donePreparingProofUrl: j['done_preparing_proof_url'],
       items: items,
-      createdAt: j['created_at'] != null ? DateTime.tryParse(j['created_at']) : null,
+      createdAt: parseBackendDateTime(j['created_at']?.toString()),
     );
   }
 

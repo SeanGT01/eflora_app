@@ -240,7 +240,7 @@ class ChatService {
   // ONLINE STATUS
   // ══════════════════════════════════════════════════════════════════════
 
-  /// Check if a user is currently online.
+  /// Check if a user is currently online (active session).
   static Future<bool> isUserOnline(int userId) async {
     try {
       final res = await http.get(
@@ -255,6 +255,46 @@ class ChatService {
       return false;
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Ping the server while the app is in the foreground so Online status
+  /// reflects an active logged-in session (not merely a valid JWT).
+  static Future<void> sendPresenceHeartbeat() async {
+    try {
+      await http
+          .post(
+            Uri.parse('$_api/presence/heartbeat'),
+            headers: await _headers(),
+          )
+          .timeout(const Duration(seconds: 8));
+    } catch (_) {}
+  }
+
+  /// Batch-check which users are currently online (active session).
+  static Future<Map<int, bool>> getPresenceStatus(List<int> userIds) async {
+    final ids = userIds.where((id) => id > 0).toSet().toList();
+    if (ids.isEmpty) return {};
+    try {
+      final res = await http
+          .post(
+            Uri.parse('$_api/presence/status'),
+            headers: await _headers(),
+            body: jsonEncode({'user_ids': ids}),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (res.statusCode != 200) return {};
+      final data = jsonDecode(res.body) as Map<String, dynamic>;
+      final online = data['online'];
+      if (online is! Map) return {};
+      final out = <int, bool>{};
+      online.forEach((key, value) {
+        final id = int.tryParse(key.toString());
+        if (id != null) out[id] = value == true;
+      });
+      return out;
+    } catch (_) {
+      return {};
     }
   }
 

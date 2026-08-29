@@ -155,6 +155,9 @@ class GradientButton extends StatelessWidget {
     this.height = 50,
     this.radius = AppRadius.pill,
     this.textStyle,
+    this.horizontalPadding,
+    this.iconSize = 18,
+    this.iconGap = 8,
   });
 
   final String label;
@@ -165,54 +168,67 @@ class GradientButton extends StatelessWidget {
   final double height;
   final double radius;
   final TextStyle? textStyle;
+  final double? horizontalPadding;
+  final double iconSize;
+  final double iconGap;
 
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null && !loading;
+    final hPad = horizontalPadding ?? (expand ? 24.0 : 14.0);
+    const disabledFill = Color(0xFFD8D8D8);
+    const disabledText = Color(0xFF808080);
 
-    return Opacity(
-      opacity: enabled ? 1 : 0.6,
-      child: Container(
-        width: expand ? double.infinity : null,
-        height: height,
-        decoration: BoxDecoration(
-          gradient: AppColors.brandGradient,
+    return Container(
+      width: expand ? double.infinity : null,
+      height: height,
+      decoration: BoxDecoration(
+        gradient: enabled ? AppColors.brandGradient : null,
+        color: enabled ? null : disabledFill,
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: enabled ? AppShadows.roseButton : null,
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onPressed : null,
           borderRadius: BorderRadius.circular(radius),
-          boxShadow: enabled ? AppShadows.roseButton : null,
-        ),
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            onTap: enabled ? onPressed : null,
-            borderRadius: BorderRadius.circular(radius),
-            child: Center(
-              child: loading
-                  ? const SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation(Colors.white),
+          child: Center(
+            child: loading
+                ? SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(
+                        enabled ? Colors.white : disabledText,
                       ),
-                    )
-                  : Row(
+                    ),
+                  )
+                : Padding(
+                    padding: EdgeInsets.symmetric(horizontal: hPad),
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         if (icon != null) ...[
-                          Icon(icon, size: 18, color: Colors.white),
-                          const SizedBox(width: 8),
+                          Icon(
+                            icon,
+                            size: iconSize,
+                            color: enabled ? Colors.white : disabledText,
+                          ),
+                          SizedBox(width: iconGap),
                         ],
                         Text(
                           label,
                           style: textStyle ??
                               Theme.of(context).textTheme.labelLarge?.copyWith(
-                                    color: Colors.white,
-                                    fontWeight: FontWeight.w700,
+                                    color: enabled ? Colors.white : disabledText,
+                                    fontWeight: FontWeight.w500,
                                   ),
                         ),
                       ],
                     ),
-            ),
+                  ),
           ),
         ),
       ),

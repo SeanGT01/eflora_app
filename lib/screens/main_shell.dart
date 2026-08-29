@@ -75,76 +75,110 @@ class MainShellState extends State<MainShell> {
   @override
   Widget build(BuildContext context) {
     final cartCount = context.watch<CartProvider>().itemCount;
-    return Scaffold(
-      backgroundColor: AppColors.pageCream,
-      extendBody: true,
-      body: Stack(
-        children: [
-          // Rich devices keep all tabs alive; lite remounts only the active tab.
-          if (AppQuality.instance.keepTabsAlive)
-            IndexedStack(index: _idx, children: _screens)
-          else
-            KeyedSubtree(
-              key: ValueKey('tab_$_idx'),
-              child: _screens[_idx],
-            ),
-          // Floating chat button — same role as website `#chat-fab`.
-          // Hidden on the Cart tab so it doesn't cover the checkout bar
-          // (mirrors web `#chat-fab.cart-open-hidden`), and while a dialog /
-          // modal route is open on top of this shell.
-          if (!_chatOpen &&
-              _idx != 2 &&
-              (ModalRoute.of(context)?.isCurrent ?? true))
-            FloatingChatButton(onTap: openChat),
-          // Chat drawer overlay
-          if (_chatOpen)
-            ChatDrawer(
-              onClose: () => setState(() {
-                _chatOpen = false;
-                _chatOpenStoreId = null;
-              }),
-              openStoreId: _chatOpenStoreId,
-            ),
-        ],
-      ),
-      bottomNavigationBar: ClipRect(
-        child: AdaptiveBlur(
-          sigma: 16,
-          child: Container(
-            decoration: BoxDecoration(
-              gradient: AppQuality.instance.useBlur ? AppColors.headerGlass : null,
-              color: AppQuality.instance.useBlur
-                  ? null
-                  : const Color(0xF5FFFAFC),
-              border: const Border(
-                top: BorderSide(color: Color(0x8CFFFFFF), width: 1),
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0FB5445A),
-                  blurRadius: 28,
-                  offset: Offset(0, -8),
+    final showChatFab = !_chatOpen &&
+        _idx != 2 &&
+        (ModalRoute.of(context)?.isCurrent ?? true);
+
+    // FAB sits in a screen-level Stack so bottom inset is measured against the
+    // full scaffold (nav + home indicator), not the body slot alone.
+    return Stack(
+      children: [
+        Scaffold(
+          backgroundColor: AppColors.pageCream,
+          extendBody: true,
+          body: Stack(
+            children: [
+              // Rich devices keep all tabs alive; lite remounts only the active tab.
+              if (AppQuality.instance.keepTabsAlive)
+                IndexedStack(index: _idx, children: _screens)
+              else
+                KeyedSubtree(
+                  key: ValueKey('tab_$_idx'),
+                  child: _screens[_idx],
                 ),
-              ],
-            ),
-            child: SafeArea(
-              top: false,
-              child: SizedBox(
-                height: context.s(62).clamp(56.0, 70.0),
-                child: Row(
-                  children: [
-                _NavItem(icon: Icons.home_outlined,        activeIcon: Icons.home,              label: 'Home',    selected: _idx == 0, onTap: () => setState(() => _idx = 0)),
-                _NavItem(icon: Icons.search_outlined,      activeIcon: Icons.search,             label: 'Search',  selected: _idx == 1, onTap: () => setState(() => _idx = 1)),
-                _CartNavItem(count: cartCount,             selected: _idx == 2,                  onTap: () => setState(() => _idx = 2)),
-                _NavItem(icon: Icons.receipt_long_outlined,activeIcon: Icons.receipt_long,       label: 'Orders',  selected: _idx == 3, onTap: () => setState(() => _idx = 3)),
-                _NavItem(icon: Icons.person_outline,       activeIcon: Icons.person,             label: 'Account', selected: _idx == 4, onTap: () => setState(() => _idx = 4)),
+              // Chat drawer overlay
+              if (_chatOpen)
+                ChatDrawer(
+                  onClose: () => setState(() {
+                    _chatOpen = false;
+                    _chatOpenStoreId = null;
+                  }),
+                  openStoreId: _chatOpenStoreId,
+                ),
+            ],
+          ),
+          bottomNavigationBar: ClipRect(
+            child: AdaptiveBlur(
+              sigma: 16,
+              child: Container(
+                decoration: BoxDecoration(
+                  gradient:
+                      AppQuality.instance.useBlur ? AppColors.headerGlass : null,
+                  color: AppQuality.instance.useBlur
+                      ? null
+                      : const Color(0xF5FFFAFC),
+                  border: const Border(
+                    top: BorderSide(color: Color(0x8CFFFFFF), width: 1),
+                  ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x0FB5445A),
+                      blurRadius: 28,
+                      offset: Offset(0, -8),
+                    ),
                   ],
+                ),
+                child: SafeArea(
+                  top: false,
+                  child: SizedBox(
+                    height: context.s(62).clamp(56.0, 70.0),
+                    child: Row(
+                      children: [
+                        _NavItem(
+                          icon: Icons.home_outlined,
+                          activeIcon: Icons.home,
+                          label: 'Home',
+                          selected: _idx == 0,
+                          onTap: () => setState(() => _idx = 0),
+                        ),
+                        _NavItem(
+                          icon: Icons.search_outlined,
+                          activeIcon: Icons.search,
+                          label: 'Search',
+                          selected: _idx == 1,
+                          onTap: () => setState(() => _idx = 1),
+                        ),
+                        _CartNavItem(
+                          count: cartCount,
+                          selected: _idx == 2,
+                          onTap: () => setState(() => _idx = 2),
+                        ),
+                        _NavItem(
+                          icon: Icons.receipt_long_outlined,
+                          activeIcon: Icons.receipt_long,
+                          label: 'Orders',
+                          selected: _idx == 3,
+                          onTap: () => setState(() => _idx = 3),
+                        ),
+                        _NavItem(
+                          icon: Icons.person_outline,
+                          activeIcon: Icons.person,
+                          label: 'Account',
+                          selected: _idx == 4,
+                          onTap: () => setState(() => _idx = 4),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
             ),
           ),
         ),
-      ),
+        // Floating chat button — same role as website `#chat-fab`.
+        // Hidden on Cart (checkout bar) and while a modal route is on top.
+        if (showChatFab) FloatingChatButton(onTap: openChat),
+      ],
     );
   }
 }

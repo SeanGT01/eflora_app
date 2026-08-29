@@ -29,8 +29,6 @@ class AddressListScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = MediaQuery.viewPaddingOf(context).bottom;
-
     return AppBackground(
       showFlowers: false,
       child: Scaffold(
@@ -47,6 +45,28 @@ class AddressListScreen extends StatelessWidget {
               color: AppColors.charcoal,
             ),
           ),
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 16),
+              child: Center(
+                child: GradientButton(
+                  label: 'Add Address',
+                  icon: Icons.add_rounded,
+                  onPressed: () => _openAdd(context),
+                  expand: false,
+                  height: 36,
+                  horizontalPadding: 12,
+                  iconSize: 16,
+                  iconGap: 6,
+                  textStyle: GoogleFonts.dmSans(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.white,
+                  ),
+                ),
+              ),
+            ),
+          ],
         ),
         body: Consumer<AddressProvider>(
           builder: (context, addressProvider, _) {
@@ -75,7 +95,7 @@ class AddressListScreen extends StatelessWidget {
                                 onRetry: () => addressProvider.loadAddresses(),
                               )
                             : addressProvider.addresses.isEmpty
-                                ? _EmptyState(onAdd: () => _openAdd(context))
+                                ? const _EmptyState()
                                 : ListView.separated(
                                     physics:
                                         const AlwaysScrollableScrollPhysics(),
@@ -138,13 +158,6 @@ class AddressListScreen extends StatelessWidget {
                                     },
                                   ),
                   ),
-                ),
-                _BottomAddBar(
-                  bottomInset: bottomInset,
-                  label: isCheckoutSelection
-                      ? 'Add new address'
-                      : 'Add address',
-                  onPressed: () => _openAdd(context),
                 ),
               ],
             );
@@ -215,46 +228,8 @@ class AddressListScreen extends StatelessWidget {
   }
 }
 
-class _BottomAddBar extends StatelessWidget {
-  const _BottomAddBar({
-    required this.bottomInset,
-    required this.label,
-    required this.onPressed,
-  });
-
-  final double bottomInset;
-  final String label;
-  final VoidCallback onPressed;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: EdgeInsets.fromLTRB(16, 12, 16, 12 + bottomInset),
-      decoration: BoxDecoration(
-        color: AppColors.warmWhite.withValues(alpha: 0.94),
-        border: const Border(top: BorderSide(color: AppColors.border)),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x14000000),
-            blurRadius: 12,
-            offset: Offset(0, -2),
-          ),
-        ],
-      ),
-      child: GradientButton(
-        label: label,
-        icon: Icons.add_location_alt_rounded,
-        onPressed: onPressed,
-        radius: AppRadius.md,
-      ),
-    );
-  }
-}
-
 class _EmptyState extends StatelessWidget {
-  const _EmptyState({required this.onAdd});
-
-  final VoidCallback onAdd;
+  const _EmptyState();
 
   @override
   Widget build(BuildContext context) {
@@ -300,17 +275,6 @@ class _EmptyState extends StatelessWidget {
                       color: AppColors.muted,
                       fontSize: 13.5,
                       height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 28),
-                  SizedBox(
-                    width: 200,
-                    child: GradientButton(
-                      label: 'Add address',
-                      icon: Icons.add_rounded,
-                      onPressed: onAdd,
-                      radius: AppRadius.md,
-                      expand: true,
                     ),
                   ),
                 ],

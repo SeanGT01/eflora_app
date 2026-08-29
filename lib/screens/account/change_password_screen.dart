@@ -18,6 +18,19 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
   bool _saving = false;
   bool _obscure1 = true, _obscure2 = true, _obscure3 = true;
 
+  bool get _hasPasswordInput =>
+      _currCtrl.text.trim().isNotEmpty ||
+      _newCtrl.text.trim().isNotEmpty ||
+      _confCtrl.text.trim().isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    for (final ctrl in [_currCtrl, _newCtrl, _confCtrl]) {
+      ctrl.addListener(() => setState(() {}));
+    }
+  }
+
   String? _validateNewPassword(String? v) {
     final value = v ?? '';
     if (value.isEmpty) return 'Required';
@@ -70,7 +83,12 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                 _pwField(_confCtrl, 'Confirm new password', _obscure3, () => setState(() => _obscure3 = !_obscure3),
                     (v) => v != _newCtrl.text ? 'Passwords do not match' : null),
                 const SizedBox(height: 28),
-                RoseButton(label: 'Change Password', onPressed: _change, loading: _saving, width: double.infinity),
+                RoseButton(
+                  label: 'Change Password',
+                  onPressed: _hasPasswordInput && !_saving ? _change : null,
+                  loading: _saving,
+                  width: double.infinity,
+                ),
               ],
             ),
           ),

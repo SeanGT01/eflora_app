@@ -43,6 +43,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   Timer? _typingDebounce;
   Timer? _typingKeepAlive;
   Timer? _typingPollTimer;
+  Timer? _onlinePollTimer;
   DateTime? _lastTypingPing;
 
   int get _myId => context.read<AuthProvider>().user?.id ?? 0;
@@ -103,6 +104,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     _typingDebounce?.cancel();
     _typingKeepAlive?.cancel();
     _typingPollTimer?.cancel();
+    _onlinePollTimer?.cancel();
     _controller.dispose();
     _scrollController.dispose();
     super.dispose();
@@ -121,6 +123,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     });
     if (forceScroll || previousIds.isEmpty || (hasNew && nearBottom)) {
       _scrollToBottom();
+    }
+    if (hasNew && msgs.isNotEmpty && msgs.last.senderId != _myId) {
+      _markRead();
     }
   }
 
@@ -157,13 +162,17 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   void _startPoll() {
     _pollTimer?.cancel();
     _typingPollTimer?.cancel();
+    _onlinePollTimer?.cancel();
     _pollTimer = Timer.periodic(AppQuality.instance.chatMessagePollInterval, (_) async {
       await _loadMessages();
-      _markRead();
     });
-    // Faster typing poll so the indicator feels live.
-    _typingPollTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+    // Must stay under server typing TTL (~10s)
+    _typingPollTimer = Timer.periodic(const Duration(seconds: 2), (_) {
       _pollTyping();
+    });
+    _onlinePollTimer = Timer.periodic(const Duration(seconds: 15), (_) {
+      if (!mounted) return;
+      _checkOnline();
     });
     _pollTyping();
   }

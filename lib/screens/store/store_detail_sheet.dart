@@ -1,9 +1,13 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/retry.dart';
 import 'package:latlong2/latlong.dart';
+import '../../config/mapbox_config.dart';
 import '../../models/store.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
@@ -170,7 +174,7 @@ class StoreDetailSheet extends StatelessWidget {
   }
 
   Widget _buildHeader() {
-    final isOpen = store.status == 'active';
+    final isOpen = _isStoreOpenNow();
     final bannerUrl = store.bannerUrl;
     final hasBanner = bannerUrl != null && bannerUrl.isNotEmpty;
     final resolvedBannerUrl = hasBanner
@@ -242,12 +246,16 @@ class StoreDetailSheet extends StatelessWidget {
                 const SizedBox(height: 6),
                 Container(
                   padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.2),
+                    color: isOpen
+                        ? const Color(0x3348BB78)
+                        : const Color(0x33E05353),
                     borderRadius: BorderRadius.circular(AppRadius.pill),
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.4),
+                      color: isOpen
+                          ? const Color(0x9948BB78)
+                          : const Color(0x99E05353),
                       width: 1,
                     ),
                   ),
@@ -260,7 +268,7 @@ class StoreDetailSheet extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: isOpen
                               ? const Color(0xFFB6F0C4)
-                              : Colors.white.withValues(alpha: 0.6),
+                              : const Color(0xFFFFB4B4),
                           shape: BoxShape.circle,
                         ),
                       ),
@@ -271,7 +279,7 @@ class StoreDetailSheet extends StatelessWidget {
                           fontSize: 11,
                           fontWeight: FontWeight.w700,
                           color: Colors.white,
-                          letterSpacing: 0.3,
+                          letterSpacing: 0.2,
                         ),
                       ),
                     ],
@@ -470,27 +478,6 @@ class StoreDetailSheet extends StatelessWidget {
       ));
     }
 
-    final rawLead = schedule['lead_time_hours'];
-    int? leadHours;
-    if (rawLead is num) {
-      leadHours = rawLead.toInt();
-    } else if (rawLead != null) {
-      leadHours = int.tryParse(rawLead.toString());
-    } else if ((schedule['schedules'] as List?)?.isNotEmpty == true) {
-      leadHours = 1;
-    }
-    if (leadHours != null) {
-      final leadText = leadHours == 0
-          ? 'None'
-          : (leadHours == 1
-              ? '1 hour before slot start'
-              : '$leadHours hours before slot start');
-      rows.add(_infoRow(
-        Icons.hourglass_bottom_outlined,
-        'Prep Time',
-        leadText,
-      ));
-    }
     return rows;
   }
 
@@ -651,6 +638,53 @@ class StoreDetailSheet extends StatelessWidget {
     );
   }
 
+  /// Whether the store is currently open based on PH local time + schedule.
+  /// Mirrors website `checkStoreStatus()` — not account `status` (active/inactive).
+  bool _isStoreOpenNow() {
+    final schedule = store.storeSchedule;
+    final schedules = schedule?['schedules'] as List<dynamic>?;
+    if (schedules == null || schedules.isEmpty) return false;
+
+    final now = DateTime.now().toUtc().add(const Duration(hours: 8));
+    const days = [
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+      'sunday',
+    ];
+    final dayName = days[now.weekday - 1];
+    final currentMinutes = now.hour * 60 + now.minute;
+
+    for (final entry in schedules) {
+      if (entry is! Map) continue;
+      final daysList = entry['days'] as List<dynamic>? ?? const [];
+      final matchesToday = daysList.any(
+        (d) => d.toString().toLowerCase() == dayName,
+      );
+      if (!matchesToday) continue;
+
+      final open = entry['open']?.toString() ?? '';
+      final close = entry['close']?.toString() ?? '';
+      final openParts = open.split(':');
+      final closeParts = close.split(':');
+      if (openParts.length < 2 || closeParts.length < 2) continue;
+
+      final oh = int.tryParse(openParts[0]) ?? 0;
+      final om = int.tryParse(openParts[1]) ?? 0;
+      final ch = int.tryParse(closeParts[0]) ?? 0;
+      final cm = int.tryParse(closeParts[1]) ?? 0;
+      final openMinutes = oh * 60 + om;
+      final closeMinutes = ch * 60 + cm;
+      if (currentMinutes >= openMinutes && currentMinutes < closeMinutes) {
+        return true;
+      }
+    }
+    return false;
+  }
+
   /// Convert "08:00" or "17:30" to "8:00 AM" or "5:30 PM" (matches web formatTime12Hour)
   String _to12HrWeb(String time24) {
     if (time24.isEmpty) return '';
@@ -719,81 +753,235 @@ class StoreDetailSheet extends StatelessWidget {
 // Delivery map (web-parity: expandable sheet, store avatar pin, customer pin)
 // ═══════════════════════════════════════════════════════════════════════════
 
-class _StoreDeliveryMapPreview extends StatelessWidget {
+class _StoreDeliveryMapPreview extends StatefulWidget {
   const _StoreDeliveryMapPreview({required this.store});
 
   final Store store;
 
   @override
-  Widget build(BuildContext context) {
-    return GestureDetector(
-      onTap: () => _openExpandedMap(context),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        child: SizedBox(
-          height: 190,
-          child: Stack(
-            children: [
-              AbsorbPointer(
-                child: _StoreDeliveryMapBody(
-                  store: store,
-                  interactive: false,
-                  compact: true,
-                ),
-              ),
-              Positioned(
-                right: 10,
-                bottom: 10,
-                child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: AppColors.warmWhite.withValues(alpha: 0.94),
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                    border: Border.all(color: AppColors.glassBorder),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.map_outlined,
-                          size: 13, color: AppColors.deepRose),
-                      const SizedBox(width: 5),
-                      Text(
-                        'View delivery map',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 10.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.charcoal,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
+  State<_StoreDeliveryMapPreview> createState() =>
+      _StoreDeliveryMapPreviewState();
+}
+
+class _StoreDeliveryMapPreviewState extends State<_StoreDeliveryMapPreview> {
+  late final Future<String> _tokenFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _tokenFuture = MapboxConfig.publicToken();
   }
 
   void _openExpandedMap(BuildContext context) {
-    showModalBottomSheet(
+    showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _StoreDeliveryMapSheet(store: store),
+      builder: (_) => _StoreDeliveryMapSheet(store: widget.store),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = widget.store;
+    return FutureBuilder<String>(
+      future: _tokenFuture,
+      builder: (context, snap) {
+        final token = snap.data ?? '';
+        if (token.isEmpty) {
+          return GestureDetector(
+            onTap: () => _openExpandedMap(context),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              child: SizedBox(
+                height: 190,
+                width: double.infinity,
+                child: snap.connectionState == ConnectionState.waiting
+                    ? const ColoredBox(
+                        color: Color(0xFFF0EBE6),
+                        child: Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.deepRose,
+                            ),
+                          ),
+                        ),
+                      )
+                    : _StaticMapFallback(store: store),
+              ),
+            ),
+          );
+        }
+
+        return GestureDetector(
+          onTap: () => _openExpandedMap(context),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.lg),
+            child: SizedBox(
+              height: 190,
+              width: double.infinity,
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final w = constraints.maxWidth.round().clamp(280, 640);
+                  const h = 190;
+                  final url = _storeStaticMapUrl(
+                    store,
+                    token: token,
+                    width: w,
+                    height: h,
+                  );
+                  return Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      ColoredBox(
+                        color: const Color(0xFFF0EBE6),
+                        child: CachedNetworkImage(
+                          imageUrl: url,
+                          fit: BoxFit.cover,
+                          width: double.infinity,
+                          height: double.infinity,
+                          fadeInDuration: const Duration(milliseconds: 180),
+                          placeholder: (_, __) => const Center(
+                            child: SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: AppColors.deepRose,
+                              ),
+                            ),
+                          ),
+                          errorWidget: (_, __, ___) =>
+                              _StaticMapFallback(store: store),
+                        ),
+                      ),
+                      Center(
+                        child: Transform.translate(
+                          offset: const Offset(0, -10),
+                          child: _StoreMapPin(store: store, size: 40),
+                        ),
+                      ),
+                      Positioned(
+                        right: 10,
+                        bottom: 10,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 9, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: AppColors.warmWhite.withValues(alpha: 0.94),
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
+                            border: Border.all(color: AppColors.glassBorder),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.map_outlined,
+                                  size: 13, color: AppColors.deepRose),
+                              const SizedBox(width: 5),
+                              Text(
+                                'View delivery map',
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.charcoal,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ),
+        );
+      },
     );
   }
 }
 
-class _StoreDeliveryMapSheet extends StatelessWidget {
-  const _StoreDeliveryMapSheet({required this.store});
+/// Fallback when the static map CDN fails.
+class _StaticMapFallback extends StatelessWidget {
+  const _StaticMapFallback({required this.store});
 
   final Store store;
 
   @override
   Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFF7E8EE), Color(0xFFE8F0EA), Color(0xFFF0EBE6)],
+        ),
+      ),
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _StoreMapPin(store: store, size: 44),
+            const SizedBox(height: 8),
+            Text(
+              'Tap to open delivery map',
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: AppColors.muted,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Mapbox Static Images API — same endpoint as web store detail preview.
+String _storeStaticMapUrl(
+  Store store, {
+  required String token,
+  required int width,
+  required int height,
+}) {
+  final lat = store.latitude!;
+  final lng = store.longitude!;
+  const zoom = 12;
+  return 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/static/'
+      '$lng,$lat,$zoom/${width}x$height@2x'
+      '?access_token=$token';
+}
+
+class _StoreDeliveryMapSheet extends StatefulWidget {
+  const _StoreDeliveryMapSheet({required this.store});
+
+  final Store store;
+
+  @override
+  State<_StoreDeliveryMapSheet> createState() => _StoreDeliveryMapSheetState();
+}
+
+class _StoreDeliveryMapSheetState extends State<_StoreDeliveryMapSheet> {
+  /// Delay FlutterMap until the sheet animation finishes — mounting during
+  /// the slide cancels in-flight tiles ("Connection closed while receiving data").
+  bool _mapReadyToMount = false;
+
+  @override
+  void initState() {
+    super.initState();
+    Future<void>.delayed(const Duration(milliseconds: 320), () {
+      if (mounted) setState(() => _mapReadyToMount = true);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final store = widget.store;
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     return FractionallySizedBox(
       heightFactor: 0.9,
@@ -841,11 +1029,25 @@ class _StoreDeliveryMapSheet extends StatelessWidget {
               ),
               const Divider(height: 1, color: Color(0x296B4C3B)),
               Expanded(
-                child: _StoreDeliveryMapBody(
-                  store: store,
-                  interactive: true,
-                  compact: false,
-                ),
+                child: _mapReadyToMount
+                    ? _StoreDeliveryMapBody(
+                        store: store,
+                        interactive: true,
+                        compact: false,
+                      )
+                    : const ColoredBox(
+                        color: Color(0xFFF0EBE6),
+                        child: Center(
+                          child: SizedBox(
+                            width: 28,
+                            height: 28,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: AppColors.deepRose,
+                            ),
+                          ),
+                        ),
+                      ),
               ),
               Container(
                 width: double.infinity,
@@ -997,22 +1199,53 @@ class _StoreDeliveryMapBody extends StatefulWidget {
 
 class _StoreDeliveryMapBodyState extends State<_StoreDeliveryMapBody> {
   late final MapController _mapController;
+  late final _DeferredCloseNetworkTileProvider _tileProvider;
+  bool _didFit = false;
 
   @override
   void initState() {
     super.initState();
     _mapController = MapController();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _fitBounds());
+    _tileProvider = _DeferredCloseNetworkTileProvider();
+  }
+
+  @override
+  void didUpdateWidget(covariant _StoreDeliveryMapBody oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.store.id != widget.store.id ||
+        oldWidget.store.currentDeliveryGeojson !=
+            widget.store.currentDeliveryGeojson ||
+        oldWidget.store.deliveryRadiusKm != widget.store.deliveryRadiusKm ||
+        oldWidget.store.customerMapLocation?.latitude !=
+            widget.store.customerMapLocation?.latitude ||
+        oldWidget.store.customerMapLocation?.longitude !=
+            widget.store.customerMapLocation?.longitude) {
+      _didFit = false;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _fitBounds();
+      });
+    }
   }
 
   @override
   void dispose() {
     _mapController.dispose();
+    // TileLayer also disposes the provider — keep close idempotent there.
     super.dispose();
   }
 
   LatLng get _storePoint =>
       LatLng(widget.store.latitude!, widget.store.longitude!);
+
+  LatLng _offsetByKm(LatLng origin, double kmNorth, double kmEast) {
+    const earthKm = 6371.0;
+    final lat = origin.latitude + (kmNorth / earthKm) * (180 / math.pi);
+    final lng = origin.longitude +
+        (kmEast / earthKm) *
+            (180 / math.pi) /
+            math.cos(origin.latitude * math.pi / 180);
+    return LatLng(lat, lng);
+  }
 
   List<LatLng> get _points {
     final points = <LatLng>[_storePoint];
@@ -1023,23 +1256,41 @@ class _StoreDeliveryMapBodyState extends State<_StoreDeliveryMapBody> {
     for (final polygon in _deliveryPolygons(widget.store)) {
       points.addAll(polygon.points);
     }
+    final isRadius = widget.store.deliveryMethod == 'radius' ||
+        (widget.store.deliveryMethod == null &&
+            (widget.store.deliveryRadiusKm ?? 0) > 0);
+    final radiusKm = widget.store.deliveryRadiusKm ?? 0;
+    if (isRadius && radiusKm > 0) {
+      points.addAll([
+        _offsetByKm(_storePoint, radiusKm, 0),
+        _offsetByKm(_storePoint, -radiusKm, 0),
+        _offsetByKm(_storePoint, 0, radiusKm),
+        _offsetByKm(_storePoint, 0, -radiusKm),
+      ]);
+    }
     return points;
   }
 
   void _fitBounds() {
+    if (_didFit) return;
     final points = _points;
-    if (points.length < 2) return;
+    if (points.isEmpty) return;
     try {
-      final bounds = LatLngBounds.fromPoints(points);
-      _mapController.fitCamera(
-        CameraFit.bounds(
-          bounds: bounds,
-          padding: EdgeInsets.all(widget.compact ? 28 : 56),
-          maxZoom: 14,
-        ),
-      );
+      if (points.length == 1) {
+        _mapController.move(points.first, widget.compact ? 13.2 : 14);
+      } else {
+        final bounds = LatLngBounds.fromPoints(points);
+        _mapController.fitCamera(
+          CameraFit.bounds(
+            bounds: bounds,
+            padding: EdgeInsets.all(widget.compact ? 28 : 56),
+            maxZoom: 14,
+          ),
+        );
+      }
+      _didFit = true;
     } catch (_) {
-      // Map may not be ready yet on first frame.
+      // Map may not be ready yet.
     }
   }
 
@@ -1051,60 +1302,102 @@ class _StoreDeliveryMapBodyState extends State<_StoreDeliveryMapBody> {
     final isRadius = store.deliveryMethod == 'radius' ||
         (store.deliveryMethod == null && (store.deliveryRadiusKm ?? 0) > 0);
 
-    return FlutterMap(
-      mapController: _mapController,
-      options: MapOptions(
-        initialCenter: _storePoint,
-        initialZoom: 13,
-        interactionOptions: InteractionOptions(
-          flags: widget.interactive
-              ? InteractiveFlag.all
-              : InteractiveFlag.none,
-        ),
-        onMapReady: _fitBounds,
-      ),
-      children: [
-        TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.seanlazala.eflora',
-        ),
-        if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
-        if (isRadius && (store.deliveryRadiusKm ?? 0) > 0)
-          CircleLayer(
-            circles: [
-              CircleMarker(
-                point: _storePoint,
-                radius: store.deliveryRadiusKm! * 1000,
-                useRadiusInMeter: true,
-                color: const Color(0xFFB5445A).withValues(alpha: 0.16),
-                borderColor: const Color(0xFFB5445A).withValues(alpha: 0.85),
-                borderStrokeWidth: 2,
-              ),
-            ],
-          ),
-        MarkerLayer(
-          markers: [
-            Marker(
-              point: _storePoint,
-              width: widget.compact ? 46 : 52,
-              height: widget.compact ? 56 : 62,
-              alignment: Alignment.topCenter,
-              child: _StoreMapPin(
-                store: store,
-                size: widget.compact ? 38 : 46,
-              ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (constraints.maxWidth < 8 || constraints.maxHeight < 8) {
+          return const ColoredBox(color: Color(0xFFF0EBE6));
+        }
+        return FlutterMap(
+          mapController: _mapController,
+          options: MapOptions(
+            initialCenter: _storePoint,
+            initialZoom: 13,
+            backgroundColor: const Color(0xFFF0EBE6),
+            interactionOptions: InteractionOptions(
+              flags: widget.interactive
+                  ? InteractiveFlag.all
+                  : InteractiveFlag.none,
             ),
-            if (customer != null)
-              Marker(
-                point: LatLng(customer.latitude, customer.longitude),
-                width: 22,
-                height: 22,
-                child: const _CustomerMapPin(),
+            onMapReady: () {
+              WidgetsBinding.instance.addPostFrameCallback((_) {
+                if (mounted) _fitBounds();
+              });
+            },
+          ),
+          children: [
+            TileLayer(
+              urlTemplate:
+                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              userAgentPackageName: 'com.seanlazala.eflora',
+              maxZoom: 19,
+              keepBuffer: 2,
+              panBuffer: 1,
+              tileProvider: _tileProvider,
+              // Cancelled downloads on close/zoom are normal — don't dump stacks.
+              errorTileCallback: (tile, error, stackTrace) {},
+            ),
+            if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
+            if (isRadius && (store.deliveryRadiusKm ?? 0) > 0)
+              CircleLayer(
+                circles: [
+                  CircleMarker(
+                    point: _storePoint,
+                    radius: store.deliveryRadiusKm! * 1000,
+                    useRadiusInMeter: true,
+                    color: const Color(0xFFB5445A).withValues(alpha: 0.16),
+                    borderColor:
+                        const Color(0xFFB5445A).withValues(alpha: 0.85),
+                    borderStrokeWidth: 2,
+                  ),
+                ],
               ),
+            MarkerLayer(
+              markers: [
+                Marker(
+                  point: _storePoint,
+                  width: widget.compact ? 46 : 52,
+                  height: widget.compact ? 56 : 62,
+                  alignment: Alignment.topCenter,
+                  child: _StoreMapPin(
+                    store: store,
+                    size: widget.compact ? 38 : 46,
+                  ),
+                ),
+                if (customer != null)
+                  Marker(
+                    point: LatLng(customer.latitude, customer.longitude),
+                    width: 22,
+                    height: 22,
+                    child: const _CustomerMapPin(),
+                  ),
+              ],
+            ),
           ],
-        ),
-      ],
+        );
+      },
     );
+  }
+}
+
+/// Closes the HTTP client after a short delay so in-flight tile requests
+/// aren't aborted with noisy "Connection closed while receiving data" errors
+/// when the map sheet is dismissed.
+class _DeferredCloseNetworkTileProvider extends NetworkTileProvider {
+  _DeferredCloseNetworkTileProvider()
+      : super(httpClient: RetryClient(http.Client()));
+
+  bool _disposeScheduled = false;
+
+  @override
+  void dispose() {
+    if (_disposeScheduled) return;
+    _disposeScheduled = true;
+    final client = httpClient;
+    Future<void>.delayed(const Duration(milliseconds: 800), () {
+      try {
+        client.close();
+      } catch (_) {}
+    });
   }
 }
 

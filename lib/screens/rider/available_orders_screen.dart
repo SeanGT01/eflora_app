@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:intl/intl.dart';
 import '../../models/rider.dart';
 import '../../providers/rider_provider.dart';
+import '../../utils/datetime_ph.dart';
 import '../../theme/app_theme.dart';
 import 'order_detail_screen.dart';
 import 'rider_layout.dart';
@@ -127,9 +127,10 @@ class _AvailableOrderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final dateStr = order.createdAt != null
-        ? DateFormat('MMM dd,yyyy, h:mm a').format(order.createdAt!)
-        : '';
+    final dateStr = formatPhilippineDateTime(
+      order.createdAt,
+      'MMM dd, yyyy, h:mm a',
+    );
     final itemCount = order.items.fold<int>(0, (sum, item) => sum + item.quantity);
 
     return GestureDetector(
