@@ -5,6 +5,7 @@ import '../../models/checkout.dart';
 import '../../providers/address_provider.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 import 'add_edit_address_screen.dart';
 
@@ -19,6 +20,15 @@ class AddressListScreen extends StatelessWidget {
   });
 
   Future<void> _openAdd(BuildContext context) async {
+    final provider = context.read<AddressProvider>();
+    if (provider.addresses.length >= AddressProvider.maxAddresses) {
+      showToast(
+        context,
+        'You can save up to 3 addresses. Remove one to add another.',
+        isError: true,
+      );
+      return;
+    }
     final result = await Navigator.of(context).push<Address>(
       MaterialPageRoute(builder: (_) => const AddEditAddressScreen()),
     );
@@ -30,7 +40,6 @@ class AddressListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AppBackground(
-      showFlowers: false,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
@@ -45,121 +54,120 @@ class AddressListScreen extends StatelessWidget {
               color: AppColors.charcoal,
             ),
           ),
-          actions: [
-            Padding(
-              padding: const EdgeInsets.only(right: 16),
-              child: Center(
-                child: GradientButton(
-                  label: 'Add Address',
-                  icon: Icons.add_rounded,
-                  onPressed: () => _openAdd(context),
-                  expand: false,
-                  height: 36,
-                  horizontalPadding: 12,
-                  iconSize: 16,
-                  iconGap: 6,
-                  textStyle: GoogleFonts.dmSans(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-            ),
-          ],
         ),
         body: Consumer<AddressProvider>(
           builder: (context, addressProvider, _) {
-            return Column(
-              children: [
-                Expanded(
-                  child: RefreshIndicator(
-                    color: AppColors.deepRose,
-                    backgroundColor: AppColors.warmWhite,
-                    onRefresh: () => addressProvider.loadAddresses(),
-                    child: addressProvider.isLoading
-                        ? ListView(
-                            physics: const AlwaysScrollableScrollPhysics(),
-                            children: const [
-                              SizedBox(height: 180),
-                              Center(
-                                child: CircularProgressIndicator(
-                                  color: AppColors.deepRose,
-                                ),
-                              ),
-                            ],
-                          )
-                        : addressProvider.error != null
-                            ? _ErrorState(
-                                message: addressProvider.error!,
-                                onRetry: () => addressProvider.loadAddresses(),
-                              )
-                            : addressProvider.addresses.isEmpty
-                                ? const _EmptyState()
-                                : ListView.separated(
-                                    physics:
-                                        const AlwaysScrollableScrollPhysics(),
-                                    padding: const EdgeInsets.fromLTRB(
-                                        16, 8, 16, 16),
-                                    itemCount: addressProvider.addresses.length,
-                                    separatorBuilder: (_, __) =>
-                                        const SizedBox(height: 12),
-                                    itemBuilder: (context, index) {
-                                      final address =
-                                          addressProvider.addresses[index];
-                                      return _AddressCard(
-                                        address: address,
-                                        isCheckoutSelection:
-                                            isCheckoutSelection,
-                                        onSelect: isCheckoutSelection
-                                            ? () {
-                                                addressProvider
-                                                    .selectAddress(address);
-                                                onAddressSelected
-                                                    ?.call(address);
-                                                Navigator.of(context)
-                                                    .pop(address);
-                                              }
-                                            : null,
-                                        onEdit: () async {
-                                          await Navigator.of(context)
-                                              .push<Address>(
-                                            MaterialPageRoute(
-                                              builder: (_) =>
-                                                  AddEditAddressScreen(
-                                                address: address,
-                                              ),
-                                            ),
+            return RefreshIndicator(
+              color: AppColors.deepRose,
+              backgroundColor: AppColors.warmWhite,
+              displacement: 48,
+              onRefresh: () => addressProvider.loadAddresses(),
+              child: addressProvider.isLoading
+                  ? ListView(
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      children: const [
+                        SizedBox(height: 180),
+                        Center(
+                          child: CircularProgressIndicator(
+                            color: AppColors.deepRose,
+                          ),
+                        ),
+                      ],
+                    )
+                  : addressProvider.error != null
+                      ? _ErrorState(
+                          message: addressProvider.error!,
+                          onRetry: () => addressProvider.loadAddresses(),
+                        )
+                      : addressProvider.addresses.isEmpty
+                          ? const _EmptyState()
+                          : ListView.separated(
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              clipBehavior: Clip.none,
+                              padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+                              itemCount: addressProvider.addresses.length,
+                              separatorBuilder: (_, __) =>
+                                  const SizedBox(height: 12),
+                              itemBuilder: (context, index) {
+                                final address =
+                                    addressProvider.addresses[index];
+                                return _AddressCard(
+                                  address: address,
+                                  isCheckoutSelection: isCheckoutSelection,
+                                  onSelect: isCheckoutSelection
+                                      ? () {
+                                          addressProvider
+                                              .selectAddress(address);
+                                          onAddressSelected?.call(address);
+                                          Navigator.of(context).pop(address);
+                                        }
+                                      : null,
+                                  onEdit: () async {
+                                    await Navigator.of(context).push<Address>(
+                                      MaterialPageRoute(
+                                        builder: (_) => AddEditAddressScreen(
+                                          address: address,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  onSetDefault: address.isDefault
+                                      ? null
+                                      : () async {
+                                          await addressProvider
+                                              .setDefaultAddress(address.id!);
+                                          if (!context.mounted) return;
+                                          showToast(
+                                            context,
+                                            'Default address updated',
                                           );
                                         },
-                                        onSetDefault: address.isDefault
-                                            ? null
-                                            : () async {
-                                                await addressProvider
-                                                    .setDefaultAddress(
-                                                        address.id!);
-                                                if (!context.mounted) return;
-                                                ScaffoldMessenger.of(context)
-                                                    .showSnackBar(
-                                                  const SnackBar(
-                                                    content: Text(
-                                                        'Default address updated'),
-                                                    backgroundColor:
-                                                        AppColors.successGreen,
-                                                  ),
-                                                );
-                                              },
-                                        onDelete: () => _confirmDelete(
-                                          context,
-                                          addressProvider,
-                                          address,
-                                        ),
-                                      );
-                                    },
+                                  onDelete: () => _confirmDelete(
+                                    context,
+                                    addressProvider,
+                                    address,
                                   ),
+                                );
+                              },
+                            ),
+            );
+          },
+        ),
+        bottomNavigationBar: Consumer<AddressProvider>(
+          builder: (context, addressProvider, _) {
+            if (addressProvider.isLoading) return const SizedBox.shrink();
+            final atLimit = addressProvider.addresses.length >=
+                AddressProvider.maxAddresses;
+            return Material(
+              color: AppColors.warmWhite.withValues(alpha: 0.92),
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 10, 16, 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (atLimit)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 8),
+                          child: Text(
+                            'You can save up to ${AddressProvider.maxAddresses} addresses.',
+                            textAlign: TextAlign.center,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                        ),
+                      GradientButton(
+                        label: 'Add Address',
+                        icon: Icons.add_rounded,
+                        onPressed: atLimit ? null : () => _openAdd(context),
+                      ),
+                    ],
                   ),
                 ),
-              ],
+              ),
             );
           },
         ),
@@ -219,12 +227,7 @@ class AddressListScreen extends StatelessWidget {
     if (confirmed != true || !context.mounted) return;
     await addressProvider.deleteAddress(address.id!);
     if (!context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Address deleted'),
-        backgroundColor: AppColors.charcoal,
-      ),
-    );
+    showToast(context, 'Address deleted');
   }
 }
 
@@ -406,19 +409,14 @@ class _AddressCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final isDefault = address.isDefault;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onSelect,
-        borderRadius: BorderRadius.circular(AppRadius.lg),
-        child: GlassCard(
-          tinted: isDefault,
-          radius: AppRadius.lg,
-          padding: const EdgeInsets.fromLTRB(14, 14, 8, 14),
-          borderColor: isDefault
-              ? AppColors.glassBorderActive
-              : AppColors.glassBorder,
-          child: Row(
+    return GlassCard(
+      radius: AppRadius.lg,
+      onTap: onSelect,
+      padding: const EdgeInsets.fromLTRB(14, 14, 8, 14),
+      borderColor: isDefault
+          ? AppColors.glassBorderActive
+          : AppColors.glassBorder,
+      child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Container(
@@ -457,10 +455,7 @@ class _AddressCard extends StatelessWidget {
                         if (isDefault) ...[
                           const SizedBox(width: 8),
                           Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 8,
-                              vertical: 3,
-                            ),
+                            padding: const EdgeInsets.fromLTRB(8, 4, 8, 3),
                             decoration: BoxDecoration(
                               gradient: AppColors.badgeGradient,
                               borderRadius: BorderRadius.circular(AppRadius.pill),
@@ -469,6 +464,7 @@ class _AddressCard extends StatelessWidget {
                               'DEFAULT',
                               style: GoogleFonts.dmSans(
                                 fontSize: 9.5,
+                                height: 1.1,
                                 fontWeight: FontWeight.w800,
                                 letterSpacing: 0.6,
                                 color: Colors.white,
@@ -524,6 +520,11 @@ class _AddressCard extends StatelessWidget {
               else
                 PopupMenuButton<String>(
                   tooltip: 'More',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 36,
+                    minHeight: 36,
+                  ),
                   icon: const Icon(
                     Icons.more_vert_rounded,
                     size: 20,
@@ -569,8 +570,6 @@ class _AddressCard extends StatelessWidget {
                 ),
             ],
           ),
-        ),
-      ),
     );
   }
 

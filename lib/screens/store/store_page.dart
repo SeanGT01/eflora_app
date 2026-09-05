@@ -182,7 +182,6 @@ class _StorePageState extends State<StorePage>
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: AppBackground(
-        flowerCount: 6,
         child: NestedScrollView(
           headerSliverBuilder: (context, innerBoxIsScrolled) => [
             // ── Top actions (always pinned) ──
@@ -259,11 +258,7 @@ class _StorePageState extends State<StorePage>
     if (store.productCount != null) {
       metaParts.add('${store.productCount} products');
     }
-    if (store.deliveryRadiusKm != null) {
-      metaParts.add(
-        '${store.deliveryRadiusKm!.toStringAsFixed(0)}km delivery',
-      );
-    }
+    metaParts.add(store.deliveryCoverageChip);
     if (store.avgRating != null && store.avgRating! > 0) {
       metaParts.add('${store.avgRating!.toStringAsFixed(1)}★');
     }
@@ -1107,7 +1102,6 @@ class _StoreCategoryProductsPageState
   @override
   Widget build(BuildContext context) {
     return AppBackground(
-      flowerCount: 5,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(

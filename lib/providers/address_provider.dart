@@ -30,6 +30,10 @@ class AddressProvider extends ChangeNotifier {
   Address? get selectedAddress => _selectedAddress;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  static const int maxAddresses = 3;
+  static const String addressLimitMessage =
+      'You can save up to 3 addresses. Remove one to add another.';
+  bool get canAddAddress => _addresses.length < maxAddresses;
 
   List<String> get municipalities => _municipalities;
   List<String> get barangays => _barangays;
@@ -71,7 +75,7 @@ class AddressProvider extends ChangeNotifier {
   }
 
   /// Add a new address
-  Future<void> addAddress({
+  Future<bool> addAddress({
     required String municipality,
     required String barangay,
     required double latitude,
@@ -82,6 +86,11 @@ class AddressProvider extends ChangeNotifier {
     bool isDefault = false,
     String? placeId,
   }) async {
+    if (_addresses.length >= maxAddresses) {
+      _error = addressLimitMessage;
+      notifyListeners();
+      return false;
+    }
     final result = await _service.addAddress(
       municipality: municipality,
       barangay: barangay,
@@ -94,15 +103,17 @@ class AddressProvider extends ChangeNotifier {
       placeId: placeId,
     );
 
-    result.when(
+    return result.when(
       success: (address) {
         _error = null;
         notifyListeners();
         loadAddresses();
+        return true;
       },
       error: (message, code) {
         _error = message;
         notifyListeners();
+        return false;
       },
     );
   }

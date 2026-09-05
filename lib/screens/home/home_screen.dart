@@ -44,6 +44,7 @@ const List<List<Color>> _kCategoryTileRamps = [
   [Color(0xFF7ED4A0), Color(0xFFD4E888), Color(0xFF88D4A0)], // green
   [Color(0xFFF0B888), Color(0xFFF0A8BC), Color(0xFFF0B890)], // rose / peach
   [Color(0xFFB8A0E8), Color(0xFFA0B8F0), Color(0xFFB8A8E0)], // lavender
+  [Color(0xFFE8C48A), Color(0xFFD4B8A0), Color(0xFFE0C8A8)], // amber
 ];
 
 const Map<String, int> _kCategoryRampBySlug = {
@@ -51,6 +52,7 @@ const Map<String, int> _kCategoryRampBySlug = {
   'potted-plants': 1,
   'bouquets': 2,
   'succulents': 3,
+  'others': 4,
 };
 
 /// Same PNGs as the promotional banner / web category tiles.
@@ -60,6 +62,27 @@ const Map<String, String> _kCategoryImageBySlug = {
   'bouquets': '/static/images/category_images/bouquets.webp',
   'succulents': '/static/images/category_images/succulents.webp',
 };
+
+/// Same featured rows as the website landing page.
+const List<(String slug, String name)> _kFeaturedHomeRows = [
+  ('bouquets', 'Bouquets'),
+  ('potted-plants', 'Potted Plants'),
+  ('fresh-flowers', 'Fresh Flowers'),
+  ('succulents', 'Succulents'),
+  ('others', 'Others'),
+];
+
+class _FeaturedCategoryRow {
+  final String slug;
+  final String name;
+  final List<Product> products;
+
+  const _FeaturedCategoryRow({
+    required this.slug,
+    required this.name,
+    required this.products,
+  });
+}
 
 /// Mirrors the web `index.html` hero slides (gradients, copy, imagery).
 class _LandingHeroSlide {
@@ -167,6 +190,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   static const double _kBannerToCategories = 14;
 
   List<Product> _products = [];
+  List<_FeaturedCategoryRow> _featuredRows = [];
   List<Store> _stores = [];
   bool _loadingProducts = true;
   bool _loadingStores = true;
@@ -410,34 +434,88 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<void> _loadProducts({String? category}) async {
     setState(() => _loadingProducts = true);
     final isLoggedIn = context.read<AuthProvider>().isLoggedIn;
-    // Logged-in: only in-range shops/products unless "Browse outside" is on.
-    // Guests: show everything (API has no address to filter on).
-    final result = await ApiService.getProducts(
-      category: (category == 'all' || category == null) ? null : category,
-      includeOutsideLocation: isLoggedIn ? _browseOutsideLocation : true,
-      page: 1,
-    );
-    if (!mounted) return;
-    if (result.isSuccess) {
-      final data = result.data;
-      List<dynamic> list = [];
-      if (data is List) {
-        list = data;
-      } else if (data is Map && data['products'] is List) {
-        list = data['products'] as List;
-      }
-      setState(() {
-        _products = list
-            .map((e) => Product.fromJson(e as Map<String, dynamic>))
-            .toList();
-        _loadingProducts = false;
-      });
+    final includeOutside = isLoggedIn ? _browseOutsideLocation : true;
 
-      // Preload images after products are loaded
-      _preloadImages();
-    } else {
-      setState(() => _loadingProducts = false);
+    final fetchRows = (category == null || category == 'all')
+        ? _kFeaturedHomeRows
+        : _kFeaturedHomeRows
+            .where((row) => row.$1 == category)
+            .toList();
+    final rowsToFetch = fetchRows.isNotEmpty
+        ? fetchRows
+        : <(String, String)>[(category!, _titleFromCategorySlug(category))];
+
+    final results = await Future.wait(rowsToFetch.map((row) {
+      return ApiService.getProducts(
+        category: row.$1,
+        includeOutsideLocation: includeOutside,
+        page: 1,
+        perPage: 48,
+      );
+    }));
+    if (!mounted) return;
+
+    final rows = <_FeaturedCategoryRow>[];
+    final flat = <Product>[];
+    for (var i = 0; i < rowsToFetch.length; i++) {
+      final products = _productsFromApi(results[i]);
+      if (products.isEmpty) continue;
+      rows.add(_FeaturedCategoryRow(
+        slug: rowsToFetch[i].$1,
+        name: rowsToFetch[i].$2,
+        products: products,
+      ));
+      flat.addAll(products);
     }
+
+    setState(() {
+      _featuredRows = rows;
+      _products = flat;
+      _loadingProducts = false;
+    });
+
+    _preloadImages();
+  }
+
+  List<Product> _productsFromApi(ApiResult result) {
+    if (!result.isSuccess) return const [];
+    final data = result.data;
+    List<dynamic> list = [];
+    if (data is List) {
+      list = data;
+    } else if (data is Map && data['products'] is List) {
+      list = data['products'] as List;
+    }
+    return list
+        .whereType<Map>()
+        .map((e) => Product.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+  }
+
+  String _titleFromCategorySlug(String slug) {
+    for (final row in _kFeaturedHomeRows) {
+      if (row.$1 == slug) return row.$2;
+    }
+    return slug
+        .split('-')
+        .where((part) => part.isNotEmpty)
+        .map((part) => part[0].toUpperCase() + part.substring(1))
+        .join(' ');
+  }
+
+  void _openCategoryListing(String slug, String name) {
+    final isLoggedIn = context.read<AuthProvider>().isLoggedIn;
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => SearchScreen(
+          initialCategorySlug: slug,
+          initialCategoryName: name,
+          includeOutsideLocation:
+              isLoggedIn ? _browseOutsideLocation : true,
+        ),
+      ),
+    );
   }
 
   // Add this new method for preloading
@@ -1208,7 +1286,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 final scale = r.scale;
                 final iconSize = (56 * scale).clamp(52.0, 64.0);
                 final fontSize = (14.5 * scale).clamp(13.0, 16.5);
-                final barHeight = iconSize + 8 + (fontSize * 2.4);
+                final barHeight = iconSize + 6 + (fontSize * 1.35) + 2;
                 return SizedBox(
                   height: barHeight,
                   child: ListView.separated(
@@ -1309,29 +1387,20 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       childAspectRatio: r.productAspectRatio,
     );
     return Padding(
-      padding: EdgeInsets.fromLTRB(gutter, context.s(14), gutter, 0),
+      padding: EdgeInsets.fromLTRB(gutter, context.s(6), gutter, 0),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const GlassSectionTitle(
-            eyebrow: 'Featured',
-            title: 'Our Collection',
-          ),
-          SizedBox(height: context.s(2)),
-          Text(
-            'Handpicked blooms from local florists',
-            style: Theme.of(context).textTheme.bodySmall,
-          ),
-          SizedBox(height: context.s(8)),
           if (_loadingProducts)
             GridView.builder(
               shrinkWrap: true,
               physics: const NeverScrollableScrollPhysics(),
+              padding: EdgeInsets.zero,
               gridDelegate: gridDelegate,
               itemCount: 6,
               itemBuilder: (_, __) => const _GlassProductShimmer(),
             )
-          else if (_products.isEmpty)
+          else if (_featuredRows.isEmpty)
             _buildEmptyState(
               'No products found',
               context.watch<AuthProvider>().isLoggedIn &&
@@ -1340,24 +1409,86 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   : 'Try a different category',
             )
           else
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              gridDelegate: gridDelegate,
-              itemCount: _products.length,
-              itemBuilder: (_, i) => ProductCard(
-                product: _products[i],
-                onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          ProductDetailScreen(productId: _products[i].id),
-                    )),
-                onAddToCart: () => _addToCart(_products[i]),
-              ),
+            Column(
+              children: [
+                for (var i = 0; i < _featuredRows.length; i++) ...[
+                  if (i > 0) SizedBox(height: context.s(22)),
+                  _buildFeaturedCategoryRow(_featuredRows[i], gridDelegate),
+                ],
+              ],
             ),
         ],
       ),
+    );
+  }
+
+  Widget _buildFeaturedCategoryRow(
+    _FeaturedCategoryRow row,
+    SliverGridDelegateWithFixedCrossAxisCount gridDelegate,
+  ) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Expanded(
+              child: Text(
+                row.name,
+                style: GoogleFonts.cormorantGaramond(
+                  fontSize: context.sp(22),
+                  fontWeight: FontWeight.w500,
+                  height: 1.1,
+                  color: AppColors.charcoal,
+                ),
+              ),
+            ),
+            GestureDetector(
+              onTap: () => _openCategoryListing(row.slug, row.name),
+              child: Row(
+                children: [
+                  Text(
+                    'View all',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.1,
+                      color: AppColors.deepRose,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  const Icon(
+                    Icons.arrow_forward_rounded,
+                    size: 14,
+                    color: AppColors.deepRose,
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+        SizedBox(height: context.s(8)),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
+          gridDelegate: gridDelegate,
+          itemCount: row.products.length,
+          itemBuilder: (_, i) {
+            final product = row.products[i];
+            return ProductCard(
+              product: product,
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => ProductDetailScreen(productId: product.id),
+                ),
+              ),
+              onAddToCart: () => _addToCart(product),
+            );
+          },
+        ),
+      ],
     );
   }
 
@@ -1588,7 +1719,7 @@ class _CategoryTile extends StatelessWidget {
     // Wide enough for two-word labels like "Potted Plants" without ellipsis.
     final tileWidth = (92 * scale).clamp(84.0, 112.0);
     final fontSize = (14.5 * scale).clamp(13.0, 16.5);
-    final labelHeight = fontSize * 2.35;
+    final labelHeight = fontSize * 1.3;
 
     return GestureDetector(
       onTap: onTap,

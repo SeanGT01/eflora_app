@@ -27,16 +27,21 @@ class RiderHeadingMarker extends StatelessWidget {
   }) {
     double? heading;
 
-    if (position != null && position.speed >= 0.8) {
+    if (position != null) {
       final gpsHeading = position.heading;
+      // Use device heading when available (valid on most phones while moving).
       if (gpsHeading >= 0 && gpsHeading <= 360) {
-        heading = gpsHeading;
+        if (position.speed >= 0.35) {
+          heading = gpsHeading;
+        } else if (heading == null) {
+          heading = gpsHeading;
+        }
       }
     }
 
     if (previous != null) {
       final movedMeters = _haversineMeters(previous, current);
-      if (movedMeters >= 6) {
+      if (movedMeters >= 4) {
         final bearing = bearingBetween(previous, current);
         heading = heading == null
             ? bearing

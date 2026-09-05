@@ -353,13 +353,20 @@ class Product {
       // ════════════════════════════════════════════════════════════════════════════
       // CATEGORY FIELDS - Map from API response
       // ════════════════════════════════════════════════════════════════════════════
-      mainCategoryId: j['main_category_id'] as int?,
-      mainCategoryName: j['main_category_name'] as String?,
-      mainCategorySlug: j['main_category_slug'] as String?,
-      mainCategoryIcon: j['main_category_icon'] as String?,
-      storeCategoryId: j['store_category_id'] as int?,
-      storeCategoryName: j['store_category_name'] as String?,
-      storeCategorySlug: j['store_category_slug'] as String?,
+      mainCategoryId: j['main_category_id'] as int?
+          ?? (j['main_category'] is Map ? j['main_category']['id'] as int? : null),
+      mainCategoryName: j['main_category_name'] as String?
+          ?? (j['main_category'] is Map ? j['main_category']['name'] as String? : null),
+      mainCategorySlug: j['main_category_slug'] as String?
+          ?? (j['main_category'] is Map ? j['main_category']['slug'] as String? : null),
+      mainCategoryIcon: j['main_category_icon'] as String?
+          ?? (j['main_category'] is Map ? j['main_category']['icon'] as String? : null),
+      storeCategoryId: j['store_category_id'] as int?
+          ?? (j['store_category'] is Map ? j['store_category']['id'] as int? : null),
+      storeCategoryName: j['store_category_name'] as String?
+          ?? (j['store_category'] is Map ? j['store_category']['name'] as String? : null),
+      storeCategorySlug: j['store_category_slug'] as String?
+          ?? (j['store_category'] is Map ? j['store_category']['slug'] as String? : null),
       categoryPath: j['category_path'] as String?,                 // "Bouquets > Crochet Bouquets"
       categoryDisplay: j['category_display'] as String?,           // "Bouquets / Crochet Bouquets"
       // ════════════════════════════════════════════════════════════════════════════
@@ -478,11 +485,6 @@ class Product {
   // ════════════════════════════════════════════════════════════════════════════
   // CATEGORY HELPERS
   // ════════════════════════════════════════════════════════════════════════════
-
-  /// Get main category display name for UI
-  String get displayCategoryName {
-    return categoryDisplay ?? mainCategoryName ?? category ?? 'Uncategorized';
-  }
 
   /// Get main category name for filtering
   String? get mainCategory {

@@ -109,6 +109,58 @@ class Store {
 
   /// Best available logo URL (Cloudinary first, then legacy path)
   String? get effectiveLogoUrl => logoUrl ?? logoPath;
+
+  bool get usesRadiusDelivery =>
+      deliveryMethod == 'radius' ||
+      (deliveryMethod == null || deliveryMethod!.isEmpty);
+
+  bool get usesMunicipalityDelivery => deliveryMethod == 'municipality';
+
+  bool get usesCustomZoneDelivery => deliveryMethod == 'zone';
+
+  /// Compact stat value for store details (e.g. "15km", "6", "Custom").
+  String get deliveryCoverageStatValue {
+    if (usesCustomZoneDelivery) return 'Custom';
+    if (usesMunicipalityDelivery) {
+      final n = selectedMunicipalities.length;
+      return n > 0 ? '$n' : '—';
+    }
+    if (deliveryRadiusKm != null) {
+      return '${deliveryRadiusKm!.toStringAsFixed(0)}km';
+    }
+    return '—';
+  }
+
+  String get deliveryCoverageStatLabel {
+    if (usesMunicipalityDelivery) return 'Municipality/City coverage';
+    return 'Delivery';
+  }
+
+  /// Human-readable coverage for info rows and map subtitle.
+  String get deliveryCoverageSummary {
+    if (usesCustomZoneDelivery) return 'Custom delivery zone';
+    if (usesMunicipalityDelivery) {
+      final n = selectedMunicipalities.length;
+      return n > 0
+          ? '$n Municipality/City coverage'
+          : 'Municipality/City coverage';
+    }
+    if (deliveryRadiusKm == null) return 'Store location and delivery coverage';
+    return '${deliveryRadiusKm!.toStringAsFixed(0)} km delivery radius';
+  }
+
+  /// Short header chip, e.g. "15km delivery" / "6 Municipality/City coverage" / "Custom zone".
+  String get deliveryCoverageChip {
+    if (usesCustomZoneDelivery) return 'Custom zone';
+    if (usesMunicipalityDelivery) {
+      final n = selectedMunicipalities.length;
+      return n > 0
+          ? '$n Municipality/City coverage'
+          : 'Municipality/City coverage';
+    }
+    if (deliveryRadiusKm == null) return 'Delivery area';
+    return '${deliveryRadiusKm!.toStringAsFixed(0)}km delivery';
+  }
 }
 
 class StoreMapLocation {

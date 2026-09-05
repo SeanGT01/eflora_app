@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 import '../theme/app_theme.dart';
+import 'active_order_limit_dialog.dart';
 import 'common.dart';
 
 /// True when an API/cart error is about store delivery coverage.
@@ -180,6 +181,10 @@ Future<void> showCheckoutDeliveryUnavailableDialog(
 
 /// Routes cart/action failures: delivery coverage → dialog, otherwise toast.
 void showCartActionError(BuildContext context, String error) {
+  if (isActiveOrderLimitError(error)) {
+    showActiveOrderLimitDialog(context);
+    return;
+  }
   if (isDeliveryUnavailableError(error)) {
     showDeliveryUnavailableDialog(context, reason: error);
   } else {

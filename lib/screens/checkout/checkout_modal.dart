@@ -71,11 +71,11 @@ class _CheckoutModalState extends State<CheckoutModal> {
       child: Consumer<CheckoutProvider>(
         builder: (context, checkoutProvider, _) {
           return Dialog(
-            insetPadding: const EdgeInsets.all(16),
+            insetPadding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
             backgroundColor: Colors.transparent,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadius.xl)),
             child: SizedBox(
-              height: MediaQuery.of(context).size.height * 0.85,
+              height: MediaQuery.sizeOf(context).height * 0.82,
               child: Container(
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(AppRadius.xl),
@@ -84,7 +84,6 @@ class _CheckoutModalState extends State<CheckoutModal> {
                 ),
                 clipBehavior: Clip.antiAlias,
                 child: AppBackground(
-                  showFlowers: false,
                   child: Column(
                     children: [
                       Padding(

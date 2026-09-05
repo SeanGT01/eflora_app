@@ -222,7 +222,7 @@ class _WishlistCard extends StatelessWidget {
                           ),
                           const Spacer(),
                           Text(
-                            '₱${item.price.toStringAsFixed(item.price % 1 == 0 ? 0 : 2)}',
+                            '₱${item.price.toStringAsFixed(2)}',
                             style: GoogleFonts.dmSans(
                               fontSize: 13.5,
                               fontWeight: FontWeight.w700,
@@ -237,19 +237,16 @@ class _WishlistCard extends StatelessWidget {
               ),
             ),
             Positioned(
-              top: 8,
-              right: 8,
+              top: 6,
+              right: 6,
               child: Material(
                 color: Colors.white.withValues(alpha: 0.92),
                 shape: const CircleBorder(),
                 elevation: 1,
-                child: IconButton(
-                  tooltip: 'Remove from wishlist',
-                  iconSize: 20,
-                  padding: EdgeInsets.zero,
-                  constraints:
-                      const BoxConstraints(minWidth: 34, minHeight: 34),
-                  onPressed: () async {
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  customBorder: const CircleBorder(),
+                  onTap: () async {
                     final err = await context
                         .read<WishlistProvider>()
                         .removeItem(item.id);
@@ -260,8 +257,15 @@ class _WishlistCard extends StatelessWidget {
                       showToast(context, 'Removed from wishlist');
                     }
                   },
-                  icon: const Icon(Icons.favorite_rounded,
-                      color: Color(0xFFC0392B)),
+                  child: const SizedBox(
+                    width: 26,
+                    height: 26,
+                    child: Icon(
+                      Icons.favorite_rounded,
+                      size: 13,
+                      color: Color(0xFFC0392B),
+                    ),
+                  ),
                 ),
               ),
             ),

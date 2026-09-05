@@ -1,4 +1,6 @@
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
@@ -180,19 +182,187 @@ class RoseButton extends StatelessWidget {
   }
 }
 
-// Toast helper
+class AppToastHost extends StatefulWidget {
+  const AppToastHost({super.key, required this.child});
+
+  final Widget child;
+
+  static final GlobalKey<AppToastHostState> overlayKey =
+      GlobalKey<AppToastHostState>();
+
+  static void show(String msg, {bool isError = false}) {
+    overlayKey.currentState?.show(msg, isError: isError);
+  }
+
+  @override
+  State<AppToastHost> createState() => AppToastHostState();
+}
+
+class AppToastHostState extends State<AppToastHost> {
+  Timer? _timer;
+  String? _msg;
+  bool _isError = false;
+  int _token = 0;
+
+  void show(String msg, {bool isError = false}) {
+    _timer?.cancel();
+    setState(() {
+      _msg = msg;
+      _isError = isError;
+      _token++;
+    });
+    _timer = Timer(Duration(seconds: isError ? 4 : 3), hide);
+  }
+
+  void hide() {
+    _timer?.cancel();
+    _timer = null;
+    if (_msg == null || !mounted) return;
+    setState(() => _msg = null);
+  }
+
+  @override
+  void dispose() {
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final insets = MediaQuery.of(context);
+    final bottom = 24 + insets.viewInsets.bottom + insets.padding.bottom;
+
+    return Stack(
+      fit: StackFit.expand,
+      children: [
+        widget.child,
+        if (_msg != null)
+          Overlay(
+            key: ValueKey(_token),
+            initialEntries: [
+              OverlayEntry(
+                builder: (overlayContext) {
+                  return Stack(
+                    children: [
+                      Positioned(
+                        left: 16,
+                        right: 16,
+                        bottom: bottom,
+                        child: ToastBanner(
+                          msg: _msg!,
+                          isError: _isError,
+                          onClose: hide,
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ],
+          ),
+      ],
+    );
+  }
+}
+
+class ToastBanner extends StatelessWidget {
+  const ToastBanner({
+    super.key,
+    required this.msg,
+    required this.isError,
+    this.onClose,
+  });
+
+  final String msg;
+  final bool isError;
+  final VoidCallback? onClose;
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = isError ? AppColors.deepRose : AppColors.roseCta;
+    final icon = isError
+        ? Icons.error_outline_rounded
+        : Icons.check_circle_outline_rounded;
+    final fill = isError ? const Color(0xFFFBF4F6) : AppColors.warmWhite;
+
+    return Material(
+      color: Colors.transparent,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: fill,
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: AppColors.glassBorder, width: 1.5),
+          boxShadow: AppShadows.glassRaised,
+        ),
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          child: Row(
+            children: [
+              Container(
+                width: 36,
+                height: 36,
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.12),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(icon, size: 20, color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    msg,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 13.5,
+                      height: 1.4,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.charcoal,
+                    ),
+                  ),
+                ),
+              ),
+              InkWell(
+                onTap: onClose,
+                customBorder: const CircleBorder(),
+                child: const Padding(
+                  padding: EdgeInsets.all(10),
+                  child: Icon(
+                    Icons.close_rounded,
+                    size: 20,
+                    color: AppColors.muted,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+SnackBar themedSnackBar(String msg, {bool isError = false}) {
+  return SnackBar(
+    behavior: SnackBarBehavior.floating,
+    elevation: 0,
+    backgroundColor: Colors.transparent,
+    padding: EdgeInsets.zero,
+    margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+    duration: Duration(seconds: isError ? 4 : 3),
+    content: ToastBanner(msg: msg, isError: isError),
+  );
+}
+
 void showToast(BuildContext context, String msg, {bool isError = false}) {
+  if (AppToastHost.overlayKey.currentState != null) {
+    AppToastHost.show(msg, isError: isError);
+    return;
+  }
   final messenger = ScaffoldMessenger.maybeOf(context);
   if (messenger == null) return;
   messenger.hideCurrentSnackBar();
-  messenger.showSnackBar(
-    SnackBar(
-      behavior: SnackBarBehavior.floating,
-      content: Text(msg),
-      backgroundColor: isError ? AppColors.error : AppColors.charcoal,
-      margin: const EdgeInsets.all(16),
-    ),
-  );
+  messenger.showSnackBar(themedSnackBar(msg, isError: isError));
 }
 
 /// Friendly modal when outbound verification email / Gmail auth fails.

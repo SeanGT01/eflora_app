@@ -11,6 +11,7 @@ import '../../models/checkout.dart';
 import '../../providers/address_provider.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 
 /// Grab / Foodpanda–style address form: map-first pin, auto current location,
@@ -446,8 +447,10 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
         if (!mounted) return;
         setState(() => _isLocating = false);
         if (showErrors) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Turn on location services to use your current position')),
+          showToast(
+            context,
+            'Turn on location services to use your current position',
+            isError: true,
           );
         }
         return;
@@ -462,8 +465,10 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
         if (!mounted) return;
         setState(() => _isLocating = false);
         if (showErrors) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Location permission is required to find your position')),
+          showToast(
+            context,
+            'Location permission is required to find your position',
+            isError: true,
           );
         }
         return;
@@ -488,9 +493,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
       if (!mounted) return;
       setState(() => _isLocating = false);
       if (showErrors) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Could not get location: $e')),
-        );
+        showToast(context, 'Could not get location: $e', isError: true);
       }
     }
   }
@@ -554,16 +557,12 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
 
   Future<void> _saveAddress() async {
     if (_selectedMunicipality == null || _selectedBarangay == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select municipality and barangay')),
-      );
+      showToast(context, 'Please select municipality and barangay', isError: true);
       return;
     }
 
     if (_selectedLatitude == null || _selectedLongitude == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please pin your exact location on the map')),
-      );
+      showToast(context, 'Please pin your exact location on the map', isError: true);
       return;
     }
 
@@ -574,7 +573,17 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
 
     try {
       if (!_isEditing) {
-        await addressProvider.addAddress(
+        if (addressProvider.addresses.length >= AddressProvider.maxAddresses) {
+          if (!mounted) return;
+          setState(() => _isSaving = false);
+          showToast(
+            context,
+            AddressProvider.addressLimitMessage,
+            isError: true,
+          );
+          return;
+        }
+        final added = await addressProvider.addAddress(
           municipality: _selectedMunicipality!,
           barangay: _selectedBarangay!,
           latitude: _selectedLatitude!,
@@ -587,6 +596,16 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
           isDefault: _isDefault,
           placeId: _selectedPlaceId,
         );
+        if (!added) {
+          if (!mounted) return;
+          setState(() => _isSaving = false);
+          showToast(
+            context,
+            addressProvider.error ?? AddressProvider.addressLimitMessage,
+            isError: true,
+          );
+          return;
+        }
       } else {
         await addressProvider.updateAddress(
           widget.address!.id!,
@@ -607,11 +626,9 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
       if (!mounted) return;
       setState(() => _isSaving = false);
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(!_isEditing ? 'Address added' : 'Address updated'),
-          backgroundColor: AppColors.successGreen,
-        ),
+      showToast(
+        context,
+        !_isEditing ? 'Address added' : 'Address updated',
       );
 
       Navigator.of(context).pop(
@@ -634,9 +651,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() => _isSaving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: AppColors.error),
-      );
+      showToast(context, 'Error: $e', isError: true);
     }
   }
 
@@ -703,7 +718,6 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
         ),
       ),
       body: AppBackground(
-        showFlowers: false,
         child: Column(
           children: [
             // Sibling of Consumer — Provider updates must not rebuild the map.

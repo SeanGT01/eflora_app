@@ -82,7 +82,7 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
   bool _adding = false;
   bool _loadingExtras = false;
 
-  final _peso = NumberFormat('#,##0.##');
+  final _peso = NumberFormat('#,##0.00');
 
   @override
   void initState() {
@@ -619,88 +619,105 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
               color: selected
                   ? AppColors.roseCta
                   : AppColors.blush.withValues(alpha: 0.55),
-              width: selected ? 1.6 : 1.2,
+              width: 1.6,
             ),
           ),
-          child: Column(
-            children: [
-              InkWell(
-                onTap: opt.inStock ? () => _toggleOption(opt.key) : null,
-                borderRadius: BorderRadius.circular(14),
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 12, 12, 8),
-                  child: Row(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Expanded(
+                  child: InkWell(
+                    onTap: opt.inStock ? () => _toggleOption(opt.key) : null,
+                    borderRadius: BorderRadius.circular(10),
+                    child: Row(
+                      children: [
+                        _Thumb(
+                          url: opt.imageUrl,
+                          size: 52,
+                          radius: 10,
+                          fit: BoxFit.contain,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                opt.name,
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 13.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: AppColors.charcoal,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                opt.inStock
+                                    ? '${opt.stock} available'
+                                    : 'Out of stock',
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 11.5,
+                                  color: opt.inStock
+                                      ? AppColors.muted
+                                      : AppColors.error,
+                                ),
+                              ),
+                              const SizedBox(height: 4),
+                              _RatingChip(avg: rating.avg, count: rating.count),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                SizedBox(
+                  width: 92,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
                     children: [
-                      _Thumb(
-                        url: opt.imageUrl,
-                        size: 52,
-                        radius: 10,
-                        fit: BoxFit.contain,
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              opt.name,
-                              style: GoogleFonts.dmSans(
-                                fontSize: 13.5,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.charcoal,
-                              ),
-                            ),
-                            const SizedBox(height: 2),
-                            Text(
-                              opt.inStock
-                                  ? '${opt.stock} available'
-                                  : 'Out of stock',
-                              style: GoogleFonts.dmSans(
-                                fontSize: 11.5,
-                                color: opt.inStock
-                                    ? AppColors.muted
-                                    : AppColors.error,
-                              ),
-                            ),
-                            const SizedBox(height: 4),
-                            _RatingChip(avg: rating.avg, count: rating.count),
-                          ],
+                      if (onSale)
+                        Text(
+                          '₱${_peso.format(opt.regularPrice)}',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11,
+                            color: AppColors.muted,
+                            decoration: TextDecoration.lineThrough,
+                          ),
+                        ),
+                      Text(
+                        '₱${_peso.format(opt.price)}',
+                        style: GoogleFonts.cormorantGaramond(
+                          fontSize: 18,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.deepRose,
                         ),
                       ),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          if (onSale)
-                            Text(
-                              '₱${_peso.format(opt.regularPrice)}',
-                              style: GoogleFonts.dmSans(
-                                fontSize: 11,
-                                color: AppColors.muted,
-                                decoration: TextDecoration.lineThrough,
-                              ),
-                            ),
-                          Text(
-                            '₱${_peso.format(opt.price)}',
-                            style: GoogleFonts.cormorantGaramond(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.deepRose,
-                            ),
+                      const SizedBox(height: 4),
+                      Visibility(
+                        visible: selected,
+                        maintainSize: true,
+                        maintainAnimation: true,
+                        maintainState: true,
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: _InlineQty(
+                            qty: qty,
+                            max: opt.stock,
+                            compact: true,
+                            onMinus: () => _changeOptionQty(opt.key, -1),
+                            onPlus: () => _changeOptionQty(opt.key, 1),
                           ),
-                        ],
+                        ),
                       ),
                     ],
                   ),
                 ),
-              ),
-              if (selected)
-                _InlineQty(
-                  qty: qty,
-                  max: opt.stock,
-                  onMinus: () => _changeOptionQty(opt.key, -1),
-                  onPlus: () => _changeOptionQty(opt.key, 1),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
       ),
@@ -894,7 +911,11 @@ class _InlineQty extends StatelessWidget {
     );
 
     return Padding(
-      padding: EdgeInsets.only(bottom: compact ? 3 : 10, left: 2, right: 2),
+      padding: EdgeInsets.only(
+        bottom: compact ? 0 : 10,
+        left: compact ? 0 : 2,
+        right: compact ? 0 : 2,
+      ),
       child: row,
     );
   }

@@ -1,4 +1,6 @@
 
+import '../utils/datetime_ph.dart';
+
 class DeliveryPreference {
   final DateTime? date;
   final String? timeSlot; // "08:00-12:00", "12:00-15:00", "15:00-18:00"
@@ -126,6 +128,7 @@ class StoreOrderTotal {
   final String? instructions; // GCash instructions
   final List<Map<String, dynamic>>? items; // Items in this store order
   final bool allowCod;
+  final bool allowGcash;
   final bool freeDeliveryEnabled;
   final double? freeDeliveryMinimum;
   final bool freeDeliveryApplied;
@@ -144,6 +147,7 @@ class StoreOrderTotal {
     this.instructions,
     this.items,
     this.allowCod = false,
+    this.allowGcash = true,
     this.freeDeliveryEnabled = false,
     this.freeDeliveryMinimum,
     this.freeDeliveryApplied = false,
@@ -181,6 +185,7 @@ class StoreOrderTotal {
       instructions: json['instructions'] ?? json['gcash_instructions'],
       items: (json['items'] as List?)?.map((i) => i as Map<String, dynamic>).toList(),
       allowCod: json['allow_cod'] == true,
+      allowGcash: json['allow_gcash'] != false,
       freeDeliveryEnabled: json['free_delivery_enabled'] == true,
       freeDeliveryMinimum: (json['free_delivery_minimum'] as num?)?.toDouble(),
       freeDeliveryApplied: json['free_delivery_applied'] == true,
@@ -195,6 +200,9 @@ class CheckoutValidationResponse {
   final double grandTotal;
   final String? error;
   final List<String>? warnings; // Stores that can't deliver
+  final String? code;
+  final int? activeOrderCount;
+  final int? orderLimit;
 
   CheckoutValidationResponse({
     required this.success,
@@ -202,6 +210,9 @@ class CheckoutValidationResponse {
     required this.grandTotal,
     this.error,
     this.warnings,
+    this.code,
+    this.activeOrderCount,
+    this.orderLimit,
   });
 
   factory CheckoutValidationResponse.fromJson(Map<String, dynamic> json) {
@@ -215,6 +226,9 @@ class CheckoutValidationResponse {
       grandTotal: (json['grand_total'] as num?)?.toDouble() ?? 0.0,
       error: json['error'],
       warnings: List<String>.from(json['warnings'] ?? []),
+      code: json['code']?.toString(),
+      activeOrderCount: (json['active_order_count'] as num?)?.toInt(),
+      orderLimit: (json['limit'] as num?)?.toInt(),
     );
   }
 }
@@ -284,7 +298,8 @@ class Order {
       customerLongitude: (json['customer_longitude'] as num?)?.toDouble() ?? 0.0,
       paymentProofUrl: json['payment_proof_url'],
       paymentProofPublicId: json['payment_proof_public_id'],
-      createdAt: DateTime.parse(json['created_at'] ?? DateTime.now().toIso8601String()),
+      createdAt: parseBackendDateTime(json['created_at']?.toString())
+          ?? DateTime.now().toUtc(),
     );
   }
 }

@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/wishlist_provider.dart';
+import '../../services/api_service.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
@@ -99,6 +100,22 @@ class _LoggedInView extends StatelessWidget {
   final dynamic user;
   const _LoggedInView({required this.user});
 
+  Future<void> _openDeleteAccount(BuildContext context) async {
+    final deleted = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const _DeleteAccountDialog(),
+    );
+    if (deleted == true && context.mounted) {
+      context.read<AuthProvider>().logout();
+      context.read<CartProvider>().reset();
+      context.read<WishlistProvider>().reset();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Your account has been deleted.')),
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     // Prefer live AuthProvider user so avatar updates after login refresh
@@ -114,17 +131,17 @@ class _LoggedInView extends StatelessWidget {
           const SizedBox(height: 20),
           _buildMenuSection(context, 'Shopping', [
             _MenuItem(
-                icon: Icons.receipt_long_outlined,
+                icon: Icons.receipt_long_rounded,
                 label: 'My Orders',
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const OrdersScreen()))),
             _MenuItem(
-                icon: Icons.favorite_border_rounded,
+                icon: Icons.favorite_rounded,
                 label: 'Wishlist',
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const WishlistScreen()))),
             _MenuItem(
-                icon: Icons.shopping_bag_outlined,
+                icon: Icons.shopping_bag_rounded,
                 label: 'My Cart',
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const CartScreen()))),
@@ -132,31 +149,37 @@ class _LoggedInView extends StatelessWidget {
           const SizedBox(height: 12),
           _buildMenuSection(context, 'Account', [
             _MenuItem(
-                icon: Icons.person_outline,
+                icon: Icons.person_rounded,
                 label: 'Edit Profile',
                 onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
                         builder: (_) => const EditProfileScreen()))),
             _MenuItem(
-                icon: Icons.location_on_outlined,
+                icon: Icons.location_on_rounded,
                 label: 'My Addresses',
                 onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
                         builder: (_) => const AddressListScreen()))),
             _MenuItem(
-                icon: Icons.lock_outline,
+                icon: Icons.lock_rounded,
                 label: 'Change Password',
                 onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
                         builder: (_) => const ChangePasswordScreen()))),
+            if (liveUser.role == 'customer')
+              _MenuItem(
+                  icon: Icons.person_off_rounded,
+                  label: 'Delete my account',
+                  color: AppColors.error,
+                  onTap: () => _openDeleteAccount(context)),
             if (liveUser.role == 'seller')
               _MenuItem(
-                  icon: Icons.dashboard_outlined,
+                  icon: Icons.storefront_rounded,
                   label: 'Seller Dashboard',
-                  color: AppColors.sage,
+                  color: AppColors.deepSage,
                   onTap: () async {
                     final url = Uri.parse(
                         'https://eflora-system-production.up.railway.app/login');
@@ -169,26 +192,26 @@ class _LoggedInView extends StatelessWidget {
           const SizedBox(height: 12),
           _buildMenuSection(context, 'More', [
             _MenuItem(
-                icon: Icons.notifications_outlined,
+                icon: Icons.notifications_rounded,
                 label: 'Notifications',
                 onTap: () => Navigator.push(
                     context,
                     MaterialPageRoute(
                         builder: (_) => const NotificationsScreen()))),
             _MenuItem(
-                icon: Icons.help_outline,
+                icon: Icons.help_rounded,
                 label: 'Help E-FLORA',
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const HelpEfloraScreen()))),
             _MenuItem(
-                icon: Icons.info_outline,
+                icon: Icons.info_rounded,
                 label: 'About E-FLORA',
                 onTap: () => Navigator.push(context,
                     MaterialPageRoute(builder: (_) => const AboutEfloraScreen()))),
             _MenuItem(
-              icon: Icons.logout_outlined,
+              icon: Icons.logout_rounded,
               label: 'Sign Out',
-              color: const Color(0xFFc0392b),
+              color: AppColors.error,
               onTap: () async {
                 final confirm = await showDialog<bool>(
                   context: context,
@@ -306,19 +329,15 @@ class _LoggedInView extends StatelessWidget {
                       width: 36,
                       height: 36,
                       decoration: BoxDecoration(
-                        gradient: item.color == null
-                            ? LinearGradient(
-                                colors: [
-                                  AppColors.roseCta.withValues(alpha: 0.18),
-                                  AppColors.purpleEnd.withValues(alpha: 0.12),
-                                ],
-                              )
-                            : null,
-                        color: item.color?.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(AppRadius.md),
+                        color: (item.color ?? AppColors.deepRose)
+                            .withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(10),
                       ),
-                      child: Icon(item.icon,
-                          size: 18, color: item.color ?? AppColors.roseCta),
+                      child: Icon(
+                        item.icon,
+                        size: 20,
+                        color: item.color ?? AppColors.deepRose,
+                      ),
                     ),
                     title: Text(
                       item.label,
@@ -357,4 +376,117 @@ class _MenuItem {
       required this.label,
       required this.onTap,
       this.color});
+}
+
+class _DeleteAccountDialog extends StatefulWidget {
+  const _DeleteAccountDialog();
+
+  @override
+  State<_DeleteAccountDialog> createState() => _DeleteAccountDialogState();
+}
+
+class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
+  final _confirmCtrl = TextEditingController();
+  final _passwordCtrl = TextEditingController();
+  bool _submitting = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _confirmCtrl.dispose();
+    _passwordCtrl.dispose();
+    super.dispose();
+  }
+
+  bool get _ready =>
+      _confirmCtrl.text.trim().toUpperCase() == 'DELETE' &&
+      _passwordCtrl.text.isNotEmpty &&
+      !_submitting;
+
+  Future<void> _submit() async {
+    if (!_ready) return;
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    final result = await ApiService.deleteAccount(
+      password: _passwordCtrl.text,
+      confirmation: _confirmCtrl.text.trim(),
+    );
+    if (!mounted) return;
+    if (result.isSuccess) {
+      Navigator.pop(context, true);
+      return;
+    }
+    setState(() {
+      _submitting = false;
+      _error = result.errorMessage ?? 'Could not delete the account.';
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Delete your account?'),
+      content: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'This cannot be undone. You will be signed out and will not be able to log in again.',
+              style: Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 10),
+            Text(
+              '• Your name, email, phone, photo, addresses, cart, wishlist, and notifications will be removed.\n'
+              '• Completed, cancelled, and refunded orders stay in shop records with your delivery details removed.\n'
+              '• Ratings you already submitted stay, shown as a deleted customer.\n'
+              '• You cannot delete while an order is still being prepared or delivered.',
+              style: Theme.of(context).textTheme.bodySmall,
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: _confirmCtrl,
+              enabled: !_submitting,
+              textCapitalization: TextCapitalization.characters,
+              decoration: const InputDecoration(
+                labelText: 'Type DELETE to confirm',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 10),
+            TextField(
+              controller: _passwordCtrl,
+              enabled: !_submitting,
+              obscureText: true,
+              decoration: const InputDecoration(
+                labelText: 'Password',
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 10),
+              Text(_error!, style: const TextStyle(color: Color(0xFFc0392b))),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _submitting ? null : () => Navigator.pop(context, false),
+          child: const Text('Cancel'),
+        ),
+        TextButton(
+          onPressed: _ready ? _submit : null,
+          child: Text(
+            _submitting ? 'Deleting…' : 'Delete account',
+            style: TextStyle(
+              color: _ready ? const Color(0xFFc0392b) : AppColors.muted,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
 }

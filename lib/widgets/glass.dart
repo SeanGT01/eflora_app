@@ -59,20 +59,16 @@ class GlassCard extends StatelessWidget {
                 ),
               ]);
 
-    Widget content = DecoratedBox(
-      decoration: BoxDecoration(
-        color: effectiveFill,
-        borderRadius: borderRadius,
-        border: Border.all(color: borderColor ?? AppColors.glassBorder, width: 1),
-      ),
+    Widget inner = ColoredBox(
+      color: effectiveFill,
       child: Stack(
+        clipBehavior: Clip.none,
         children: [
           if (tinted && AppQuality.instance.isRich) ...[
-            Positioned.fill(
+            const Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: borderRadius,
-                  gradient: const RadialGradient(
+                  gradient: RadialGradient(
                     center: Alignment(-1, -1),
                     radius: 1.1,
                     colors: [Color(0x38FFBED2), Color(0x00FFBED2)],
@@ -81,11 +77,10 @@ class GlassCard extends StatelessWidget {
                 ),
               ),
             ),
-            Positioned.fill(
+            const Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
-                  borderRadius: borderRadius,
-                  gradient: const RadialGradient(
+                  gradient: RadialGradient(
                     center: Alignment(1, 1),
                     radius: 1.0,
                     colors: [Color(0x33D2BEF0), Color(0x00D2BEF0)],
@@ -95,40 +90,25 @@ class GlassCard extends StatelessWidget {
               ),
             ),
           ],
-          // Top highlight, standing in for the CSS inset highlight.
-          Positioned(
-            top: 0,
-            left: radius / 2,
-            right: radius / 2,
-            child: Container(height: 1, color: AppColors.glassHighlight),
-          ),
           Padding(padding: padding, child: child),
         ],
       ),
     );
 
     if (onTap != null) {
-      content = Material(
+      inner = Material(
         color: Colors.transparent,
         child: InkWell(
           onTap: onTap,
           borderRadius: borderRadius,
           splashColor: AppColors.roseCta.withOpacity(0.06),
           highlightColor: AppColors.roseCta.withOpacity(0.04),
-          child: content,
+          child: inner,
         ),
       );
     }
 
-    Widget clipped = ClipRRect(
-      borderRadius: borderRadius,
-      child: useBlur
-          ? BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
-              child: content,
-            )
-          : content,
-    );
+    final innerRadius = radius > 1 ? radius - 1 : radius;
 
     return Container(
       width: width,
@@ -137,8 +117,21 @@ class GlassCard extends StatelessWidget {
       decoration: BoxDecoration(
         borderRadius: borderRadius,
         boxShadow: effectiveShadows,
+        border: Border.all(
+          color: borderColor ?? AppColors.glassBorder,
+          width: 1,
+        ),
       ),
-      child: clipped,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(innerRadius),
+        clipBehavior: Clip.antiAlias,
+        child: useBlur
+            ? BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
+                child: inner,
+              )
+            : inner,
+      ),
     );
   }
 }

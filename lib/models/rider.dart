@@ -178,10 +178,18 @@ class RiderOrder {
       case 'done_preparing':  return 'Ready';
       case 'on_delivery':     return 'On Delivery';
       case 'delivered':       return 'Delivered';
+      case 'completed':       return 'Completed';
       case 'cancelled':       return 'Cancelled';
       default:                return status;
     }
   }
+
+  bool get isDeliveredOrCompleted =>
+      status == 'delivered' || status == 'completed';
+
+  bool get hasDeliveryProof =>
+      (deliveryProofUrl != null && deliveryProofUrl!.isNotEmpty) ||
+      (deliveryProof2Url != null && deliveryProof2Url!.isNotEmpty);
 }
 
 class RiderOrderItem {
@@ -258,6 +266,7 @@ class RiderProfile {
   final String? licensePlate;
   final bool isActive;
   final String? storeName;
+  final String? storeLogoUrl;
 
   const RiderProfile({
     required this.id,
@@ -270,10 +279,11 @@ class RiderProfile {
     this.licensePlate,
     this.isActive = true,
     this.storeName,
+    this.storeLogoUrl,
   });
 
   factory RiderProfile.fromJson(Map<String, dynamic> j) => RiderProfile(
-    id: j['id'] ?? 0,
+   id: j['id'] ?? 0,
     userId: j['user_id'] ?? 0,
     storeId: j['store_id'] ?? 0,
     fullName: j['full_name'],
@@ -283,6 +293,7 @@ class RiderProfile {
     licensePlate: j['license_plate'],
     isActive: j['is_active'] ?? true,
     storeName: j['store_name'],
+    storeLogoUrl: j['store_logo_url'],
   );
 }
 

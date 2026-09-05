@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import '../models/checkout.dart';
+import '../utils/datetime_ph.dart';
 import 'api_service.dart';
 import 'dart:developer' as developer;
 
@@ -98,6 +99,7 @@ class CheckoutService {
       instructions: order['gcash_instructions'] as String?,
       items: items,
       allowCod: order['allow_cod'] == true,
+      allowGcash: order['allow_gcash'] != false,
       freeDeliveryEnabled: order['free_delivery_enabled'] == true,
       freeDeliveryMinimum: (order['free_delivery_minimum'] as num?)?.toDouble(),
       freeDeliveryApplied: order['free_delivery_applied'] == true,
@@ -136,6 +138,22 @@ class CheckoutService {
       developer.log('Validate checkout response: ${response.statusCode} - ${response.body}');
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (data['code'] == 'active_order_limit') {
+        return ApiResult(
+          statusCode: response.statusCode,
+          error: data['error'] ?? 'You already have the maximum number of active orders.',
+          data: CheckoutValidationResponse(
+            success: false,
+            storeOrderTotals: const [],
+            grandTotal: 0,
+            error: data['error'] as String?,
+            code: 'active_order_limit',
+            activeOrderCount: (data['active_order_count'] as num?)?.toInt(),
+            orderLimit: (data['limit'] as num?)?.toInt(),
+          ),
+        );
+      }
 
       if (response.statusCode == 200) {
         // Transform backend response to CheckoutValidationResponse format
@@ -428,6 +446,7 @@ class CheckoutService {
       return ApiResult(
         statusCode: response.statusCode,
         error: data['error'] ?? 'Failed to create orders',
+        data: data,
       );
     } catch (e) {
       developer.log('Create orders error: $e', error: e);
@@ -473,6 +492,22 @@ class CheckoutService {
       developer.log('Buy Now validate response: ${response.statusCode} - ${response.body}');
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+
+      if (data['code'] == 'active_order_limit') {
+        return ApiResult(
+          statusCode: response.statusCode,
+          error: data['error'] ?? 'You already have the maximum number of active orders.',
+          data: CheckoutValidationResponse(
+            success: false,
+            storeOrderTotals: const [],
+            grandTotal: 0,
+            error: data['error'] as String?,
+            code: 'active_order_limit',
+            activeOrderCount: (data['active_order_count'] as num?)?.toInt(),
+            orderLimit: (data['limit'] as num?)?.toInt(),
+          ),
+        );
+      }
 
       if (response.statusCode == 200 && data['success'] == true) {
         // Build store order totals from orders (same as validateCheckout)
@@ -720,23 +755,9 @@ class CheckoutService {
   static String formatDeliveryDay(DateTime date) =>
       date.day.toString().padLeft(2, '0');
 
-  /// Format time slot for display (08:00-12:00 → 8:00 AM - 12:00 PM)
-  static String formatTimeSlot(String timeSlot) {
-    try {
-      final parts = timeSlot.split('-');
-      if (parts.length != 2) return timeSlot;
-
-      final startTime = DateFormat('HH:mm').parse(parts[0].trim());
-      final endTime = DateFormat('HH:mm').parse(parts[1].trim());
-
-      final start = DateFormat('h:mm a').format(startTime);
-      final end = DateFormat('h:mm a').format(endTime);
-
-      return '$start - $end';
-    } catch (e) {
-      return timeSlot;
-    }
-  }
+  /// Format time slot for display (08:00-12:00 → 8:00 AM - 12:00 PM, PH clock).
+  static String formatTimeSlot(String timeSlot) =>
+      formatDeliveryTimeSlot(timeSlot);
 
   /// Check if a time slot has already started (for today, Philippine time).
   static bool isTimeSlotPassed(String timeSlot) {

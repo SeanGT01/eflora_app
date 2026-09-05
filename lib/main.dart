@@ -16,6 +16,7 @@ import 'services/presence_service.dart';
 import 'theme/app_background.dart';
 import 'theme/app_theme.dart';
 import 'utils/responsive.dart';
+import 'widgets/common.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -63,9 +64,12 @@ class EFlowersApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: AppTheme.theme,
         builder: (context, child) {
-          return MediaQuery(
-            data: clampAppTextScaler(MediaQuery.of(context)),
-            child: child ?? const SizedBox.shrink(),
+          return AppToastHost(
+            key: AppToastHost.overlayKey,
+            child: MediaQuery(
+              data: clampAppTextScaler(MediaQuery.of(context)),
+              child: child ?? const SizedBox.shrink(),
+            ),
           );
         },
         home: const _AppRoot(),

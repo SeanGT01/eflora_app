@@ -293,7 +293,7 @@ class AuthHeroBanner extends StatelessWidget {
   }
 }
 
-/// Shared page chrome for the auth flow: cream atmosphere, drifting flowers,
+/// Shared page chrome for the auth flow: cream atmosphere,
 /// a glass back/close affordance and a centred, width-capped column.
 /// On phone widths, this becomes a bottom sheet with an optional pink hero.
 class AuthScaffold extends StatelessWidget {

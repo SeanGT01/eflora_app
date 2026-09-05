@@ -14,6 +14,7 @@ class RiderProvider extends ChangeNotifier {
   String? _error;
   Position? _currentPosition;
   Timer? _locationTimer;
+  StreamSubscription<Position>? _positionStream;
   int? _trackingOrderId;
 
   RiderDashboard? get dashboard => _dashboard;
@@ -204,16 +205,38 @@ class RiderProvider extends ChangeNotifier {
   void startLocationTracking(int orderId) {
     _trackingOrderId = orderId;
     _locationTimer?.cancel();
+    _positionStream?.cancel();
+
+    // Live GPS stream updates the in-app map as the rider moves.
+    _positionStream = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10,
+      ),
+    ).listen((pos) {
+      _currentPosition = pos;
+      notifyListeners();
+    });
+
+    // Upload to server every 15s so customers can track on their order screen.
     _locationTimer = Timer.periodic(const Duration(seconds: 15), (_) async {
-      final pos = await getCurrentLocation();
+      final pos = _currentPosition;
       if (pos != null && _trackingOrderId != null) {
-        await RiderService.postLocation(pos.latitude, pos.longitude, orderId: _trackingOrderId);
+        await RiderService.postLocation(
+          pos.latitude,
+          pos.longitude,
+          orderId: _trackingOrderId,
+        );
       }
     });
-    // Send initial location immediately
+
     getCurrentLocation().then((pos) {
       if (pos != null && _trackingOrderId != null) {
-        RiderService.postLocation(pos.latitude, pos.longitude, orderId: _trackingOrderId);
+        RiderService.postLocation(
+          pos.latitude,
+          pos.longitude,
+          orderId: _trackingOrderId,
+        );
       }
     });
   }
@@ -221,6 +244,8 @@ class RiderProvider extends ChangeNotifier {
   void stopLocationTracking() {
     _locationTimer?.cancel();
     _locationTimer = null;
+    _positionStream?.cancel();
+    _positionStream = null;
     _trackingOrderId = null;
   }
 

@@ -14,6 +14,7 @@ import '../../services/app_quality.dart';
 import '../../services/checkout_service.dart';
 import '../../services/cloudinary_service.dart';
 
+import '../../utils/datetime_ph.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/adaptive_blur.dart';
@@ -22,6 +23,7 @@ import '../../widgets/glass.dart';
 import '../../widgets/auth_required_sheet.dart';
 import '../../widgets/delivery_unavailable_dialog.dart';
 import '../../widgets/stock_issue_dialog.dart';
+import '../../widgets/active_order_limit_dialog.dart';
 import '../store/store_page.dart';
 
 /// Web `.gallery-main` / `.gallery-thumb` fill: `linear-gradient(145deg,#f8eef2,#ebe4f4)`.
@@ -337,7 +339,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       return;
     }
 
-    final labels = result['labels'] as Map<String, String>? ?? {};
     final slots = (result['slots'] as List<String>? ?? []);
     
     // Check which slots are still valid (not passed for today)
@@ -353,7 +354,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       if (isToday) {
         isPast = CheckoutService.isTimeSlotPassed(slot);
       }
-      final label = labels[slot] ?? CheckoutService.formatTimeSlot(slot);
+      final label = CheckoutService.formatTimeSlot(slot);
       timeSlotList.add({
         'value': slot,
         'label': label,
@@ -623,6 +624,13 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     if (!mounted) return;
 
     if (!stockResult.isSuccess) {
+      if (await maybeShowActiveOrderLimitDialog(
+        context,
+        message: stockResult.errorMessage,
+        data: stockResult.data,
+      )) {
+        return;
+      }
       final rawIssues = stockResult.data is Map
           ? (stockResult.data as Map)['stock_issues']
           : null;
@@ -763,7 +771,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Widget build(BuildContext context) {
     if (_loading) {
       return const AppBackground(
-        flowerCount: 8,
         child: Scaffold(
           backgroundColor: Colors.transparent,
           body: Center(child: CircularProgressIndicator(color: AppColors.roseCta)),
@@ -773,7 +780,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
     if (_product == null) {
       return AppBackground(
-        flowerCount: 8,
         child: Scaffold(
           backgroundColor: Colors.transparent,
           appBar: AppBar(
@@ -804,7 +810,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     debugPrint('   Current stock: $_currentStock');
     
     return AppBackground(
-      flowerCount: 8,
       child: Scaffold(
       backgroundColor: Colors.transparent,
       body: CustomScrollView(
@@ -1367,9 +1372,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   Widget _buildDeliveryInfoContent() {
     final store = _storeDetail;
     final sched = store?.storeSchedule;
-    final deliveryStart = sched?['delivery_start']?.toString();
-    final deliveryCutoff = sched?['delivery_cutoff']?.toString();
-    final orderCutoff = sched?['order_cutoff']?.toString();
+    final deliveryStart = formatPhilippineClock12h(sched?['delivery_start']?.toString());
+    final deliveryCutoff = formatPhilippineClock12h(sched?['delivery_cutoff']?.toString());
+    final orderCutoff = formatPhilippineClock12h(sched?['order_cutoff']?.toString());
     final radius = store?.deliveryRadiusKm ?? 5;
     final openDays = _openDays.toList()
       ..sort((a, b) {
@@ -1383,17 +1388,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         .join(', ');
 
     String sameDay;
-    if (deliveryStart != null &&
-        deliveryStart.isNotEmpty &&
-        deliveryCutoff != null &&
-        deliveryCutoff.isNotEmpty) {
+    if (deliveryStart.isNotEmpty && deliveryCutoff.isNotEmpty) {
       sameDay =
           'Same-day delivery is available from $deliveryStart to $deliveryCutoff'
-          '${daysLabel.isNotEmpty ? ' on this store’s open days ($daysLabel)' : ''}, while delivery slots remain.'
-          '${orderCutoff != null && orderCutoff.isNotEmpty ? ' Order by $orderCutoff for same-day.' : ''}';
-    } else if (orderCutoff != null && orderCutoff.isNotEmpty) {
+          '${daysLabel.isNotEmpty ? ' on this store’s open days ($daysLabel)' : ''}, while delivery slots remain (Philippine time).'
+          '${orderCutoff.isNotEmpty ? ' Order by $orderCutoff for same-day.' : ''}';
+    } else if (orderCutoff.isNotEmpty) {
       sameDay =
-          'Orders placed before $orderCutoff are eligible for same-day delivery within our service area, while delivery slots remain.';
+          'Orders placed before $orderCutoff (Philippine time) are eligible for same-day delivery within our service area, while delivery slots remain.';
     } else if (daysLabel.isNotEmpty) {
       sameDay =
           'Same-day delivery is available on this store’s open days ($daysLabel), based on remaining delivery time slots.';
@@ -1736,7 +1738,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                         ),
                         const SizedBox(height: 3),
                         Text(
-                          '₱${opt.price.toStringAsFixed(0)}',
+                          '₱${opt.price.toStringAsFixed(2)}',
                           style: GoogleFonts.cormorantGaramond(
                             fontSize: 14,
                             fontWeight: FontWeight.w600,
@@ -1852,7 +1854,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ),
                     const SizedBox(height: 3),
                     Text(
-                      '₱${product.effectivePrice.toStringAsFixed(0)}',
+                      '₱${product.effectivePrice.toStringAsFixed(2)}',
                       style: GoogleFonts.cormorantGaramond(
                         fontSize: 14,
                         fontWeight: FontWeight.w600,

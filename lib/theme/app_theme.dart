@@ -249,13 +249,19 @@ class AppTheme {
           type: BottomNavigationBarType.fixed,
         ),
         snackBarTheme: SnackBarThemeData(
-          backgroundColor: AppColors.charcoal,
-          contentTextStyle: GoogleFonts.dmSans(color: AppColors.cream, fontSize: 13.5),
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          contentTextStyle: GoogleFonts.dmSans(
+            color: AppColors.charcoal,
+            fontSize: 13.5,
+            height: 1.35,
+            fontWeight: FontWeight.w500,
+          ),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(AppRadius.pill),
+            borderRadius: BorderRadius.circular(AppRadius.lg),
           ),
           behavior: SnackBarBehavior.floating,
-          insetPadding: const EdgeInsets.all(16),
+          insetPadding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
         ),
         chipTheme: ChipThemeData(
           backgroundColor: AppColors.glassFill,

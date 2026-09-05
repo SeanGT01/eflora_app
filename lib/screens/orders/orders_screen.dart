@@ -10,6 +10,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/cancel_order_reason_sheet.dart';
 import 'order_detail_screen.dart';
@@ -218,7 +219,6 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   Widget build(BuildContext context) {
     return AppBackground(
-      flowerCount: 10,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
@@ -535,11 +535,7 @@ class _OrderTileState extends State<_OrderTile> {
     if (_buyAgainBusy) return;
     setState(() => _buyAgainBusy = true);
 
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Adding items to cart…')),
-    );
+    showToast(context, 'Adding items to cart…');
 
     try {
       final res = await ApiService.getOrder(widget.order.id);
@@ -552,10 +548,7 @@ class _OrderTileState extends State<_OrderTile> {
       }
 
       if (items.isEmpty) {
-        messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(
-          const SnackBar(content: Text('No items found in this order.')),
-        );
+        showToast(context, 'No items found in this order.', isError: true);
         return;
       }
 
@@ -584,27 +577,18 @@ class _OrderTileState extends State<_OrderTile> {
       }
 
       if (!mounted) return;
-      messenger.hideCurrentSnackBar();
       if (added > 0) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              '$added item${added == 1 ? '' : 's'} added to cart'
-              '${skipped > 0 ? ' ($skipped out of stock)' : ''}',
-            ),
-          ),
+        showToast(
+          context,
+          '$added item${added == 1 ? '' : 's'} added to cart'
+          '${skipped > 0 ? ' ($skipped out of stock)' : ''}',
         );
       } else {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('All items are out of stock.')),
-        );
+        showToast(context, 'All items are out of stock.', isError: true);
       }
     } catch (_) {
       if (!mounted) return;
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Failed to reorder. Please try again.')),
-      );
+      showToast(context, 'Failed to reorder. Please try again.', isError: true);
     } finally {
       if (mounted) setState(() => _buyAgainBusy = false);
     }
@@ -850,18 +834,17 @@ class _OrderTileState extends State<_OrderTile> {
                               padding: const EdgeInsets.symmetric(
                                   horizontal: 14, vertical: 7),
                               decoration: BoxDecoration(
-                                color: const Color(0x80C8E6D2),
-                                border:
-                                    Border.all(color: const Color(0x597A9E7E)),
+                                gradient: AppColors.brandGradient,
                                 borderRadius:
                                     BorderRadius.circular(AppRadius.pill),
+                                boxShadow: AppShadows.roseButton,
                               ),
                               child: Text(
                                 'Complete',
                                 style: GoogleFonts.dmSans(
                                   fontSize: 10.5,
                                   fontWeight: FontWeight.w700,
-                                  color: const Color(0xFF3F6B4E),
+                                  color: Colors.white,
                                 ),
                               ),
                             ),
@@ -915,9 +898,7 @@ class _OrderTileState extends State<_OrderTile> {
     );
     if (!mounted) return;
     if (res.statusCode == 200 && res.data?['success'] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order cancelled.')),
-      );
+      showToast(context, 'Order cancelled.');
       if (widget.onOrderCancelled != null) {
         await widget.onOrderCancelled!(widget.order.id);
       } else {
@@ -925,11 +906,11 @@ class _OrderTileState extends State<_OrderTile> {
       }
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(res.data?['message'] ??
-              res.data?['error'] ??
-              'Could not cancel order')),
+    showToast(
+      context,
+      (res.data?['message'] ?? res.data?['error'] ?? 'Could not cancel order')
+          .toString(),
+      isError: true,
     );
   }
 
@@ -945,17 +926,15 @@ class _OrderTileState extends State<_OrderTile> {
     final res = await ApiService.completeOrder(widget.order.id);
     if (!mounted) return;
     if (res.statusCode == 200 && res.data?['success'] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order marked as completed.')),
-      );
+      showToast(context, 'Order marked as completed.');
       await _notifyCompleted();
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(res.data?['message'] ??
-              res.data?['error'] ??
-              'Failed to complete order')),
+    showToast(
+      context,
+      (res.data?['message'] ?? res.data?['error'] ?? 'Failed to complete order')
+          .toString(),
+      isError: true,
     );
   }
 

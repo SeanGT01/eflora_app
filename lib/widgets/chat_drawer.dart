@@ -12,9 +12,11 @@ import '../providers/chat_provider.dart';
 import '../services/app_quality.dart';
 import '../services/chat_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/datetime_ph.dart';
 import '../utils/responsive.dart';
 import 'customer_default_avatar.dart';
 import 'chat_order_context_banner.dart';
+import 'common.dart';
 
 // ═══════════════════════════════════════════════════════════════════════
 // FLOATING CHAT BUTTON — AssistiveTouch-style dockable FAB
@@ -612,10 +614,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         _openConversation(convo);
         return;
       }
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Could not open rider chat for this order.')),
-      );
+      showToast(context, 'Could not open rider chat for this order.', isError: true);
       return;
     }
 
@@ -650,10 +649,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         _conversations = convos;
         _inboxLoading = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('No existing conversation with this customer yet.')),
-      );
+      showToast(context, 'No existing conversation with this customer yet.', isError: true);
       return;
     }
 
@@ -878,19 +874,13 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         _sending = false;
         if (_msgController.text.isEmpty) _msgController.text = text;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Failed to send message. Please try again.')),
-      );
+      showToast(context, 'Failed to send message. Please try again.', isError: true);
     }
   }
 
   Future<void> _pickImage() async {
     if (_pendingImages.length >= 5) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('You can attach up to 5 images at a time.')),
-      );
+      showToast(context, 'You can attach up to 5 images at a time.', isError: true);
       return;
     }
     final picked = await _picker.pickImage(
@@ -901,10 +891,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
 
   Future<void> _takePhoto() async {
     if (_pendingImages.length >= 5) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('You can attach up to 5 images at a time.')),
-      );
+      showToast(context, 'You can attach up to 5 images at a time.', isError: true);
       return;
     }
     final picked = await _picker.pickImage(
@@ -1786,9 +1773,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   void _copyMessage(ChatMessage msg) {
     if (msg.text != null && msg.text!.isNotEmpty) {
       Clipboard.setData(ClipboardData(text: msg.text!));
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('Copied to clipboard'),
-          duration: Duration(milliseconds: 1500)));
+      showToast(context, 'Copied to clipboard');
     }
   }
 
@@ -1825,13 +1810,10 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
           if (idx != -1) _messages[idx] = updated;
         });
       } else if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to delete message')),
-        );
+        showToast(context, 'Failed to delete message', isError: true);
       }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to delete message: $e')));
+      showToast(context, 'Failed to delete message: $e', isError: true);
     }
   }
 
@@ -2188,55 +2170,13 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     );
   }
 
-  String _timeAgo(String? iso) {
-    if (iso == null) return '';
-    try {
-      final d = DateTime.parse(iso);
-      final diff = DateTime.now().difference(d).inSeconds;
-      if (diff < 60) return 'now';
-      if (diff < 3600) return '${diff ~/ 60}m';
-      if (diff < 86400) return '${diff ~/ 3600}h';
-      return '${diff ~/ 86400}d';
-    } catch (_) {
-      return '';
-    }
-  }
+  String _timeAgo(String? iso) => formatRelativeFromIso(iso);
 
-  bool _differentDay(String a, String b) {
-    try {
-      final da = DateTime.parse(a);
-      final db = DateTime.parse(b);
-      return da.year != db.year || da.month != db.month || da.day != db.day;
-    } catch (_) {
-      return false;
-    }
-  }
+  bool _differentDay(String a, String b) => isDifferentPhilippineDay(a, b);
 
-  String _formatDate(String iso) {
-    try {
-      final d = DateTime.parse(iso);
-      final now = DateTime.now();
-      if (d.year == now.year && d.month == now.month && d.day == now.day)
-        return 'Today';
-      final y = now.subtract(const Duration(days: 1));
-      if (d.year == y.year && d.month == y.month && d.day == y.day)
-        return 'Yesterday';
-      return '${d.month}/${d.day}/${d.year}';
-    } catch (_) {
-      return '';
-    }
-  }
+  String _formatDate(String iso) => formatPhilippineChatDayLabel(iso);
 
-  String _formatTime(String iso) {
-    try {
-      final d = DateTime.parse(iso);
-      final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
-      final m = d.minute.toString().padLeft(2, '0');
-      return '$h:$m ${d.hour < 12 ? 'AM' : 'PM'}';
-    } catch (_) {
-      return '';
-    }
-  }
+  String _formatTime(String iso) => formatPhilippineTime12hFromIso(iso);
 }
 
 /// Animated three-dots typing indicator.

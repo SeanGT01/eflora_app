@@ -10,6 +10,7 @@ import '../../services/api_service.dart';
 import '../../services/cloudinary_service.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/chat_drawer.dart';
 import '../../widgets/cancel_order_reason_sheet.dart';
@@ -146,11 +147,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     if (_buyAgainBusy) return;
     setState(() => _buyAgainBusy = true);
 
-    final messenger = ScaffoldMessenger.of(context);
-    messenger.hideCurrentSnackBar();
-    messenger.showSnackBar(
-      const SnackBar(content: Text('Adding items to cart…')),
-    );
+    showToast(context, 'Adding items to cart…');
 
     try {
       final res = await ApiService.getOrder(_order.id);
@@ -164,10 +161,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       }
 
       if (items.isEmpty) {
-        messenger.hideCurrentSnackBar();
-        messenger.showSnackBar(
-          const SnackBar(content: Text('No items found in this order.')),
-        );
+        showToast(context, 'No items found in this order.', isError: true);
         return;
       }
 
@@ -196,27 +190,18 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       }
 
       if (!mounted) return;
-      messenger.hideCurrentSnackBar();
       if (added > 0) {
-        messenger.showSnackBar(
-          SnackBar(
-            content: Text(
-              '$added item${added == 1 ? '' : 's'} added to cart'
-              '${skipped > 0 ? ' ($skipped out of stock)' : ''}',
-            ),
-          ),
+        showToast(
+          context,
+          '$added item${added == 1 ? '' : 's'} added to cart'
+          '${skipped > 0 ? ' ($skipped out of stock)' : ''}',
         );
       } else {
-        messenger.showSnackBar(
-          const SnackBar(content: Text('All items are out of stock.')),
-        );
+        showToast(context, 'All items are out of stock.', isError: true);
       }
     } catch (_) {
       if (!mounted) return;
-      messenger.hideCurrentSnackBar();
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Failed to reorder. Please try again.')),
-      );
+      showToast(context, 'Failed to reorder. Please try again.', isError: true);
     } finally {
       if (mounted) setState(() => _buyAgainBusy = false);
     }
@@ -243,7 +228,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         : order.totalAmount;
 
     return AppBackground(
-      flowerCount: 5,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
@@ -473,6 +457,18 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
               ],
             ),
           ],
+          if (order.status == 'cancelled' &&
+              (order.cancellationReason?.trim().isNotEmpty ?? false)) ...[
+            const SizedBox(height: 10),
+            Text(
+              'Reason: ${order.cancellationReason!.trim()}',
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                height: 1.4,
+                color: AppColors.charcoal,
+              ),
+            ),
+          ],
         ],
       ),
     );
@@ -486,37 +482,6 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     required bool showRiderCard,
   }) {
     return [
-      if (order.status == 'cancelled' &&
-          (order.cancellationReason?.trim().isNotEmpty ?? false)) ...[
-        GlassCard(
-          padding: const EdgeInsets.all(14),
-          radius: AppRadius.lg,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Cancellation reason',
-                style: GoogleFonts.dmSans(
-                  fontSize: 11,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 0.6,
-                  color: AppColors.muted,
-                ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                order.cancellationReason!,
-                style: GoogleFonts.dmSans(
-                  fontSize: 13.5,
-                  height: 1.45,
-                  color: AppColors.charcoal,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-      ],
       GlassCard(
         padding: EdgeInsets.zero,
         radius: AppRadius.lg,
@@ -695,21 +660,11 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       ),
       const SizedBox(height: 18),
       if (order.status == 'delivered') ...[
-        SizedBox(
-          width: double.infinity,
+        GradientButton(
+          label: 'Mark as completed',
+          icon: Icons.check_circle_outline,
           height: 48,
-          child: OutlinedButton.icon(
-            onPressed: _markOrderAsCompleted,
-            icon: const Icon(Icons.check_circle_outline, size: 18),
-            label: const Text('Mark as completed'),
-            style: OutlinedButton.styleFrom(
-              foregroundColor: AppColors.deepSage,
-              side: const BorderSide(color: AppColors.glassBorder),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadius.pill),
-              ),
-            ),
-          ),
+          onPressed: _markOrderAsCompleted,
         ),
         const SizedBox(height: 10),
       ],
@@ -807,17 +762,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
     if (!mounted) return;
     if (res.statusCode == 200 && res.data?['success'] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order cancelled.')),
-      );
+      showToast(context, 'Order cancelled.');
       Navigator.pop(context, true);
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(res.data?['message'] ??
-              res.data?['error'] ??
-              'Could not cancel order')),
+    showToast(
+      context,
+      (res.data?['message'] ?? res.data?['error'] ?? 'Could not cancel order')
+          .toString(),
+      isError: true,
     );
   }
 
@@ -834,9 +787,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         onSubmitted: () {
           _loadExistingRatings();
           Navigator.pop(ctx);
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Thank you for your rating!')),
-          );
+          showToast(context, 'Thank you for your rating!');
         },
       ),
     );
@@ -866,19 +817,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     final res = await ApiService.completeOrder(_order.id);
     if (!mounted) return;
     if (res.statusCode == 200 && res.data?['success'] == true) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Order marked as completed.')),
-      );
+      showToast(context, 'Order marked as completed.');
       await _loadLatestOrder();
       if (!mounted) return;
       Navigator.pop(context, true);
       return;
     }
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-          content: Text(res.data?['message'] ??
-              res.data?['error'] ??
-              'Failed to complete order')),
+    showToast(
+      context,
+      (res.data?['message'] ?? res.data?['error'] ?? 'Failed to complete order')
+          .toString(),
+      isError: true,
     );
   }
 
@@ -1535,9 +1484,10 @@ class _RatingSheetState extends State<_RatingSheet> {
         setState(() => _step = 1);
       }
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(res.data?['error'] ?? 'Failed to save store rating')),
+      showToast(
+        context,
+        (res.data?['error'] ?? 'Failed to save store rating').toString(),
+        isError: true,
       );
     }
   }
@@ -1545,10 +1495,7 @@ class _RatingSheetState extends State<_RatingSheet> {
   void _skipStore() {
     if (_unratedItems.isEmpty) {
       Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('You can rate the shop later from this order.')),
-      );
+      showToast(context, 'You can rate the shop later from this order.');
       return;
     }
     setState(() => _step = 1);
@@ -1574,9 +1521,10 @@ class _RatingSheetState extends State<_RatingSheet> {
     if (res.statusCode == 200 && res.data?['success'] == true) {
       widget.onSubmitted();
     } else if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-            content: Text(res.data?['error'] ?? 'Failed to submit rating')),
+      showToast(
+        context,
+        (res.data?['error'] ?? 'Failed to submit rating').toString(),
+        isError: true,
       );
     }
   }

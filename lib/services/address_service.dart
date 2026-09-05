@@ -110,10 +110,19 @@ class AddressService {
       }
     } on DioException catch (e) {
       return ApiResult.error(
-        e.message ?? 'Failed to add address',
+        _dioErrorMessage(e, 'Failed to add address'),
         e.response?.statusCode ?? 500,
       );
     }
+  }
+
+  String _dioErrorMessage(DioException e, String fallback) {
+    final data = e.response?.data;
+    if (data is Map && data['error'] is String) {
+      final message = (data['error'] as String).trim();
+      if (message.isNotEmpty) return message;
+    }
+    return e.message ?? fallback;
   }
 
   /// Update an existing address

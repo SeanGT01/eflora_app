@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:image_picker/image_picker.dart';
@@ -12,6 +13,7 @@ import '../../services/checkout_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/checkout_summary_line.dart';
 import '../../widgets/common.dart';
+import '../../widgets/active_order_limit_dialog.dart';
 
 class CheckoutStep3 extends StatefulWidget {
   final VoidCallback onPrevious;
@@ -49,7 +51,6 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
   final Map<int, DateTime> _storeDates = {};
   final Map<int, String?> _storeTimeSlots = {};
   final Map<int, List<String>> _storeAvailableTimeSlots = {};
-  final Map<int, Map<String, String>> _storeTimeSlotLabels = {};
   final Map<int, bool> _storeTimeSlotsLoading = {};
   final Map<int, bool> _storeClosedOnDate = {};
   final Map<int, String?> _storeSlotBlockReason = {};
@@ -79,9 +80,11 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
   }
 
   String _paymentMethodFor(StoreOrderTotal storeOrder) {
-    if (storeOrder.allowCod && _storePaymentMethods[storeOrder.storeId] == 'cod') {
-      return 'cod';
-    }
+    final selected = _storePaymentMethods[storeOrder.storeId];
+    if (storeOrder.allowCod && selected == 'cod') return 'cod';
+    if (storeOrder.allowGcash && selected != 'cod') return 'gcash';
+    if (storeOrder.allowGcash) return 'gcash';
+    if (storeOrder.allowCod) return 'cod';
     return 'gcash';
   }
 
@@ -273,28 +276,16 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     final storeName = storeOrder.storeName;
     final total = storeOrder.total;
     final isCod = _isCod(storeOrder);
-    final hasImage = _storeImages.containsKey(storeId);
-    final hasDelivery = _storeDates.containsKey(storeId) && _storeTimeSlots[storeId] != null;
     final isReady = _storeIsReady(storeOrder);
-    final inProgress = hasDelivery || (!isCod && hasImage);
 
     return Container(
       margin: const EdgeInsets.only(bottom: 16),
       decoration: BoxDecoration(
-        color: isReady
-            ? AppColors.sage.withOpacity(0.07)
-            : inProgress
-                ? AppColors.roseCta.withOpacity(0.07)
-                : AppColors.glassFill,
+        color: AppColors.glassFill,
         borderRadius: BorderRadius.circular(AppRadius.lg),
         boxShadow: AppShadows.glass,
         border: Border.all(
-          color: isReady
-              ? AppColors.sage
-              : inProgress
-                  ? AppColors.roseCta
-                  : AppColors.glassBorder,
-          width: isReady ? 1.5 : 1,
+          color: isReady ? AppColors.sage.withValues(alpha: 0.55) : AppColors.glassBorder,
         ),
       ),
       child: Column(
@@ -304,16 +295,13 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
             child: Row(
               children: [
-                const Icon(Icons.storefront_outlined, size: 18, color: AppColors.labelPink),
-                const SizedBox(width: 8),
                 Expanded(
                   child: Text(
                     storeName,
                     style: GoogleFonts.dmSans(
-                      fontSize: 12,
+                      fontSize: 13,
                       fontWeight: FontWeight.w700,
-                      color: AppColors.labelPink,
-                      letterSpacing: 0.1,
+                      color: AppColors.charcoal,
                     ),
                   ),
                 ),
@@ -326,28 +314,17 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
                   ),
                 ),
                 if (isReady) ...[
-                  const SizedBox(width: 8),
-                  const Icon(Icons.check_circle, color: AppColors.deepSage, size: 20),
+                  const SizedBox(width: 6),
+                  const Icon(Icons.check_circle, color: AppColors.deepSage, size: 18),
                 ],
               ],
             ),
           ),
           if (storeOrder.items != null && (storeOrder.items as List).isNotEmpty)
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
               child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Items',
-                    style: GoogleFonts.dmSans(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.muted,
-                      letterSpacing: 0.2,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
                   ...(storeOrder.items as List).map((rawItem) {
                     return CheckoutSummaryLine.fromCheckoutItem(
                       item: Map<String, dynamic>.from(rawItem as Map),
@@ -357,19 +334,17 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
                 ],
               ),
             ),
-          // Per-store delivery date + time (web-style grid)
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
             child: _buildStoreDeliveryCard(context, storeId),
           ),
-          const Divider(height: 24, indent: 14, endIndent: 14),
           Padding(
-            padding: const EdgeInsets.fromLTRB(14, 0, 14, 0),
+            padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
             child: _buildPaymentMethodSelector(context, storeOrder),
           ),
           if (isCod)
             Padding(
-              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
               child: _buildCodInfoCard(),
             )
           else ...[
@@ -378,7 +353,7 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
               child: _buildStoreQrSection(context, storeOrder),
             ),
             Padding(
-              padding: const EdgeInsets.all(14),
+              padding: const EdgeInsets.fromLTRB(14, 12, 14, 14),
               child: _buildStoreProofUpload(context, storeId),
             ),
           ],
@@ -389,6 +364,7 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
 
   Widget _buildPaymentMethodSelector(BuildContext context, StoreOrderTotal storeOrder) {
     final method = _paymentMethodFor(storeOrder);
+    final gcashEnabled = storeOrder.allowGcash;
     final codEnabled = storeOrder.allowCod;
 
     Widget chip({
@@ -440,26 +416,33 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Text(
-          'Payment Method',
+          'Pay with',
           style: GoogleFonts.dmSans(
-            fontSize: 13,
+            fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: AppColors.charcoal,
+            color: AppColors.muted,
           ),
         ),
         const SizedBox(height: 8),
         Wrap(
-          spacing: 10,
+          spacing: 8,
           runSpacing: 8,
           children: [
-            chip(value: 'gcash', label: 'GCash', enabled: true),
-            chip(value: 'cod', label: 'Cash on Delivery', enabled: codEnabled),
+            chip(value: 'gcash', label: 'GCash', enabled: gcashEnabled),
+            chip(value: 'cod', label: 'Cash on delivery', enabled: codEnabled),
           ],
         ),
-        if (!codEnabled) ...[
-          const SizedBox(height: 8),
+        if (!gcashEnabled) ...[
+          const SizedBox(height: 6),
           Text(
-            'Cash on Delivery is currently disabled by this store.',
+            'GCash is disabled by this store.',
+            style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
+          ),
+        ],
+        if (!codEnabled) ...[
+          const SizedBox(height: 6),
+          Text(
+            'Cash on delivery is disabled by this store.',
             style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
           ),
         ],
@@ -468,37 +451,12 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
   }
 
   Widget _buildCodInfoCard() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.glassBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.payments_outlined, size: 18, color: AppColors.charcoal),
-              const SizedBox(width: 8),
-              Text(
-                'Cash on Delivery selected',
-                style: GoogleFonts.dmSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.charcoal,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'No payment receipt required. Please prepare the exact amount upon delivery.',
-            style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted, height: 1.4),
-          ),
-        ],
+    return Text(
+      'Pay the rider in cash. No receipt needed.',
+      style: GoogleFonts.dmSans(
+        fontSize: 12.5,
+        color: AppColors.muted,
+        height: 1.4,
       ),
     );
   }
@@ -514,82 +472,42 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.55),
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: AppColors.glassBorder),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                'Payment Instructions',
-                style: GoogleFonts.dmSans(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.charcoal,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                instructions,
-                style: GoogleFonts.dmSans(
-                  fontSize: 12.5,
-                  color: AppColors.charcoal,
-                  height: 1.45,
-                ),
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
         Text(
-          'GCash QR Code',
+          instructions,
           style: GoogleFonts.dmSans(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: AppColors.charcoal,
+            fontSize: 12.5,
+            color: AppColors.muted,
+            height: 1.4,
           ),
         ),
-        const SizedBox(height: 8),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.7),
-            borderRadius: BorderRadius.circular(AppRadius.md),
-            border: Border.all(color: AppColors.border),
-          ),
+        const SizedBox(height: 10),
+        Center(
           child: hasQr
-              ? Center(
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    child: Image.network(
-                      qrImages.first,
-                      width: 200,
-                      height: 200,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => _qrUnavailable(),
-                      loadingBuilder: (context, child, progress) {
-                        if (progress == null) return child;
-                        return const SizedBox(
-                          height: 200,
-                          child: Center(
-                            child: SizedBox(
-                              width: 24,
-                              height: 24,
-                              child: CircularProgressIndicator(
-                                strokeWidth: 2,
-                                color: AppColors.deepRose,
-                              ),
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(AppRadius.md),
+                  child: Image.network(
+                    qrImages.first,
+                    width: 168,
+                    height: 168,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => _qrUnavailable(),
+                    loadingBuilder: (context, child, progress) {
+                      if (progress == null) return child;
+                      return const SizedBox(
+                        height: 168,
+                        width: 168,
+                        child: Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: AppColors.deepRose,
                             ),
                           ),
-                        );
-                      },
-                    ),
+                        ),
+                      );
+                    },
                   ),
                 )
               : _qrUnavailable(),
@@ -618,123 +536,73 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     final image = _storeImages[storeId];
     final hasImage = image != null;
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.glassBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'Receipt',
-            style: GoogleFonts.dmSans(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppColors.charcoal,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'Receipt',
+          style: GoogleFonts.dmSans(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.muted,
+          ),
+        ),
+        const SizedBox(height: 8),
+        if (hasImage) ...[
+          ClipRRect(
+            borderRadius: BorderRadius.circular(AppRadius.md),
+            child: Image.file(
+              image,
+              height: 160,
+              width: double.infinity,
+              fit: BoxFit.cover,
             ),
           ),
-          const SizedBox(height: 10),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.fromLTRB(16, 18, 16, 16),
-            decoration: BoxDecoration(
-              color: Colors.white,
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.border),
-            ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.center,
-              children: [
-                if (hasImage) ...[
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(AppRadius.md),
-                    child: Image.file(
-                      image,
-                      height: 200,
-                      width: double.infinity,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  const SizedBox(height: 10),
-                  SizedBox(
-                    width: double.infinity,
-                    child: OutlinedButton(
-                      onPressed: () => setState(() {
-                        _storeImages.remove(storeId);
-                        _storeProofs.remove(storeId);
-                      }),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AppColors.charcoal,
-                        side: const BorderSide(color: AppColors.border),
-                        backgroundColor: Colors.white.withValues(alpha: 0.85),
-                        padding: const EdgeInsets.symmetric(vertical: 10),
-                        textStyle: GoogleFonts.dmSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      child: const Text('Remove Image'),
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                ] else ...[
-                  Container(
-                    width: 48,
-                    height: 48,
-                    decoration: BoxDecoration(
-                      color: AppColors.blush.withValues(alpha: 0.35),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.add_photo_alternate_outlined,
-                      size: 24,
-                      color: AppColors.deepRose,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                ],
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _showImagePickerOptions(context, storeId),
-                    icon: const Icon(
-                      Icons.image_outlined,
-                      size: 16,
-                      color: AppColors.charcoal,
-                    ),
-                    label: Text(hasImage ? 'Replace Image' : 'Choose Image'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.charcoal,
-                      side: const BorderSide(color: AppColors.border),
-                      backgroundColor: Colors.white.withValues(alpha: 0.9),
-                      padding: const EdgeInsets.symmetric(vertical: 10),
-                      textStyle: GoogleFonts.dmSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  'Select screenshot or photo of your GCash payment',
-                  textAlign: TextAlign.center,
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              TextButton(
+                onPressed: () => setState(() {
+                  _storeImages.remove(storeId);
+                  _storeProofs.remove(storeId);
+                }),
+                child: Text(
+                  'Remove',
                   style: GoogleFonts.dmSans(
-                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
                     color: AppColors.muted,
-                    height: 1.4,
                   ),
                 ),
-              ],
+              ),
+              const Spacer(),
+              TextButton(
+                onPressed: () => _showImagePickerOptions(context, storeId),
+                child: Text(
+                  'Replace',
+                  style: GoogleFonts.dmSans(
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.deepRose,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ] else
+          OutlinedButton.icon(
+            onPressed: () => _showImagePickerOptions(context, storeId),
+            icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
+            label: const Text('Upload GCash screenshot'),
+            style: OutlinedButton.styleFrom(
+              foregroundColor: AppColors.charcoal,
+              side: const BorderSide(color: AppColors.border),
+              padding: const EdgeInsets.symmetric(vertical: 12),
+              textStyle: GoogleFonts.dmSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ),
-        ],
-      ),
+      ],
     );
   }
 
@@ -870,7 +738,12 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
       if (success && mounted) {
         widget.onSuccess();
       } else {
-        if (mounted) setState(() => _isSubmitting = false);
+        if (mounted) {
+          setState(() => _isSubmitting = false);
+          if (isActiveOrderLimitError(provider.error)) {
+            await showActiveOrderLimitDialog(context);
+          }
+        }
       }
     } catch (e) {
       setState(() {
@@ -902,7 +775,6 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
       _storeTimeSlotsLoading[storeId] = false;
       if (result['success'] == true) {
         final rawSlots = List<String>.from(result['slots'] ?? []);
-        _storeTimeSlotLabels[storeId] = Map<String, String>.from(result['labels'] ?? {});
         final isOpen = result['is_open'] == true;
         final hasSchedule = result['has_schedule'] == true;
         final isToday = DateFormat('yyyy-MM-dd').format(normalizedDate) ==
@@ -956,134 +828,110 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
             CheckoutService.normalizeToPhDate(selectedDate),
           );
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(AppRadius.md),
-        border: Border.all(color: AppColors.glassBorder),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Requested Delivery',
-            style: GoogleFonts.dmSans(
-              fontSize: 13,
-              fontWeight: FontWeight.w600,
-              color: AppColors.charcoal,
-            ),
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Delivery',
+          style: GoogleFonts.dmSans(
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+            color: AppColors.muted,
           ),
-          const SizedBox(height: 10),
-          if ((_storeAvailableTimeSlots[storeId] ?? const <String>[]).isEmpty &&
-              _storeSlotBlockReason[storeId] != null &&
-              _storeTimeSlotsLoading[storeId] != true &&
-              selectedDate != null) ...[
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(10),
-              margin: const EdgeInsets.only(bottom: 10),
-              decoration: BoxDecoration(
-                color: const Color(0xFFc0392b).withValues(alpha: 0.08),
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                border: Border.all(
-                  color: const Color(0xFFc0392b).withValues(alpha: 0.2),
-                ),
+        ),
+        const SizedBox(height: 8),
+        if ((_storeAvailableTimeSlots[storeId] ?? const <String>[]).isEmpty &&
+            _storeSlotBlockReason[storeId] != null &&
+            _storeTimeSlotsLoading[storeId] != true &&
+            selectedDate != null) ...[
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Text(
+              CheckoutService.slotBlockMessage(
+                _storeSlotBlockReason[storeId],
               ),
-              child: Row(
-                children: [
-                  const Icon(Icons.cancel_outlined, color: Color(0xFFc0392b), size: 16),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      CheckoutService.slotBlockMessage(
-                        _storeSlotBlockReason[storeId],
-                      ),
-                      style: GoogleFonts.dmSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: const Color(0xFFc0392b),
-                      ),
-                    ),
-                  ),
-                ],
+              style: GoogleFonts.dmSans(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+                color: const Color(0xFFc0392b),
               ),
             ),
-          ],
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Date',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.muted,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    InkWell(
-                      onTap: () => _pickStoreDeliveryDate(context, storeId),
-                      borderRadius: BorderRadius.circular(AppRadius.md),
-                      child: Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(AppRadius.md),
-                          border: Border.all(color: AppColors.border),
-                        ),
-                        child: Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                dateLabel,
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 12,
-                                  color: selectedDate == null
-                                      ? AppColors.muted
-                                      : AppColors.charcoal,
-                                ),
-                              ),
-                            ),
-                            const Icon(
-                              Icons.calendar_today_rounded,
-                              size: 14,
-                              color: AppColors.deepRose,
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      'Time Slot',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.muted,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    _buildStoreTimeSlotDropdown(context, storeId),
-                  ],
-                ),
-              ),
-            ],
           ),
         ],
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final stacked = constraints.maxWidth < 360;
+            final dateField = _deliveryPickerField(
+              label: 'Date',
+              value: dateLabel,
+              icon: Icons.calendar_today_rounded,
+              isPlaceholder: selectedDate == null,
+              onTap: () => _pickStoreDeliveryDate(context, storeId),
+            );
+            final hoursField = _deliveryPickerField(
+              label: 'Hours',
+              value: _hoursFieldLabel(storeId),
+              icon: Icons.schedule_rounded,
+              isPlaceholder: _storeTimeSlots[storeId] == null,
+              onTap: selectedDate == null ||
+                      _storeTimeSlotsLoading[storeId] == true
+                  ? null
+                  : () => _pickStoreTimeSlot(context, storeId),
+            );
+            if (stacked) {
+              return Column(
+                children: [
+                  dateField,
+                  const SizedBox(height: 8),
+                  hoursField,
+                ],
+              );
+            }
+            return Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(flex: 4, child: dateField),
+                const SizedBox(width: 8),
+                Expanded(flex: 6, child: hoursField),
+              ],
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _deliveryPickerField({
+    required String label,
+    required String value,
+    required IconData icon,
+    required bool isPlaceholder,
+    required VoidCallback? onTap,
+  }) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(AppRadius.md),
+      child: InputDecorator(
+        decoration: InputDecoration(
+          labelText: label,
+          isDense: true,
+          contentPadding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
+          suffixIcon: Icon(icon, size: 15, color: AppColors.deepRose),
+          suffixIconConstraints: const BoxConstraints(
+            minWidth: 28,
+            minHeight: 28,
+          ),
+        ),
+        child: Text(
+          value,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: GoogleFonts.dmSans(
+            fontSize: 12.5,
+            height: 1.2,
+            color: isPlaceholder ? AppColors.muted : AppColors.charcoal,
+          ),
+        ),
       ),
     );
   }
@@ -1139,20 +987,8 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
       return;
     }
 
-    final phToday = CheckoutService.normalizeToPhDate(CheckoutService.getPhilippineTime());
-    final maxDate = phToday.add(const Duration(days: 14));
-    final current = _storeDates[storeId];
-    var initialDate = current != null
-        ? CheckoutService.normalizeToPhDate(current)
-        : phToday;
-    if (initialDate.isBefore(phToday)) initialDate = phToday;
-    if (initialDate.isAfter(maxDate)) initialDate = maxDate;
-
-    // Snap to first open day (web flatpickr enable list)
-    while (!_isStoreOpenOn(storeId, initialDate) && !initialDate.isAfter(maxDate)) {
-      initialDate = initialDate.add(const Duration(days: 1));
-    }
-    if (!_isStoreOpenOn(storeId, initialDate)) {
+    final openDates = _openDeliveryDates(storeId);
+    if (openDates.isEmpty) {
       showToast(
         context,
         'No open delivery days in the next 2 weeks.',
@@ -1161,47 +997,28 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
       return;
     }
 
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: initialDate,
-      firstDate: phToday,
-      lastDate: maxDate,
-      helpText: 'SELECT DELIVERY DATE',
-      selectableDayPredicate: (date) => _isStoreOpenOn(storeId, date),
-      builder: (context, child) {
-        return Theme(
-          data: Theme.of(context).copyWith(
-            colorScheme: const ColorScheme.light(
-              primary: AppColors.roseCta,
-              onPrimary: Colors.white,
-              onSurface: AppColors.charcoal,
-              surface: AppColors.warmWhite,
-            ),
-            datePickerTheme: DatePickerThemeData(
-              backgroundColor: AppColors.warmWhite,
-              surfaceTintColor: Colors.transparent,
-              headerBackgroundColor: AppColors.roseCta,
-              headerForegroundColor: Colors.white,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadius.lg),
-              ),
-              todayBorder: const BorderSide(color: AppColors.pinkMid, width: 1.5),
-              dayForegroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.disabled)) {
-                  return AppColors.muted.withValues(alpha: 0.45);
-                }
-                if (states.contains(WidgetState.selected)) return Colors.white;
-                return AppColors.charcoal;
-              }),
-              dayBackgroundColor: WidgetStateProperty.resolveWith((states) {
-                if (states.contains(WidgetState.selected)) return AppColors.roseCta;
-                return null;
-              }),
-            ),
-          ),
-          child: child!,
-        );
-      },
+    final current = _storeDates[storeId];
+    var initialIndex = 0;
+    if (current != null) {
+      final normalized = CheckoutService.normalizeToPhDate(current);
+      final match = openDates.indexWhere((d) =>
+          d.year == normalized.year &&
+          d.month == normalized.month &&
+          d.day == normalized.day);
+      if (match >= 0) initialIndex = match;
+    }
+
+    final picked = await _showCupertinoWheelPicker<DateTime>(
+      title: 'Delivery date',
+      itemCount: openDates.length,
+      initialIndex: initialIndex,
+      itemBuilder: (index) => Center(
+        child: Text(
+          DateFormat('EEE, MMM d').format(openDates[index]),
+          style: GoogleFonts.dmSans(fontSize: 20, color: AppColors.charcoal),
+        ),
+      ),
+      valueOf: (index) => openDates[index],
     );
 
     if (picked == null || !mounted) return;
@@ -1218,95 +1035,132 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     await _fetchTimeSlotsForStore(storeId, normalized);
   }
 
-  Widget _buildStoreTimeSlotDropdown(BuildContext context, int storeId) {
-    final selectedDate = _storeDates[storeId];
-
-    Widget fieldShell({required Widget child}) {
-      return Container(
-        width: double.infinity,
-        padding: const EdgeInsets.symmetric(horizontal: 10),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(AppRadius.md),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: child,
-      );
+  List<DateTime> _openDeliveryDates(int storeId) {
+    final phToday = CheckoutService.normalizeToPhDate(CheckoutService.getPhilippineTime());
+    final maxDate = phToday.add(const Duration(days: 14));
+    final dates = <DateTime>[];
+    for (var d = phToday; !d.isAfter(maxDate); d = d.add(const Duration(days: 1))) {
+      if (_isStoreOpenOn(storeId, d)) dates.add(d);
     }
+    return dates;
+  }
 
-    if (selectedDate == null) {
-      return fieldShell(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Text(
-            'Select date first',
-            style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
-          ),
-        ),
-      );
-    }
-
-    if (_storeTimeSlotsLoading[storeId] == true) {
-      return fieldShell(
-        child: const Padding(
-          padding: EdgeInsets.symmetric(vertical: 10),
-          child: Center(
-            child: SizedBox(
-              height: 16,
-              width: 16,
-              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.deepRose),
-            ),
-          ),
-        ),
-      );
-    }
-
+  String _hoursFieldLabel(int storeId) {
+    final selected = _storeTimeSlots[storeId];
+    if (selected != null) return CheckoutService.formatTimeSlot(selected);
+    if (_storeDates[storeId] == null) return 'Select date first';
+    if (_storeTimeSlotsLoading[storeId] == true) return 'Loading…';
+    final reason = _storeSlotBlockReason[storeId];
     if (_storeClosedOnDate[storeId] == true ||
         (_storeAvailableTimeSlots[storeId] ?? const <String>[]).isEmpty) {
-      final reason = _storeSlotBlockReason[storeId];
-      final placeholder = reason == 'no_schedule'
-          ? 'Hours not set'
-          : reason == 'closed'
-              ? '— Closed —'
-              : 'No slots';
-      return fieldShell(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          child: Text(
-            placeholder,
-            style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
-          ),
-        ),
-      );
+      if (reason == 'no_schedule') return 'Hours not set';
+      if (reason == 'closed') return 'Closed';
+      return 'No slots';
     }
+    return 'Select hours';
+  }
 
-    final slots = _storeAvailableTimeSlots[storeId] ?? <String>[];
-    final labels = _storeTimeSlotLabels[storeId] ?? {};
+  Future<void> _pickStoreTimeSlot(BuildContext context, int storeId) async {
+    final slots = _storeAvailableTimeSlots[storeId] ?? const <String>[];
+    if (slots.isEmpty) {
+      showToast(context, 'No delivery hours for this date.', isError: true);
+      return;
+    }
+    final current = _storeTimeSlots[storeId];
+    var initialIndex = current == null ? 0 : slots.indexOf(current);
+    if (initialIndex < 0) initialIndex = 0;
 
-    return fieldShell(
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          isExpanded: true,
-          value: _storeTimeSlots[storeId],
-          hint: Text(
-            'Select a time slot',
-            style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
-          ),
-          style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.charcoal),
-          items: slots.map((slot) {
-            final formattedSlot = labels[slot] ?? CheckoutService.formatTimeSlot(slot);
-            return DropdownMenuItem<String>(
-              value: slot,
-              child: Text(formattedSlot, overflow: TextOverflow.ellipsis),
-            );
-          }).toList(),
-          onChanged: (selected) {
-            if (selected != null) {
-              setState(() => _storeTimeSlots[storeId] = selected);
-            }
-          },
+    final picked = await _showCupertinoWheelPicker<String>(
+      title: 'Delivery hours',
+      itemCount: slots.length,
+      initialIndex: initialIndex,
+      itemBuilder: (index) => Center(
+        child: Text(
+          CheckoutService.formatTimeSlot(slots[index]),
+          style: GoogleFonts.dmSans(fontSize: 20, color: AppColors.charcoal),
         ),
       ),
+      valueOf: (index) => slots[index],
+    );
+    if (picked == null || !mounted) return;
+    setState(() => _storeTimeSlots[storeId] = picked);
+  }
+
+  Future<T?> _showCupertinoWheelPicker<T>({
+    required String title,
+    required int itemCount,
+    required int initialIndex,
+    required Widget Function(int index) itemBuilder,
+    required T Function(int index) valueOf,
+  }) {
+    var selected = initialIndex.clamp(0, itemCount - 1);
+    return showModalBottomSheet<T>(
+      context: context,
+      backgroundColor: AppColors.warmWhite,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+      ),
+      builder: (ctx) {
+        return SafeArea(
+          top: false,
+          child: SizedBox(
+            height: 300,
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+                  child: Row(
+                    children: [
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text(
+                          'Cancel',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 16,
+                            color: AppColors.muted,
+                          ),
+                        ),
+                      ),
+                      Expanded(
+                        child: Text(
+                          title,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.charcoal,
+                          ),
+                        ),
+                      ),
+                      CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        onPressed: () => Navigator.pop(ctx, valueOf(selected)),
+                        child: Text(
+                          'Done',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 16,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.deepRose,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: CupertinoPicker(
+                    itemExtent: 36,
+                    scrollController: FixedExtentScrollController(initialItem: selected),
+                    onSelectedItemChanged: (index) => selected = index,
+                    children: List.generate(itemCount, itemBuilder),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 

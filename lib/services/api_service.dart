@@ -137,6 +137,7 @@ class ApiService {
     required String fullName,
     required String identifier,
     required String password,
+    bool agreeTerms = false,
   }) async {
     try {
       final res = await http.post(
@@ -146,6 +147,7 @@ class ApiService {
           'full_name': fullName,
           'identifier': identifier,
           'password': password,
+          'agree_terms': agreeTerms,
         }),
       ).timeout(const Duration(seconds: 15));
       return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
@@ -347,6 +349,18 @@ class ApiService {
     }
   }
 
+  static Future<ApiResult> getFeatureFlags() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_api/auth/feature-flags'),
+        headers: await _headers(),
+      ).timeout(const Duration(seconds: 10));
+      return _parseHttp(res);
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
   static Future<ApiResult> sendProfilePhoneOtp({required String phone}) async {
     try {
       final res = await http.post(
@@ -400,6 +414,26 @@ class ApiService {
       return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
     } catch (e) {
       print('❌ ChangePassword error: $e');
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  static Future<ApiResult> deleteAccount({
+    required String password,
+    String confirmation = 'DELETE',
+  }) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_api/auth/account/delete'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({
+          'password': password,
+          'current_password': password,
+          'confirmation': confirmation,
+        }),
+      ).timeout(const Duration(seconds: 20));
+      return _parseHttp(res);
+    } catch (e) {
       return ApiResult(statusCode: 0, error: 'Network error: $e');
     }
   }

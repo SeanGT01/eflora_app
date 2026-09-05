@@ -8,6 +8,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/delivery_unavailable_dialog.dart';
+import '../../widgets/active_order_limit_dialog.dart';
 import '../address/address_list_screen.dart';
 
 class CheckoutStep1 extends StatefulWidget {
@@ -320,7 +321,15 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
 
     final error = provider.error ?? 'Validation failed';
     final warnings = provider.validationResponse?.warnings;
-    if (isDeliveryUnavailableError(error) ||
+    if (isActiveOrderLimitResult(
+      message: error,
+      data: provider.validationResponse,
+    )) {
+      await showActiveOrderLimitDialogFromPayload(
+        context,
+        data: provider.validationResponse,
+      );
+    } else if (isDeliveryUnavailableError(error) ||
         (warnings != null && warnings.isNotEmpty)) {
       await showCheckoutDeliveryUnavailableDialog(
         context,

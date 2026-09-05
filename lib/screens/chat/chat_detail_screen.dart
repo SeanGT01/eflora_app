@@ -12,8 +12,10 @@ import '../../providers/chat_provider.dart';
 import '../../services/app_quality.dart';
 import '../../services/chat_service.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/datetime_ph.dart';
 import '../../widgets/customer_default_avatar.dart';
 import '../../widgets/chat_order_context_banner.dart';
+import '../../widgets/common.dart';
 
 /// Instagram-style chat detail screen.
 class ChatDetailScreen extends StatefulWidget {
@@ -253,9 +255,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Future<void> _sendImage() async {
     if (_pendingImages.length >= 5) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You can attach up to 5 images at a time.')),
-      );
+      showToast(context, 'You can attach up to 5 images at a time.', isError: true);
       return;
     }
     final picked = await _picker.pickImage(source: ImageSource.gallery, maxWidth: 1200, imageQuality: 85);
@@ -265,9 +265,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   Future<void> _takePhoto() async {
     if (_pendingImages.length >= 5) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('You can attach up to 5 images at a time.')),
-      );
+      showToast(context, 'You can attach up to 5 images at a time.', isError: true);
       return;
     }
     final picked = await _picker.pickImage(source: ImageSource.camera, maxWidth: 1200, imageQuality: 85);
@@ -798,42 +796,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  bool _differentDay(String a, String b) {
-    try {
-      final da = DateTime.parse(a);
-      final db = DateTime.parse(b);
-      return da.year != db.year || da.month != db.month || da.day != db.day;
-    } catch (_) {
-      return false;
-    }
-  }
+  bool _differentDay(String a, String b) => isDifferentPhilippineDay(a, b);
 
-  String _formatDate(String iso) {
-    try {
-      // Backend already sends Philippine time, no conversion needed
-      final d = DateTime.parse(iso);
-      final now = DateTime.now();
-      if (d.year == now.year && d.month == now.month && d.day == now.day) return 'Today';
-      final yesterday = now.subtract(const Duration(days: 1));
-      if (d.year == yesterday.year && d.month == yesterday.month && d.day == yesterday.day) return 'Yesterday';
-      return '${d.month}/${d.day}/${d.year}';
-    } catch (_) {
-      return '';
-    }
-  }
+  String _formatDate(String iso) => formatPhilippineChatDayLabel(iso);
 
-  String _formatTime(String iso) {
-    try {
-      // Backend already sends Philippine time, no conversion needed
-      final d = DateTime.parse(iso);
-      final h = d.hour % 12 == 0 ? 12 : d.hour % 12;
-      final m = d.minute.toString().padLeft(2, '0');
-      final ampm = d.hour < 12 ? 'AM' : 'PM';
-      return '$h:$m $ampm';
-    } catch (_) {
-      return '';
-    }
-  }
+  String _formatTime(String iso) => formatPhilippineTime12hFromIso(iso);
 }
 
 /// Animated three-dots typing indicator.

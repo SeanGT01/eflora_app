@@ -3,6 +3,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../config/phone_bind_flags.dart';
 import '../providers/address_provider.dart';
 import '../providers/auth_provider.dart';
 import '../screens/address/add_edit_address_screen.dart';
@@ -362,6 +363,14 @@ class _PhoneOnboardingDialogState extends State<_PhoneOnboardingDialog> {
   var _busy = false;
 
   @override
+  void initState() {
+    super.initState();
+    refreshPhoneBindFlags().then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
   void dispose() {
     _phoneCtrl.dispose();
     _otpCtrl.dispose();
@@ -381,6 +390,12 @@ class _PhoneOnboardingDialogState extends State<_PhoneOnboardingDialog> {
     setState(() => _busy = false);
     if (!res.isSuccess) {
       showToast(context, res.errorMessage ?? 'Could not send code', isError: true);
+      return;
+    }
+    if (!kRequirePhoneBindOtp) {
+      FocusManager.instance.primaryFocus?.unfocus();
+      ScaffoldMessenger.maybeOf(context)?.hideCurrentSnackBar();
+      Navigator.of(context, rootNavigator: true).pop(true);
       return;
     }
     final msg = (res.data is Map ? res.data['message'] : null)?.toString();
@@ -426,7 +441,9 @@ class _PhoneOnboardingDialogState extends State<_PhoneOnboardingDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               Text(
-                'Step 3 of 4 — riders use this number for delivery. Enter the 6-digit SMS code here (not a separate screen).',
+                kRequirePhoneBindOtp
+                    ? 'Step 3 of 4 — riders use this number for delivery. Enter the 6-digit SMS code here (not a separate screen).'
+                    : 'Step 3 of 4 — riders use this number for delivery.',
                 style: GoogleFonts.dmSans(
                   fontSize: 12.5,
                   color: AppColors.muted,
@@ -442,7 +459,7 @@ class _PhoneOnboardingDialogState extends State<_PhoneOnboardingDialog> {
                   hintText: '09171234567',
                 ),
               ),
-              if (_otpSent) ...[
+              if (kRequirePhoneBindOtp && _otpSent) ...[
                 const SizedBox(height: 12),
                 TextField(
                   controller: _otpCtrl,
@@ -461,9 +478,13 @@ class _PhoneOnboardingDialogState extends State<_PhoneOnboardingDialog> {
         actions: [
           TextButton(
             onPressed: _busy ? null : _sendCode,
-            child: Text(_otpSent ? 'Resend' : 'Send code'),
+            child: Text(
+              kRequirePhoneBindOtp
+                  ? (_otpSent ? 'Resend' : 'Send code')
+                  : 'Save number',
+            ),
           ),
-          if (_otpSent)
+          if (kRequirePhoneBindOtp && _otpSent)
             TextButton(
               onPressed: _busy ? null : _verify,
               child: const Text('Verify'),

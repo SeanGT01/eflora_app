@@ -41,6 +41,52 @@ String formatPhilippineDateTimeFromIso(String? iso, String pattern) {
   return formatPhilippineDateTime(dt, pattern);
 }
 
+DateTime philippineNow() => toPhilippineWallClock(DateTime.now().toUtc());
+
+bool isDifferentPhilippineDay(String a, String b) {
+  final da = parseBackendDateTime(a);
+  final db = parseBackendDateTime(b);
+  if (da == null || db == null) return a != b;
+  final pa = toPhilippineWallClock(da);
+  final pb = toPhilippineWallClock(db);
+  return pa.year != pb.year || pa.month != pb.month || pa.day != pb.day;
+}
+
+String formatPhilippineChatDayLabel(String? iso) {
+  final dt = parseBackendDateTime(iso);
+  if (dt == null) return '';
+  final d = toPhilippineWallClock(dt);
+  final now = philippineNow();
+  if (d.year == now.year && d.month == now.month && d.day == now.day) {
+    return 'Today';
+  }
+  final yesterday = now.subtract(const Duration(days: 1));
+  if (d.year == yesterday.year &&
+      d.month == yesterday.month &&
+      d.day == yesterday.day) {
+    return 'Yesterday';
+  }
+  return DateFormat('M/d/yyyy').format(d);
+}
+
+String formatPhilippineTime12hFromIso(String? iso) {
+  return formatPhilippineDateTimeFromIso(iso, 'h:mm a');
+}
+
+/// Relative age from a backend ISO timestamp (UTC instant).
+String formatRelativeFromIso(String? iso, {bool compactDate = false}) {
+  final dt = parseBackendDateTime(iso);
+  if (dt == null) return '';
+  final diff = DateTime.now().toUtc().difference(dt);
+  if (diff.inSeconds < 60) return 'now';
+  if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+  if (diff.inHours < 24) return '${diff.inHours}h';
+  if (compactDate && diff.inDays >= 7) {
+    return DateFormat('M/d').format(toPhilippineWallClock(dt));
+  }
+  return '${diff.inDays}d';
+}
+
 /// Calendar date from YYYY-MM-DD (no day shift — delivery date is local).
 String formatPhilippineDateOnly(String? iso) {
   if (iso == null || iso.trim().isEmpty) return '';
@@ -63,20 +109,32 @@ String formatPhilippineDateOnly(String? iso) {
   }
 }
 
-/// e.g. "08:00-12:00" → "8:00am-12:00pm"
+/// Store clock time in PH (`08:00`, `17:30`) → `8:00 AM` / `5:30 PM`.
+String formatPhilippineClock12h(String? time24) {
+  if (time24 == null) return '';
+  final raw = time24.trim();
+  if (raw.isEmpty) return '';
+  if (RegExp(r'(am|pm)', caseSensitive: false).hasMatch(raw)) return raw;
+  try {
+    final pattern = raw.split(':').length >= 3 ? 'H:mm:ss' : 'H:mm';
+    final parsed = DateFormat(pattern).parse(raw);
+    return DateFormat('h:mm a').format(parsed);
+  } catch (_) {
+    return raw;
+  }
+}
+
+/// e.g. "08:00-12:00" → "8:00 AM - 12:00 PM"
 String formatDeliveryTimeSlot(String? timeStr) {
   if (timeStr == null || timeStr.trim().isEmpty) return '';
   try {
     final parts = timeStr.split('-');
-    if (parts.length != 2) return timeStr;
+    if (parts.length != 2) return formatPhilippineClock12h(timeStr);
 
-    final startTime = DateFormat('H:mm').parse(parts[0].trim());
-    final endTime = DateFormat('H:mm').parse(parts[1].trim());
-
-    final startFormatted = DateFormat('h:mma').format(startTime).toLowerCase();
-    final endFormatted = DateFormat('h:mma').format(endTime).toLowerCase();
-
-    return '$startFormatted-$endFormatted';
+    final start = formatPhilippineClock12h(parts[0].trim());
+    final end = formatPhilippineClock12h(parts[1].trim());
+    if (start.isEmpty || end.isEmpty) return timeStr;
+    return '$start - $end';
   } catch (_) {
     return timeStr;
   }

@@ -36,28 +36,6 @@ class ProductCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   _buildImage(),
-                  if (product.category != null)
-                    Positioned(
-                      top: 8,
-                      left: 8,
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3.5),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.82),
-                          borderRadius: BorderRadius.circular(AppRadius.pill),
-                          border: Border.all(color: AppColors.glassBorder),
-                        ),
-                        child: Text(
-                          product.category!.toUpperCase(),
-                          style: GoogleFonts.dmSans(
-                            fontSize: 8.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.labelPink,
-                            letterSpacing: 0.6,
-                          ),
-                        ),
-                      ),
-                    ),
                   if (!product.hasAnySellableStock)
                     Positioned.fill(
                       child: Container(

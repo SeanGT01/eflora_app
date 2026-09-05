@@ -3,10 +3,10 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
 import '../../models/rider.dart';
 import '../../providers/rider_provider.dart';
-import '../../utils/datetime_ph.dart';
 import '../../theme/app_theme.dart';
 import 'order_detail_screen.dart';
 import 'rider_layout.dart';
+import 'rider_ui.dart';
 
 class AvailableOrdersScreen extends StatefulWidget {
   const AvailableOrdersScreen({super.key});
@@ -34,19 +34,11 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
 
     return Scaffold(
       backgroundColor: Colors.transparent,
-      appBar: AppBar(
-        title: Text(
-          'Available Orders',
-          style: GoogleFonts.cormorantGaramond(
-            fontSize: 22,
-            fontWeight: FontWeight.w600,
-            color: AppColors.charcoal,
-          ),
-        ),
-        centerTitle: true,
+      appBar: RiderPageHeader(
+        title: 'Available Orders',
         actions: [
           IconButton(
-            icon: const Icon(Icons.refresh, size: 20),
+            icon: const Icon(Icons.refresh_rounded, size: 22),
             onPressed: _refresh,
           ),
         ],
@@ -55,63 +47,27 @@ class _AvailableOrdersScreenState extends State<AvailableOrdersScreen> {
         color: AppColors.deepRose,
         onRefresh: _refresh,
         child: provider.loading && orders.isEmpty
-            ? Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const SizedBox(
-                      width: 38,
-                      height: 38,
-                      child: CircularProgressIndicator(
-                        color: AppColors.deepRose,
-                        strokeWidth: 3,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    Text(
-                      'Loading available deliveries...',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.muted,
-                      ),
-                    ),
-                  ],
-                ),
+            ? ListView(
+                children: [
+                  SizedBox(height: MediaQuery.sizeOf(context).height * 0.3),
+                  const Center(
+                    child: CircularProgressIndicator(color: AppColors.deepRose),
+                  ),
+                ],
               )
             : orders.isEmpty
                 ? ListView(
                     children: [
-                      SizedBox(height: MediaQuery.of(context).size.height * 0.25),
-                      Center(
-                        child: Column(
-                          children: [
-                            Icon(Icons.inbox_outlined,
-                                size: 56, color: AppColors.muted.withOpacity(0.3)),
-                            const SizedBox(height: 16),
-                            Text(
-                              'No available orders',
-                              style: GoogleFonts.cormorantGaramond(
-                                fontSize: 20,
-                                fontWeight: FontWeight.w500,
-                                color: AppColors.muted,
-                              ),
-                            ),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Orders ready for pickup will appear here',
-                              style: GoogleFonts.dmSans(
-                                fontSize: 13,
-                                color: AppColors.muted.withOpacity(0.7),
-                              ),
-                            ),
-                          ],
-                        ),
+                      SizedBox(height: MediaQuery.sizeOf(context).height * 0.22),
+                      const RiderEmptyState(
+                        icon: Icons.inbox_outlined,
+                        title: 'No available orders',
+                        subtitle: 'Orders ready for pickup will appear here',
                       ),
                     ],
                   )
                 : ListView.builder(
-                    padding: EdgeInsets.fromLTRB(16, 16, 16, riderShellBottomInset(context)),
+                    padding: EdgeInsets.fromLTRB(16, 8, 16, riderShellBottomInset(context)),
                     itemCount: orders.length,
                     itemBuilder: (context, index) =>
                         _AvailableOrderCard(order: orders[index]),
@@ -125,175 +81,110 @@ class _AvailableOrderCard extends StatelessWidget {
   final RiderOrder order;
   const _AvailableOrderCard({required this.order});
 
+  void _openDetail(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => OrderDetailScreen(order: order)),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final dateStr = formatPhilippineDateTime(
-      order.createdAt,
-      'MMM dd, yyyy, h:mm a',
-    );
     final itemCount = order.items.fold<int>(0, (sum, item) => sum + item.quantity);
 
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => OrderDetailScreen(order: order)),
-      ),
-      child: Container(
-        margin: const EdgeInsets.only(bottom: 12),
-        padding: const EdgeInsets.all(16),
-        decoration: BoxDecoration(
-          color: AppColors.warmWhite,
-          borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AppColors.border),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Header
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF3498db).withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                  child: const Icon(Icons.local_florist, color: Color(0xFF3498db), size: 20),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Order #${order.id}',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.charcoal,
-                        ),
-                      ),
-                      Text(
-                        dateStr,
-                        style: GoogleFonts.dmSans(
-                          fontSize: 11,
-                          color: AppColors.muted.withOpacity(0.7),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: order.statusColor.withOpacity(0.1),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    order.statusLabel,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 10,
-                      fontWeight: FontWeight.w700,
-                      color: order.statusColor,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            // Delivery info
-            _InfoRow(
-              icon: Icons.person_outline,
-              text: order.customerName ?? 'Customer',
-            ),
-            const SizedBox(height: 6),
-            _InfoRow(
-              icon: Icons.location_on_outlined,
-              text: order.deliveryAddress ?? 'No address provided',
-            ),
-            if (order.distanceFromStoreKm != null) ...[
-              const SizedBox(height: 6),
-              _InfoRow(
-                icon: Icons.straighten,
-                text: '${order.distanceFromStoreKm!.toStringAsFixed(1)} km from store',
-              ),
-            ],
-            const SizedBox(height: 14),
-            // Footer
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.cream,
-                borderRadius: BorderRadius.circular(10),
-              ),
+    return Container(
+      margin: const EdgeInsets.only(bottom: 14),
+      decoration: RiderUi.card,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+            onTap: () => _openDetail(context),
+            child: Padding(
+              padding: const EdgeInsets.all(14),
               child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        '$itemCount item${itemCount != 1 ? 's' : ''}',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 12,
-                          color: AppColors.muted,
+                  RiderOrderThumbnail(order: order, size: 64),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (order.storeName != null)
+                          Text(
+                            order.storeName!,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.dustyRose,
+                            ),
+                          ),
+                        Text(
+                          'Order #${order.id}',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 15,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.charcoal,
+                          ),
                         ),
-                      ),
-                      Text(
-                        '₱${order.totalAmount.toStringAsFixed(2)}',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.charcoal,
+                        const SizedBox(height: 8),
+                        RiderInfoLine(
+                          icon: Icons.location_on_outlined,
+                          text: order.deliveryAddress ?? 'No address provided',
                         ),
-                      ),
-                    ],
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: AppColors.deepRose,
-                      borderRadius: BorderRadius.circular(25),
-                    ),
-                    child: Text(
-                      'View Details',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                      ),
+                        if (order.distanceFromStoreKm != null) ...[
+                          const SizedBox(height: 4),
+                          RiderInfoLine(
+                            icon: Icons.straighten,
+                            text:
+                                '${order.distanceFromStoreKm!.toStringAsFixed(1)} km • $itemCount item${itemCount == 1 ? '' : 's'}',
+                          ),
+                        ],
+                      ],
                     ),
                   ),
                 ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _InfoRow extends StatelessWidget {
-  final IconData icon;
-  final String text;
-  const _InfoRow({required this.icon, required this.text});
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      children: [
-        Icon(icon, size: 16, color: AppColors.muted.withOpacity(0.6)),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            text,
-            style: GoogleFonts.dmSans(fontSize: 12.5, color: AppColors.charcoal),
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
           ),
-        ),
-      ],
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            child: Row(
+              children: [
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Delivery fee',
+                      style: GoogleFonts.dmSans(fontSize: 11, color: AppColors.muted),
+                    ),
+                    Text(
+                      '₱${order.deliveryFee.toStringAsFixed(2)}',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.charcoal,
+                      ),
+                    ),
+                  ],
+                ),
+                const Spacer(),
+                RiderStatusChip(order: order),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+            child: RiderGradientButton(
+              label: 'Accept Order',
+              icon: Icons.check_rounded,
+              onTap: () => _openDetail(context),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

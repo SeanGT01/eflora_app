@@ -1,16 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../../models/rider.dart';
 import '../../providers/rider_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../theme/app_background.dart';
 import '../../utils/datetime_ph.dart';
 import '../../widgets/common.dart';
 import '../../widgets/chat_drawer.dart';
 import '../../services/api_service.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'delivery_tracking_screen.dart' show DeliveryTrackingScreen, DeliveryProofDialog;
+import 'rider_ui.dart';
 
 class OrderDetailScreen extends StatelessWidget {
   final RiderOrder order;
@@ -41,62 +42,25 @@ class OrderDetailScreen extends StatelessWidget {
       order.requestedDeliveryTime,
     );
 
-    return Scaffold(
-      backgroundColor: AppColors.cream,
-      appBar: AppBar(
-        title: Text('Order #${order.id}'),
-        centerTitle: true,
-      ),
-      body: SingleChildScrollView(
+    return AppBackground(
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: AppColors.pageCream.withValues(alpha: 0.96),
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          title: Text(
+            'Order #${order.id}',
+            style: RiderUi.title.copyWith(fontSize: 20),
+          ),
+          centerTitle: true,
+        ),
+        body: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // ── Status Banner ──
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: order.statusColor.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(14),
-                border: Border.all(color: order.statusColor.withOpacity(0.3)),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    order.status == 'accepted' || order.status == 'done_preparing'
-                        ? Icons.local_florist
-                        : order.status == 'on_delivery'
-                            ? Icons.delivery_dining
-                            : Icons.check_circle,
-                    color: order.statusColor,
-                    size: 24,
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        order.statusLabel,
-                        style: GoogleFonts.dmSans(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: order.statusColor,
-                        ),
-                      ),
-                      if (dateStr.isNotEmpty)
-                        Text(
-                          dateStr,
-                          style: GoogleFonts.dmSans(
-                            fontSize: 11,
-                            color: AppColors.muted,
-                          ),
-                        ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
+            RiderGradientStatusBanner(order: order, subtitle: dateStr),
             const SizedBox(height: 20),
 
             // ── Customer Info ──
@@ -242,236 +206,42 @@ class OrderDetailScreen extends StatelessWidget {
             ]),
             const SizedBox(height: 24),
 
-            // ── Seller fulfillment photo (when seller marked ready) ──
-            if (order.donePreparingProofUrl != null &&
-                order.donePreparingProofUrl!.isNotEmpty) ...[
-              const _SectionTitle(title: 'Seller fulfillment'),
-              const SizedBox(height: 8),
-              _DetailCard(children: [
-                Text(
-                  'Finished product photo / Plant photo',
-                  style: GoogleFonts.dmSans(
-                    fontSize: 12,
-                    color: AppColors.muted,
-                    height: 1.35,
-                  ),
-                ),
-                const SizedBox(height: 12),
-                GestureDetector(
-                  onTap: () => _showDeliveryProofZoom(context, order.donePreparingProofUrl!),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: Container(
-                      height: 160,
-                      width: double.infinity,
-                      color: AppColors.cream,
-                      child: CachedNetworkImage(
-                        imageUrl: order.donePreparingProofUrl!,
-                        fit: BoxFit.cover,
-                        placeholder: (_, __) => const Center(
-                          child: CircularProgressIndicator(
-                            color: AppColors.deepRose,
-                          ),
-                        ),
-                        errorWidget: (_, url, error) => Container(
-                          color: AppColors.warmWhite,
-                          child: Center(
-                            child: Icon(
-                              Icons.image_not_supported_outlined,
-                              size: 32,
-                              color: AppColors.muted,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ]),
-              const SizedBox(height: 24),
-            ],
-
-            // ── Delivery Proof (if delivered) ──
-            if (order.status == 'delivered' && 
-                (order.deliveryProofUrl != null || order.deliveryProof2Url != null)) ...[
-              const _SectionTitle(title: 'Delivery Proof'),
-              const SizedBox(height: 8),
-              _DetailCard(children: [
-                Row(
-                  children: [
-                    if (order.deliveryProofUrl != null)
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _showDeliveryProofZoom(context, order.deliveryProofUrl!),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              height: 100,
-                              color: AppColors.cream,
-                              child: CachedNetworkImage(
-                                imageUrl: order.deliveryProofUrl!,
-                                fit: BoxFit.cover,
-                                placeholder: (_, __) => const Center(
-                                  child: CircularProgressIndicator(
-                                    color: AppColors.deepRose,
-                                  ),
-                                ),
-                                errorWidget: (_, url, error) => Container(
-                                  color: AppColors.warmWhite,
-                                  child: const Center(
-                                    child: Icon(Icons.image_not_supported_outlined, 
-                                      size: 24, color: AppColors.muted),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    if (order.deliveryProofUrl != null && order.deliveryProof2Url != null)
-                      const SizedBox(width: 8),
-                    if (order.deliveryProof2Url != null)
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () => _showDeliveryProofZoom(context, order.deliveryProof2Url!),
-                          child: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: Container(
-                              height: 100,
-                              color: AppColors.cream,
-                              child: CachedNetworkImage(
-                                imageUrl: order.deliveryProof2Url!,
-                                fit: BoxFit.cover,
-                                placeholder: (_, __) => const Center(
-                                  child: CircularProgressIndicator(
-                                    color: AppColors.deepRose,
-                                  ),
-                                ),
-                                errorWidget: (_, url, error) => Container(
-                                  color: AppColors.warmWhite,
-                                  child: const Center(
-                                    child: Icon(Icons.image_not_supported_outlined, 
-                                      size: 24, color: AppColors.muted),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
-              ]),
-              const SizedBox(height: 24),
-            ],
+            RiderFulfillmentPhotosSection(
+              sellerProofUrl: order.donePreparingProofUrl,
+              deliveryProofUrl:
+                  order.isDeliveredOrCompleted ? order.deliveryProofUrl : null,
+              deliveryProof2Url:
+                  order.isDeliveredOrCompleted ? order.deliveryProof2Url : null,
+              onPhotoTap: (url) => RiderPhotoZoom.show(context, url),
+            ),
 
             // ── Action Buttons ──
             if (order.status == 'accepted' || order.status == 'done_preparing')
               _AcceptButton(orderId: order.id),
-            if (order.status == 'on_delivery') ...[
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton.icon(
-                  onPressed: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => DeliveryTrackingScreen(order: order),
+            if (order.status == 'on_delivery')
+              Row(
+                children: [
+                  Expanded(
+                    child: RiderOutlineButton(
+                      label: 'Navigate',
+                      icon: Icons.navigation_rounded,
+                      onTap: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => DeliveryTrackingScreen(order: order),
+                        ),
+                      ),
                     ),
                   ),
-                  icon: const Icon(Icons.map),
-                  label: const Text('Track on Map'),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(child: _DeliveredButton(orderId: order.id)),
+                ],
               ),
-              const SizedBox(height: 12),
-              _DeliveredButton(orderId: order.id),
-            ],
             const SizedBox(height: 24),
           ],
         ),
       ),
-    );
-  }
-
-  void _showDeliveryProofZoom(BuildContext context, String imageUrl) {
-    showDialog(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.85),
-      builder: (ctx) {
-        final size = MediaQuery.sizeOf(ctx);
-        final maxW = size.width - 48;
-        final maxH = size.height * 0.82;
-        return Dialog(
-          backgroundColor: Colors.transparent,
-          insetPadding:
-              const EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-          child: Center(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(maxWidth: maxW, maxHeight: maxH),
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: maxW,
-                          maxHeight: maxH,
-                        ),
-                        child: InteractiveViewer(
-                          minScale: 1,
-                          maxScale: 4,
-                          child: CachedNetworkImage(
-                            imageUrl: imageUrl,
-                            fit: BoxFit.contain,
-                            placeholder: (_, __) => const SizedBox(
-                              width: 120,
-                              height: 120,
-                              child: Center(
-                                child: CircularProgressIndicator(
-                                  color: AppColors.deepRose,
-                                ),
-                              ),
-                            ),
-                            errorWidget: (_, __, ___) => Container(
-                              width: 200,
-                              padding: const EdgeInsets.all(24),
-                              color: Colors.black26,
-                              child: Text(
-                                'Unable to load image',
-                                style: GoogleFonts.dmSans(color: Colors.white),
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    Positioned(
-                      top: -8,
-                      right: -8,
-                      child: Material(
-                        color: Colors.white,
-                        shape: const CircleBorder(),
-                        elevation: 3,
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: () => Navigator.pop(ctx),
-                          child: const SizedBox(
-                            width: 32,
-                            height: 32,
-                            child: Icon(Icons.close_rounded, size: 18),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-        );
-      },
+      ),
     );
   }
 
@@ -762,26 +532,11 @@ class _AcceptButtonState extends State<_AcceptButton> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: _loading ? null : _accept,
-        icon: _loading
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              )
-            : const Icon(Icons.check_circle),
-        label: Text(_loading ? 'Accepting...' : 'Accept & Start Delivery'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.sage,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-        ),
-      ),
+    return RiderGradientButton(
+      label: _loading ? 'Accepting...' : 'Accept & Start Delivery',
+      icon: Icons.check_circle_rounded,
+      loading: _loading,
+      onTap: _loading ? null : _accept,
     );
   }
 }
@@ -853,26 +608,11 @@ class _DeliveredButtonState extends State<_DeliveredButton> {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: _loading ? null : _markDelivered,
-        icon: _loading
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  color: Colors.white,
-                  strokeWidth: 2,
-                ),
-              )
-            : const Icon(Icons.check_circle_outline),
-        label: Text(_loading ? 'Uploading proofs...' : 'Mark as Delivered'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.successGreen,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-        ),
-      ),
+    return RiderGradientButton(
+      label: _loading ? 'Uploading...' : 'Delivered',
+      icon: Icons.check_circle_outline,
+      loading: _loading,
+      onTap: _loading ? null : _markDelivered,
     );
   }
 }

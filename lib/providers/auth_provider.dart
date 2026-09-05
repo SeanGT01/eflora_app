@@ -116,6 +116,7 @@ class AuthProvider extends ChangeNotifier {
     required String fullName,
     required String identifier,
     required String password,
+    bool agreeTerms = false,
   }) async {
     _loading = true; _error = null; _lastErrorCode = null;
     lastSendOtpMeta = null;
@@ -124,6 +125,7 @@ class AuthProvider extends ChangeNotifier {
       fullName: fullName,
       identifier: identifier,
       password: password,
+      agreeTerms: agreeTerms,
     );
     _loading = false;
     final data = result.data is Map ? result.data as Map<String, dynamic> : null;

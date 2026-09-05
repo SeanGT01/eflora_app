@@ -53,7 +53,7 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildDeliverySummary(context, checkoutProvider),
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 14),
                     ..._validationResponse.storeOrderTotals.asMap().entries.map((entry) {
                       return _buildStoreOrderCard(
                         context,
@@ -62,13 +62,11 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                         cartItems,
                       );
                     }),
-                    const SizedBox(height: 24),
-                    _buildGrandTotalSection(context, cartItems),
                     if (_validationResponse.warnings != null &&
                         _validationResponse.warnings!.isNotEmpty)
                       Container(
-                        padding: const EdgeInsets.all(16),
-                        margin: const EdgeInsets.only(top: 16),
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(top: 4),
                         decoration: BoxDecoration(
                           color: _amberBg,
                           border: Border.all(color: _amberBorder),
@@ -77,18 +75,11 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(
-                              'Notices',
-                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                                    color: _amberText,
-                                  ),
-                            ),
-                            const SizedBox(height: 8),
                             ..._validationResponse.warnings!.map(
                               (warning) => Padding(
-                                padding: const EdgeInsets.only(bottom: 4),
+                                padding: const EdgeInsets.only(bottom: 2),
                                 child: Text(
-                                  '- $warning',
+                                  warning,
                                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                                         color: _amberText,
                                       ),
@@ -105,27 +96,54 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
             SafeArea(
               top: false,
               child: Container(
-                padding: const EdgeInsets.fromLTRB(20, 12, 20, 16),
+                padding: const EdgeInsets.fromLTRB(20, 10, 20, 16),
                 decoration: BoxDecoration(
                   color: AppColors.pageCream.withValues(alpha: 0.92),
                   border: const Border(
                     top: BorderSide(color: AppColors.glassBorder),
                   ),
                 ),
-                child: Row(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: widget.onPrevious,
-                        child: const Text('Back'),
-                      ),
+                    Row(
+                      children: [
+                        Text(
+                          'Total',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 13,
+                            color: AppColors.muted,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const Spacer(),
+                        Text(
+                          '₱${_displayGrandTotal(cartItems).toStringAsFixed(2)}',
+                          style: GoogleFonts.cormorantGaramond(
+                            fontSize: 22,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.deepRose,
+                          ),
+                        ),
+                      ],
                     ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: GradientButton(
-                        label: 'Continue',
-                        onPressed: widget.onNext,
-                      ),
+                    const SizedBox(height: 10),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: OutlinedButton(
+                            onPressed: widget.onPrevious,
+                            child: const Text('Back'),
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: GradientButton(
+                            label: 'Continue',
+                            onPressed: widget.onNext,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -138,31 +156,38 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
   }
 
   Widget _buildDeliverySummary(BuildContext context, CheckoutProvider provider) {
-    return GlassCard(
-      padding: const EdgeInsets.all(18),
-      radius: AppRadius.xl,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text('Deliver to', style: Theme.of(context).textTheme.titleMedium),
-          const SizedBox(height: 10),
-          Row(
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Icon(Icons.location_on_rounded, color: AppColors.roseCta, size: 18),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.location_on_outlined, color: AppColors.roseCta, size: 20),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  provider.selectedAddress?.addressLine ?? 'No address selected',
-                  style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                        fontWeight: FontWeight.w600,
-                      ),
+              Text(
+                'Deliver to',
+                style: GoogleFonts.dmSans(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.muted,
+                  letterSpacing: 0.3,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                provider.selectedAddress?.addressLine ?? 'No address selected',
+                style: GoogleFonts.dmSans(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.charcoal,
+                  height: 1.35,
                 ),
               ),
             ],
           ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 
@@ -224,26 +249,15 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                   const Icon(Icons.error_outline, color: Color(0xFFc0392b), size: 20),
               ],
             ),
-            const SizedBox(height: 12),
-            if (storeOrder.items != null && storeOrder.items!.isNotEmpty) ...[
-              Text(
-                'Items',
-                style: GoogleFonts.dmSans(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  color: AppColors.muted,
-                  letterSpacing: 0.2,
-                ),
-              ),
-              const SizedBox(height: 8),
+            const SizedBox(height: 10),
+            if (storeOrder.items != null && storeOrder.items!.isNotEmpty)
               ...storeOrder.items!.map((item) {
                 return CheckoutSummaryLine.fromCheckoutItem(
                   item: Map<String, dynamic>.from(item),
                   cartItems: cartItems,
                 );
               }),
-            ],
-            const SizedBox(height: 8),
+            const SizedBox(height: 4),
             _buildPriceRow('Subtotal', displaySubtotal),
             _buildPriceRow(
               'Delivery Fee',
@@ -251,10 +265,9 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
               isDeliveryFee: true,
               isFree: storeOrder.canDeliver &&
                   (storeOrder.freeDeliveryApplied || storeOrder.deliveryFee <= 0),
-            ),
-            if (storeOrder.canDeliver) ..._deliveryFeeNotes(
-              storeOrder,
-              subtotalOverride: displaySubtotal,
+              infoMessage: storeOrder.canDeliver
+                  ? _deliveryFeeInfo(storeOrder, displaySubtotal)
+                  : null,
             ),
             const Divider(),
             _buildPriceRow('Total', displayTotal, isBold: true, isTotal: true),
@@ -264,45 +277,117 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
     );
   }
 
-  List<Widget> _deliveryFeeNotes(
-    StoreOrderTotal storeOrder, {
-    double? subtotalOverride,
-  }) {
+  String? _deliveryFeeInfo(StoreOrderTotal storeOrder, double subtotal) {
     final applied = storeOrder.freeDeliveryApplied ||
         (storeOrder.deliveryFee <= 0 && storeOrder.freeDeliveryEnabled);
     if (applied) {
-      return [
-        const SizedBox(height: 4),
-        Text(
-          'Your order qualifies for free delivery.',
-          style: GoogleFonts.dmSans(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: AppColors.successGreen,
-          ),
-        ),
-      ];
+      return 'Your order qualifies for free delivery.';
     }
-
-    if (!storeOrder.freeDeliveryEnabled) return const [];
-
-    final subtotal = subtotalOverride ?? storeOrder.subtotal;
+    if (!storeOrder.freeDeliveryEnabled) return null;
     final remaining = storeOrder.amountToFreeDelivery ??
         ((storeOrder.freeDeliveryMinimum ?? 0) - subtotal);
-    if (remaining <= 0) return const [];
+    if (remaining <= 0) return null;
+    final minLabel = (storeOrder.freeDeliveryMinimum ?? 0).toStringAsFixed(2);
+    return 'Add ₱${remaining.toStringAsFixed(2)} more to get free delivery (min ₱$minLabel).';
+  }
 
-    final minLabel = (storeOrder.freeDeliveryMinimum ?? 0).toStringAsFixed(0);
-    return [
-      const SizedBox(height: 4),
-      Text(
-        'Add ₱${remaining.toStringAsFixed(2)} more to get free delivery (min ₱$minLabel).',
-        style: GoogleFonts.dmSans(
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-          color: const Color(0xFF9A5B00),
+  Widget _buildPriceRow(
+    String label,
+    double amount, {
+    bool isBold = false,
+    bool isTotal = false,
+    bool isDeliveryFee = false,
+    bool isFree = false,
+    String? infoMessage,
+  }) {
+    final color = isFree
+        ? AppColors.successGreen
+        : isDeliveryFee
+            ? const Color(0xFF9A5B00)
+            : isTotal
+                ? AppColors.deepRose
+                : AppColors.charcoal;
+    final amountText = isFree ? 'FREE' : '₱${amount.toStringAsFixed(2)}';
+
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.dmSans(
+            fontWeight: isBold ? FontWeight.w700 : FontWeight.w400,
+            fontSize: isBold ? 14 : 13,
+            color: isBold ? AppColors.charcoal : AppColors.muted,
+          ),
         ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            isTotal
+                ? Text(
+                    amountText,
+                    style: GoogleFonts.cormorantGaramond(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: color,
+                    ),
+                  )
+                : Text(
+                    amountText,
+                    style: GoogleFonts.dmSans(
+                      fontWeight: isBold || isFree ? FontWeight.w700 : FontWeight.w600,
+                      fontSize: isBold ? 14 : 13,
+                      color: color,
+                    ),
+                  ),
+            if (infoMessage != null) ...[
+              const SizedBox(width: 4),
+              InkWell(
+                onTap: () => _showDeliveryInfo(infoMessage),
+                borderRadius: BorderRadius.circular(99),
+                child: Icon(
+                  Icons.info_outline_rounded,
+                  size: 16,
+                  color: isFree ? AppColors.successGreen : const Color(0xFF9A5B00),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ],
+    );
+  }
+
+  void _showDeliveryInfo(String message) {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.warmWhite,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+        ),
+        content: Text(
+          message,
+          style: GoogleFonts.dmSans(
+            fontSize: 14,
+            color: AppColors.charcoal,
+            height: 1.4,
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(
+              'OK',
+              style: GoogleFonts.dmSans(
+                fontWeight: FontWeight.w700,
+                color: AppColors.deepRose,
+              ),
+            ),
+          ),
+        ],
       ),
-    ];
+    );
   }
 
   double _storeSubtotalIncludingAddons(
@@ -349,83 +434,12 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
     return sum > storeOrder.subtotal ? sum : storeOrder.subtotal;
   }
 
-  Widget _buildPriceRow(
-    String label,
-    double amount, {
-    bool isBold = false,
-    bool isTotal = false,
-    bool isDeliveryFee = false,
-    bool isFree = false,
-  }) {
-    final color = isFree
-        ? AppColors.successGreen
-        : isDeliveryFee
-            ? const Color(0xFF9A5B00)
-            : isTotal
-                ? AppColors.deepRose
-                : AppColors.charcoal;
-    final amountText = isFree ? 'FREE' : '₱${amount.toStringAsFixed(2)}';
-
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(
-          label,
-          style: GoogleFonts.dmSans(
-            fontWeight: isBold ? FontWeight.w700 : FontWeight.w400,
-            fontSize: isBold ? 14 : 13,
-            color: isBold ? AppColors.charcoal : AppColors.muted,
-          ),
-        ),
-        isTotal
-            ? Text(
-                amountText,
-                style: GoogleFonts.cormorantGaramond(
-                  fontSize: 20,
-                  fontWeight: FontWeight.w600,
-                  color: color,
-                ),
-              )
-            : Text(
-                amountText,
-                style: GoogleFonts.dmSans(
-                  fontWeight: isBold || isFree ? FontWeight.w700 : FontWeight.w600,
-                  fontSize: isBold ? 14 : 13,
-                  color: color,
-                ),
-              ),
-      ],
-    );
-  }
-
-  Widget _buildGrandTotalSection(BuildContext context, List<CartItem> cartItems) {
+  double _displayGrandTotal(List<CartItem> cartItems) {
     final grand = _validationResponse.storeOrderTotals.fold<double>(0, (s, st) {
       final sub = _storeSubtotalIncludingAddons(st, cartItems);
       return s + sub + st.deliveryFee;
     });
-    final displayGrand =
-        grand > _validationResponse.grandTotal ? grand : _validationResponse.grandTotal;
-
-    return GlassCard(
-      padding: const EdgeInsets.all(18),
-      radius: AppRadius.xl,
-      borderColor: AppColors.roseCta.withOpacity(0.35),
-      shadows: AppShadows.glassRaised,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Text('Grand Total', style: Theme.of(context).textTheme.titleMedium),
-          Text(
-            '₱${displayGrand.toStringAsFixed(2)}',
-            style: GoogleFonts.cormorantGaramond(
-              fontSize: 28,
-              fontWeight: FontWeight.w600,
-              color: AppColors.deepRose,
-            ),
-          ),
-        ],
-      ),
-    );
+    return grand > _validationResponse.grandTotal ? grand : _validationResponse.grandTotal;
   }
 
 }

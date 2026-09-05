@@ -7,7 +7,10 @@ import 'package:flutter/widgets.dart';
 /// Adaptive visual/network quality for weak devices (mirrors web `fx-lite`).
 ///
 /// - **iOS / iPad:** rich (unless reduced motion)
-/// - **Android:** rich only when RAM looks high (≥ ~6 GB); otherwise lite
+/// - **Android:** lite only on ~3 GB-class phones or when the OS reports
+///   low memory. Emulators usually look rich because they have lots of RAM
+///   and free memory; real phones were previously forced lite by a strict
+///   6 GB + 400 MB-free check.
 /// - **Reduced motion:** disables decorative motion even on rich devices
 class AppQuality {
   AppQuality._();
@@ -23,7 +26,7 @@ class AppQuality {
 
   bool get isInitialized => _initialized;
 
-  /// Low-end / constrained mode — drop blur, flowers, heavy hero motion.
+  /// Low-end / constrained mode — drop blur and heavy hero motion.
   bool get isLite => _isLite;
 
   bool get isRich => !_isLite;
@@ -31,8 +34,6 @@ class AppQuality {
   bool get reduceMotion => _reduceMotion;
 
   bool get useBlur => !_isLite;
-
-  bool get useFlowers => !_isLite && !_reduceMotion;
 
   bool get useRichHero => !_isLite && !_reduceMotion;
 
@@ -42,10 +43,6 @@ class AppQuality {
   bool get keepTabsAlive => !_isLite;
 
   bool get preloadImages => !_isLite;
-
-  int get flowerCount => useFlowers ? 10 : 0;
-
-  int get liteFlowerCount => 0;
 
   /// Unread badge poll while chat is closed.
   Duration get chatUnreadInterval =>
@@ -106,7 +103,6 @@ class AppQuality {
       final raw = await _channel.invokeMethod<dynamic>('getMemoryInfo');
       if (raw is Map) {
         final totalMem = _asInt(raw['totalMem']);
-        final availMem = _asInt(raw['availMem']);
         final lowMemory = raw['lowMemory'] == true;
         final memoryClass = _asInt(raw['memoryClass']);
         final largeMemoryClass = _asInt(raw['largeMemoryClass']);
@@ -114,31 +110,32 @@ class AppQuality {
         if (totalMem != null) _totalMemMb = totalMem ~/ (1024 * 1024);
         _memoryClassMb = largeMemoryClass ?? memoryClass;
 
-        // Web parity: rich when deviceMemory >= 6; lite for typical phones.
-        final totalGb = _totalMemMb != null ? _totalMemMb! / 1024.0 : null;
+        // OS says we are under memory pressure — drop decorative FX.
         if (lowMemory) {
           _isLite = true;
-        } else if (totalGb != null) {
-          _isLite = totalGb < 5.5; // treat < ~6 GB as lite
-        } else if (_memoryClassMb != null) {
-          // memoryClass is heap hint (MB); ≤192 is usually low/mid devices
-          _isLite = _memoryClassMb! <= 192;
-        } else {
-          // No signal — be conservative on Android (same as web without deviceMemory)
-          _isLite = true;
+          return;
         }
 
-        // Very low free RAM → force lite even on high-total devices
-        if (availMem != null && availMem < 400 * 1024 * 1024) {
-          _isLite = true;
+        // Emulators often report 8 GB+ with lots of free RAM, so they look
+        // "rich". Physical phones advertise 4–8 GB but Android's totalMem is
+        // lower than the box rating (reserved/system RAM). A 6 GB phone often
+        // reports ~5.2 GB. Do not use availMem: it is frequently < 400 MB on
+        // healthy phones because of cached apps, which incorrectly forced lite.
+        final totalGb = _totalMemMb != null ? _totalMemMb! / 1024.0 : null;
+        if (totalGb != null) {
+          _isLite = totalGb < 3.0; // ~3 GB class and below
+        } else if (_memoryClassMb != null) {
+          _isLite = _memoryClassMb! <= 128;
+        } else {
+          _isLite = false;
         }
         return;
       }
     } catch (e) {
       debugPrint('AppQuality: memory channel failed: $e');
     }
-    // Conservative default for Android when detection fails
-    _isLite = true;
+    // Unknown Android hardware — prefer the branded look over hiding flowers.
+    _isLite = false;
   }
 
   static int? _asInt(dynamic v) {

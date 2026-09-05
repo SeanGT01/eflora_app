@@ -79,15 +79,22 @@ class _RiderShellState extends State<RiderShell> {
               sigma: 16,
               child: Container(
                 decoration: BoxDecoration(
+                  color: AppQuality.instance.useBlur
+                      ? AppColors.warmWhite.withValues(alpha: 0.92)
+                      : AppColors.warmWhite,
                   gradient: AppQuality.instance.useBlur
                       ? AppColors.headerGlass
                       : null,
-                  color: AppQuality.instance.useBlur
-                      ? null
-                      : const Color(0xF5FFFAFC),
                   border: const Border(
-                    top: BorderSide(color: Color(0x8CFFFFFF), width: 1),
+                    top: BorderSide(color: Color(0x66E6AAC3), width: 1),
                   ),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x14502846),
+                      blurRadius: 20,
+                      offset: Offset(0, -4),
+                    ),
+                  ],
                 ),
                 child: SafeArea(
                   top: false,
@@ -97,7 +104,7 @@ class _RiderShellState extends State<RiderShell> {
                       children: [
                         _NavItem(
                           icon: Icons.dashboard_outlined,
-                          activeIcon: Icons.dashboard,
+                          activeIcon: Icons.dashboard_rounded,
                           label: 'Home',
                           selected: _idx == 0,
                           onTap: () => setState(() => _idx = 0),
@@ -177,26 +184,33 @@ class _NavItem extends StatelessWidget {
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 220),
+              padding: EdgeInsets.symmetric(
+                horizontal: selected ? 14 : 8,
+                vertical: 6,
+              ),
+              decoration: BoxDecoration(
+                gradient: selected ? AppColors.brandGradient : null,
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+              ),
               child: Icon(
                 selected ? activeIcon : icon,
-                key: ValueKey(selected),
-                size: 22,
-                color: selected ? AppColors.deepRose : AppColors.muted.withOpacity(0.5),
+                size: 21,
+                color: selected ? Colors.white : AppColors.muted.withValues(alpha: 0.55),
               ),
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               label,
               style: GoogleFonts.dmSans(
                 fontSize: 9.5,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-                color: selected ? AppColors.deepRose : AppColors.muted.withOpacity(0.5),
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? AppColors.deepRose : AppColors.muted.withValues(alpha: 0.55),
               ),
             ),
           ],
@@ -228,37 +242,45 @@ class _BadgeNavItem extends StatelessWidget {
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(14),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Stack(
               clipBehavior: Clip.none,
               children: [
-                AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 200),
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 220),
+                  padding: EdgeInsets.symmetric(
+                    horizontal: selected ? 14 : 8,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    gradient: selected ? AppColors.brandGradient : null,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                  ),
                   child: Icon(
                     selected ? activeIcon : icon,
-                    key: ValueKey(selected),
-                    size: 22,
-                    color: selected ? AppColors.deepRose : AppColors.muted.withOpacity(0.5),
+                    size: 21,
+                    color: selected ? Colors.white : AppColors.muted.withValues(alpha: 0.55),
                   ),
                 ),
                 if (count > 0)
                   Positioned(
-                    right: -8,
-                    top: -4,
+                    right: -2,
+                    top: -2,
                     child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
+                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+                      decoration: BoxDecoration(
                         color: AppColors.deepRose,
-                        shape: BoxShape.circle,
+                        borderRadius: BorderRadius.circular(99),
+                        border: Border.all(color: Colors.white, width: 1.5),
                       ),
                       child: Text(
-                        '$count',
+                        count > 9 ? '9+' : '$count',
                         style: GoogleFonts.dmSans(
                           fontSize: 8,
-                          fontWeight: FontWeight.w700,
+                          fontWeight: FontWeight.w800,
                           color: Colors.white,
                         ),
                       ),
@@ -266,13 +288,13 @@ class _BadgeNavItem extends StatelessWidget {
                   ),
               ],
             ),
-            const SizedBox(height: 2),
+            const SizedBox(height: 3),
             Text(
               label,
               style: GoogleFonts.dmSans(
                 fontSize: 9.5,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-                color: selected ? AppColors.deepRose : AppColors.muted.withOpacity(0.5),
+                fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                color: selected ? AppColors.deepRose : AppColors.muted.withValues(alpha: 0.55),
               ),
             ),
           ],

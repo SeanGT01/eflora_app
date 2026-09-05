@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../models/chat.dart';
 import '../../providers/chat_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/datetime_ph.dart';
 import '../../widgets/customer_default_avatar.dart';
 import 'chat_detail_screen.dart';
 
@@ -302,20 +303,6 @@ class _ConversationTile extends StatelessWidget {
     return '?';
   }
 
-  String _timeAgo(String? iso) {
-    if (iso == null || iso.isEmpty) return '';
-    try {
-      // Backend already sends Philippine time, no conversion needed
-      final d = DateTime.parse(iso);
-      final now = DateTime.now();
-      final diff = now.difference(d);
-      if (diff.inMinutes < 1) return 'now';
-      if (diff.inHours < 1) return '${diff.inMinutes}m';
-      if (diff.inDays < 1) return '${diff.inHours}h';
-      if (diff.inDays < 7) return '${diff.inDays}d';
-      return '${d.month}/${d.day}';
-    } catch (_) {
-      return '';
-    }
-  }
+  String _timeAgo(String? iso) =>
+      formatRelativeFromIso(iso, compactDate: true);
 }

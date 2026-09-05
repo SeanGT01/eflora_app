@@ -18,7 +18,7 @@ class ChatOrderContextBanner extends StatefulWidget {
 class _ChatOrderContextBannerState extends State<ChatOrderContextBanner> {
   bool _expanded = false;
 
-  String _peso(double n) => '₱${n.toStringAsFixed(n % 1 == 0 ? 0 : 2)}';
+  String _peso(double n) => '₱${n.toStringAsFixed(2)}';
 
   String _itemTitle(ChatOrderItem item) => [
         item.name,

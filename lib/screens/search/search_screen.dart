@@ -1,4 +1,6 @@
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:provider/provider.dart';
@@ -17,7 +19,18 @@ import '../../widgets/quick_add_variant_sheet.dart';
 import '../../utils/responsive.dart';
 
 class SearchScreen extends StatefulWidget {
-  const SearchScreen({super.key});
+  final String? initialCategorySlug;
+  final String? initialCategoryName;
+  final String? initialQuery;
+  final bool? includeOutsideLocation;
+
+  const SearchScreen({
+    super.key,
+    this.initialCategorySlug,
+    this.initialCategoryName,
+    this.initialQuery,
+    this.includeOutsideLocation,
+  });
   @override
   State<SearchScreen> createState() => _SearchScreenState();
 }
@@ -27,26 +40,83 @@ class _SearchScreenState extends State<SearchScreen> {
   List<Product> _results = [];
   bool _loading = false;
   bool _searched = false;
+  String? _categorySlug;
+  String? _categoryName;
+  Timer? _debounce;
+  int _searchGen = 0;
 
-  Future<void> _search(String q, {String? categorySlug}) async {
-    if (q.trim().isEmpty && (categorySlug == null || categorySlug.isEmpty)) {
-      setState(() { _results = []; _searched = false; });
+  bool get _hasCategory =>
+      _categorySlug != null && _categorySlug!.isNotEmpty;
+
+  @override
+  void initState() {
+    super.initState();
+    final query = widget.initialQuery?.trim() ?? '';
+    final slug = widget.initialCategorySlug?.trim() ?? '';
+    _categorySlug = slug.isEmpty ? null : slug;
+    final name = widget.initialCategoryName?.trim() ?? '';
+    _categoryName = name.isEmpty ? null : name;
+    if (query.isNotEmpty) _ctrl.text = query;
+    if (_hasCategory || query.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _runSearch();
+      });
+    }
+  }
+
+  void _onQueryChanged(String v) {
+    _debounce?.cancel();
+    setState(() {});
+    if (v.trim().isEmpty && !_hasCategory) {
+      _searchGen++;
+      setState(() {
+        _results = [];
+        _searched = false;
+        _loading = false;
+      });
       return;
     }
-    setState(() { _loading = true; _searched = true; });
+    _debounce = Timer(const Duration(milliseconds: 220), _runSearch);
+  }
+
+  Future<void> _runSearch() async {
+    _debounce?.cancel();
+    final q = _ctrl.text.trim();
+    if (q.isEmpty && !_hasCategory) {
+      _searchGen++;
+      setState(() {
+        _results = [];
+        _searched = false;
+        _loading = false;
+      });
+      return;
+    }
+    final gen = ++_searchGen;
+    setState(() {
+      _loading = _results.isEmpty;
+      _searched = true;
+    });
     final isLoggedIn = context.read<AuthProvider>().isLoggedIn;
+    final includeOutside =
+        widget.includeOutsideLocation ?? (isLoggedIn ? false : true);
     final result = await ApiService.getProducts(
-      search: categorySlug == null || categorySlug.isEmpty ? q.trim() : null,
-      category: categorySlug,
-      // Match home: filter to default-address coverage when signed in
-      includeOutsideLocation: isLoggedIn ? false : true,
+      search: q.isEmpty ? null : q,
+      category: _categorySlug,
+      includeOutsideLocation: includeOutside,
+      perPage: 48,
     );
-    if (!mounted) return;
+    if (!mounted || gen != _searchGen) return;
     if (result.isSuccess) {
       final data = result.data;
-      List<dynamic> list = data is List ? data : (data is Map ? (data['products'] ?? []) : []);
+      List<dynamic> list = data is List
+          ? data
+          : (data is Map ? (data['products'] ?? []) : []);
       setState(() {
-        _results = list.map((e) => Product.fromJson(e as Map<String, dynamic>)).toList();
+        _results = list
+            .whereType<Map>()
+            .map((e) => Product.fromJson(Map<String, dynamic>.from(e)))
+            .toList();
         _loading = false;
       });
     } else {
@@ -66,18 +136,22 @@ class _SearchScreenState extends State<SearchScreen> {
   }
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _debounce?.cancel();
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: AppBackground(
-        flowerCount: 10,
         child: SafeArea(
           child: Column(
             children: [
               _buildSearchBar(),
+              if (_hasCategory) _buildCategoryContext(),
               Expanded(
                 child: _loading
                     ? const Center(
@@ -93,7 +167,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                   return GridView.builder(
                                     padding: EdgeInsets.fromLTRB(
                                       context.pageGutter,
-                                      context.s(4),
+                                      0,
                                       context.pageGutter,
                                       context.s(24),
                                     ),
@@ -128,6 +202,25 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  Widget _buildCategoryContext() {
+    final label = _categoryName ?? 'Category';
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+      child: Row(
+        children: [
+          Text(
+            label,
+            style: GoogleFonts.cormorantGaramond(
+              fontSize: 22,
+              fontWeight: FontWeight.w500,
+              color: AppColors.charcoal,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   /// Pill-shaped frosted search field, matching the site's glass search input.
   Widget _buildSearchBar() {
     return Padding(
@@ -158,13 +251,15 @@ class _SearchScreenState extends State<SearchScreen> {
                   Expanded(
                     child: TextField(
                       controller: _ctrl,
-                      autofocus: true,
-                      onChanged: (v) { if (v.isEmpty) setState(() { _results = []; _searched = false; }); },
-                      onSubmitted: _search,
+                      autofocus: !_hasCategory,
+                      onChanged: _onQueryChanged,
+                      onSubmitted: (_) => _runSearch(),
                       cursorColor: AppColors.roseCta,
                       decoration: InputDecoration(
                         isDense: true,
-                        hintText: 'Search flowers, plants, categories…',
+                        hintText: _hasCategory
+                            ? 'Search in ${_categoryName ?? 'this category'}…'
+                            : 'Search flowers, plants, categories…',
                         filled: false,
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
@@ -188,7 +283,7 @@ class _SearchScreenState extends State<SearchScreen> {
                       icon: Icons.arrow_forward,
                       size: 30,
                       iconSize: 15,
-                      onPressed: () => _search(_ctrl.text),
+                      onPressed: _runSearch,
                     ),
                   ],
                 ],
@@ -222,8 +317,12 @@ class _SearchScreenState extends State<SearchScreen> {
                 spacing: 8, runSpacing: 8,
                 children: categories.map((cat) => GestureDetector(
                   onTap: () {
-                    _ctrl.text = cat.name;
-                    _search(cat.name, categorySlug: cat.slug);
+                    _ctrl.clear();
+                    setState(() {
+                      _categorySlug = cat.slug;
+                      _categoryName = cat.name;
+                    });
+                    _runSearch();
                   },
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
@@ -271,7 +370,9 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
               const SizedBox(height: 16),
               Text(
-                'No results found',
+                _hasCategory
+                    ? 'No products in ${_categoryName ?? 'this category'}'
+                    : 'No results found',
                 style: GoogleFonts.cormorantGaramond(
                   fontSize: 22,
                   fontWeight: FontWeight.w500,
@@ -280,7 +381,9 @@ class _SearchScreenState extends State<SearchScreen> {
               ),
               const SizedBox(height: 6),
               Text(
-                'Try a different search term',
+                _hasCategory
+                    ? 'Try another category or browse outside location'
+                    : 'Try a different search term',
                 style: GoogleFonts.dmSans(fontSize: 12.5, color: AppColors.muted),
                 textAlign: TextAlign.center,
               ),

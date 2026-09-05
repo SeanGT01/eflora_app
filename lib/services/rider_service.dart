@@ -217,7 +217,7 @@ class RiderService {
     try {
       final url = 'https://router.project-osrm.org/route/v1/driving/'
           '$startLng,$startLat;$endLng,$endLat'
-          '?geometries=geojson&overview=full';
+          '?geometries=geojson&overview=full&alternatives=0';
       final res = await http.get(Uri.parse(url)).timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
         final data = jsonDecode(res.body);

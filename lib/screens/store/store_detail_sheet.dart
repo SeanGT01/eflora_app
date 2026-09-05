@@ -148,9 +148,8 @@ class StoreDetailSheet extends StatelessWidget {
                           store.contactNumber!.isNotEmpty)
                         _infoRow(
                             Icons.phone_outlined, 'Contact', store.contactNumber!),
-                      if (store.deliveryRadiusKm != null)
-                        _infoRow(Icons.delivery_dining_outlined, 'Delivery Area',
-                            '${store.deliveryRadiusKm!.toStringAsFixed(0)} km radius'),
+                      _infoRow(Icons.delivery_dining_outlined, 'Delivery Area',
+                          store.deliveryCoverageSummary),
                       if (store.baseDeliveryFee != null)
                         _infoRow(Icons.payments_outlined, 'Base Delivery Fee',
                             '₱${store.baseDeliveryFee!.toStringAsFixed(2)}'),
@@ -348,10 +347,8 @@ class StoreDetailSheet extends StatelessWidget {
           _statDivider(),
           _statCell(
               Icons.delivery_dining_outlined,
-              store.deliveryRadiusKm != null
-                  ? '${store.deliveryRadiusKm!.toStringAsFixed(0)}km'
-                  : '—',
-              'Delivery'),
+              store.deliveryCoverageStatValue,
+              store.deliveryCoverageStatLabel),
           _statDivider(),
           _reviewsStatCell(context),
         ],
@@ -414,12 +411,19 @@ class StoreDetailSheet extends StatelessWidget {
           Icon(icon, size: 19, color: AppColors.labelPink),
           const SizedBox(height: 5),
           Text(value,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: GoogleFonts.cormorantGaramond(
-                fontSize: 19,
+                fontSize: value.length > 8 ? 14 : 19,
                 fontWeight: FontWeight.w600,
+                height: 1.1,
                 color: AppColors.deepRose,
               )),
           Text(label.toUpperCase(),
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
               style: GoogleFonts.dmSans(
                 fontSize: 9,
                 fontWeight: FontWeight.w600,
@@ -1165,22 +1169,7 @@ _StatusInfo _deliveryStatus(Store store) {
   );
 }
 
-String _coverageDescription(Store store) {
-  switch (store.deliveryMethod) {
-    case 'zone':
-      return 'Custom delivery zone';
-    case 'municipality':
-      final areas = store.selectedMunicipalities;
-      return areas.isEmpty
-          ? 'Municipality delivery area'
-          : 'Delivers to: ${areas.join(', ')}';
-    default:
-      final radius = store.deliveryRadiusKm;
-      return radius == null
-          ? 'Store location and delivery coverage'
-          : '${radius.toStringAsFixed(0)} km delivery radius';
-  }
-}
+String _coverageDescription(Store store) => store.deliveryCoverageSummary;
 
 class _StoreDeliveryMapBody extends StatefulWidget {
   const _StoreDeliveryMapBody({

@@ -29,11 +29,19 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
     for (final ctrl in [_currCtrl, _newCtrl, _confCtrl]) {
       ctrl.addListener(() => setState(() {}));
     }
+    _currCtrl.addListener(() {
+      if (_newCtrl.text.isNotEmpty) {
+        _formKey.currentState?.validate();
+      }
+    });
   }
 
   String? _validateNewPassword(String? v) {
     final value = v ?? '';
     if (value.isEmpty) return 'Required';
+    if (value == _currCtrl.text) {
+      return 'New password must be different from current password';
+    }
     if (value.length < 8) return 'Must be at least 8 characters';
     if (!RegExp(r'[a-z]').hasMatch(value)) return 'Must include lowercase letter';
     if (!RegExp(r'[A-Z]').hasMatch(value)) return 'Must include uppercase letter';

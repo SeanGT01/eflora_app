@@ -58,5 +58,6 @@
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="google.navigation"/>
         </intent>
+        <package android:name="com.google.android.apps.maps" />
     </queries>
 </manifest>

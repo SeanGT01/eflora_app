@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:eflowers/services/api_service.dart';
+import 'package:eflowers/widgets/common.dart';
 
 class StockReductionForm extends StatefulWidget {
   final int productId;
@@ -79,13 +80,7 @@ class _StockReductionFormState extends State<StockReductionForm> {
       if (!mounted) return;
 
       if (response['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Stock reduced by $amount units'),
-            backgroundColor: Colors.green,
-            duration: const Duration(seconds: 2),
-          ),
-        );
+        showToast(context, 'Stock reduced by $amount units');
         
         _formKey.currentState!.reset();
         _amountController.clear();
@@ -98,21 +93,15 @@ class _StockReductionFormState extends State<StockReductionForm> {
           Navigator.pop(context);
         }
       } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(response['error'] ?? 'Failed to reduce stock'),
-            backgroundColor: Colors.red,
-          ),
+        showToast(
+          context,
+          response['error'] ?? 'Failed to reduce stock',
+          isError: true,
         );
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Error: ${e.toString()}'),
-            backgroundColor: Colors.red,
-          ),
-        );
+        showToast(context, 'Error: ${e.toString()}', isError: true);
       }
     } finally {
       if (mounted) {

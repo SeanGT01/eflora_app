@@ -464,7 +464,7 @@ class PaymentSummaryCard extends StatelessWidget {
           ),
           _StatCard(
             label: 'Total',
-            value: '₱${totalVerifiedAmount.toStringAsFixed(0)}',
+            value: '₱${totalVerifiedAmount.toStringAsFixed(2)}',
             color: AppColors.deepRose,
           ),
         ],

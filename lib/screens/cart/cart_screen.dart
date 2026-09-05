@@ -14,6 +14,7 @@ import '../../widgets/adaptive_blur.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/delivery_unavailable_dialog.dart';
+import '../../widgets/active_order_limit_dialog.dart';
 import '../../widgets/stock_issue_dialog.dart';
 import '../checkout/checkout_modal.dart';
 import '../main_shell.dart';
@@ -41,7 +42,6 @@ class _CartScreenState extends State<CartScreen> {
   Widget build(BuildContext context) {
     final cart = context.watch<CartProvider>();
     return AppBackground(
-      flowerCount: 10,
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: AppBar(
@@ -348,6 +348,13 @@ class _CartScreenState extends State<CartScreen> {
 
     if (!stockResult.isSuccess) {
       setState(() => _checkingDelivery = false);
+      if (await maybeShowActiveOrderLimitDialog(
+        context,
+        message: stockResult.errorMessage,
+        data: stockResult.data,
+      )) {
+        return;
+      }
       final rawIssues = stockResult.data is Map
           ? (stockResult.data as Map)['stock_issues']
           : null;
@@ -413,6 +420,11 @@ class _CartScreenState extends State<CartScreen> {
           'Some selected items cannot be delivered to this address.';
       final warnings = failed?.warnings;
 
+      if (isActiveOrderLimitResult(message: error, data: failed)) {
+        await showActiveOrderLimitDialogFromPayload(context, data: failed);
+        return;
+      }
+
       if (isDeliveryUnavailableError(error) ||
           (warnings != null && warnings.isNotEmpty)) {
         await showCheckoutDeliveryUnavailableDialog(
@@ -442,9 +454,7 @@ class _CartScreenState extends State<CartScreen> {
       selectedItems: selectedItems,
       onComplete: () {
         cart.load();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Order placed successfully!')),
-        );
+        showToast(context, 'Order placed successfully!');
       },
     );
   }
