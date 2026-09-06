@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:dio/dio.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/checkout.dart';
+import '../models/api_result.dart';
 import '../services/address_service.dart';
 
 class AddressProvider extends ChangeNotifier {
@@ -230,6 +231,17 @@ class AddressProvider extends ChangeNotifier {
       },
     );
     notifyListeners();
+  }
+
+  Future<ApiResult<Map<String, dynamic>>> googleReverseGeocode(
+    double latitude,
+    double longitude,
+  ) {
+    return _service.googleReverseGeocode(latitude, longitude);
+  }
+
+  Future<ApiResult<List<Map<String, dynamic>>>> googlePlaceSearch(String query) {
+    return _service.googlePlaceSearch(query);
   }
 }
 

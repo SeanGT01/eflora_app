@@ -1,5 +1,6 @@
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:cached_network_image/cached_network_image.dart';
@@ -10,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
+import '../../utils/person_name.dart';
 import '../../widgets/customer_default_avatar.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
@@ -496,6 +498,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     String? helperText,
     Widget? prefixIcon,
     Widget? suffixIcon,
+    String? counterText,
   }) {
     return InputDecoration(
       labelText: labelText,
@@ -503,6 +506,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       helperMaxLines: 2,
       prefixIcon: prefixIcon,
       suffixIcon: suffixIcon,
+      counterText: counterText,
     );
   }
 
@@ -758,11 +762,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: _fieldDecoration(
                         labelText: 'First name',
                         prefixIcon: const Icon(Icons.person_outline, size: 20),
+                        counterText: '',
                       ),
                       textCapitalization: TextCapitalization.words,
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'First name is required'
-                          : null,
+                      maxLength: kFirstNameMax,
+                      maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                      inputFormatters: const [
+                        PersonNameInputFormatter(),
+                      ],
+                      validator: (v) =>
+                          validatePersonName(v, field: 'First name'),
                     ),
                     const SizedBox(height: _fieldGap),
                     TextFormField(
@@ -770,11 +779,19 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: _fieldDecoration(
                         labelText: 'Last name',
                         prefixIcon: const Icon(Icons.person_outline, size: 20),
+                        counterText: '',
                       ),
                       textCapitalization: TextCapitalization.words,
-                      validator: (v) => (v == null || v.trim().isEmpty)
-                          ? 'Last name is required'
-                          : null,
+                      maxLength: kLastNameMax,
+                      maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                      inputFormatters: const [
+                        PersonNameInputFormatter(maxLength: kLastNameMax),
+                      ],
+                      validator: (v) => validatePersonName(
+                        v,
+                        field: 'Last name',
+                        maxLen: kLastNameMax,
+                      ),
                     ),
                     const SizedBox(height: _fieldGap),
                     TextFormField(

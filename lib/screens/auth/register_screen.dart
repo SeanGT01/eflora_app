@@ -1,10 +1,12 @@
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/lowercase_email_formatter.dart';
+import '../../utils/person_name.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/auth_chrome.dart';
 import '../../widgets/common.dart';
@@ -237,13 +239,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   controller: _nameCtrl,
                   textCapitalization: TextCapitalization.words,
                   textInputAction: TextInputAction.next,
+                  maxLength: kFullNameMax,
+                  maxLengthEnforcement: MaxLengthEnforcement.enforced,
+                  inputFormatters: const [
+                    PersonNameInputFormatter(maxLength: kFullNameMax),
+                  ],
                   style: fieldStyle,
                   decoration: authInputDecoration(
                     hint: 'Juana Dela Cruz',
                     prefixIcon: Icons.person_outline,
+                    counterText: '',
                   ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'Full name is required' : null,
+                  validator: validateFullName,
                 ),
                 const SizedBox(height: 18),
                 const AuthFieldLabel('Email or mobile number'),

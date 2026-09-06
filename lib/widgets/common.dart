@@ -279,11 +279,11 @@ class ToastBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = isError ? AppColors.deepRose : AppColors.roseCta;
+    final accent = AppColors.deepRose;
     final icon = isError
         ? Icons.error_outline_rounded
         : Icons.check_circle_outline_rounded;
-    final fill = isError ? const Color(0xFFFBF4F6) : AppColors.warmWhite;
+    final fill = const Color(0xFFFBF4F6);
 
     return Material(
       color: Colors.transparent,

@@ -103,21 +103,23 @@ class OrderDetailScreen extends StatelessWidget {
                       ),
                   ],
                 ),
-                const SizedBox(height: 10),
-                SizedBox(
-                  width: double.infinity,
-                  child: OutlinedButton.icon(
-                    onPressed: () => _openOrderChat(context),
-                    icon: const Icon(Icons.message_outlined, size: 18),
-                    label: const Text('Message Customer'),
-                    style: OutlinedButton.styleFrom(
-                      foregroundColor: AppColors.deepRose,
-                      side: BorderSide(
-                        color: AppColors.deepRose.withOpacity(0.35),
+                if (order.riderId != null) ...[
+                  const SizedBox(height: 10),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: () => _openOrderChat(context),
+                      icon: const Icon(Icons.message_outlined, size: 18),
+                      label: const Text('Message Customer'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.deepRose,
+                        side: BorderSide(
+                          color: AppColors.deepRose.withOpacity(0.35),
+                        ),
                       ),
                     ),
                   ),
-                ),
+                ],
               ],
             ]),
             const SizedBox(height: 16),

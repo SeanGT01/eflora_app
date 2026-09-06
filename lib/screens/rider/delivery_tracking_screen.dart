@@ -11,6 +11,7 @@ import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'dart:io';
+import '../../config/mapbox_config.dart';
 import '../../models/rider.dart';
 import '../../providers/rider_provider.dart';
 import '../../services/rider_service.dart';
@@ -702,12 +703,24 @@ class _DeliveryTrackingMapView extends StatefulWidget {
 class _DeliveryTrackingMapViewState extends State<_DeliveryTrackingMapView> {
   late final LatLng _initialCenter;
   late final double _initialZoom;
+  String _tileUrl = MapboxConfig.rasterTileUrl('');
+  bool _isMapbox = false;
 
   @override
   void initState() {
     super.initState();
     _initialCenter = widget.mapCenter;
     _initialZoom = 14;
+    _loadTiles();
+  }
+
+  Future<void> _loadTiles() async {
+    final token = await MapboxConfig.publicToken();
+    if (!mounted) return;
+    setState(() {
+      _isMapbox = token.isNotEmpty;
+      _tileUrl = MapboxConfig.rasterTileUrl(token);
+    });
   }
 
   @override
@@ -725,9 +738,10 @@ class _DeliveryTrackingMapViewState extends State<_DeliveryTrackingMapView> {
       ),
       children: [
         TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-          userAgentPackageName: 'com.eflowers.app',
-          maxZoom: 19,
+          urlTemplate: _tileUrl,
+          userAgentPackageName: 'com.seanlazala.eflora',
+          maxZoom: _isMapbox ? 22 : 19,
+          errorTileCallback: (tile, error, stackTrace) {},
         ),
         if (widget.routePoints.isNotEmpty)
           PolylineLayer(
@@ -787,6 +801,13 @@ class _DeliveryTrackingMapViewState extends State<_DeliveryTrackingMapView> {
               ),
           ],
         ),
+        if (_isMapbox)
+          const RichAttributionWidget(
+            attributions: [
+              TextSourceAttribution('© Mapbox'),
+              TextSourceAttribution('© OpenStreetMap'),
+            ],
+          ),
       ],
     );
   }

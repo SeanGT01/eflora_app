@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:latlong2/latlong.dart';
+import '../config/mapbox_config.dart';
 import '../services/api_service.dart';
 import '../services/rider_service.dart';
 import '../theme/app_theme.dart';
@@ -593,7 +594,7 @@ class _ExpandedDeliveryMapPageState extends State<_ExpandedDeliveryMapPage> {
   }
 }
 
-class _MapCanvas extends StatelessWidget {
+class _MapCanvas extends StatefulWidget {
   final MapController mapController;
   final LatLng center;
   final bool interactive;
@@ -615,33 +616,57 @@ class _MapCanvas extends StatelessWidget {
   });
 
   @override
+  State<_MapCanvas> createState() => _MapCanvasState();
+}
+
+class _MapCanvasState extends State<_MapCanvas> {
+  String _tileUrl = MapboxConfig.rasterTileUrl('');
+  bool _isMapbox = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTiles();
+  }
+
+  Future<void> _loadTiles() async {
+    final token = await MapboxConfig.publicToken();
+    if (!mounted) return;
+    setState(() {
+      _isMapbox = token.isNotEmpty;
+      _tileUrl = MapboxConfig.rasterTileUrl(token);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
     return FlutterMap(
-      mapController: mapController,
+      mapController: widget.mapController,
       options: MapOptions(
-        initialCenter: center,
+        initialCenter: widget.center,
         initialZoom: 14.5,
         interactionOptions: InteractionOptions(
-          flags: interactive ? InteractiveFlag.all : InteractiveFlag.none,
+          flags: widget.interactive ? InteractiveFlag.all : InteractiveFlag.none,
         ),
-        onMapReady: onReady,
+        onMapReady: widget.onReady,
       ),
       children: [
         TileLayer(
-          urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+          urlTemplate: _tileUrl,
           userAgentPackageName: 'com.seanlazala.eflora',
-          maxZoom: 19,
+          maxZoom: _isMapbox ? 22 : 19,
+          errorTileCallback: (tile, error, stackTrace) {},
         ),
-        if (route.isNotEmpty)
+        if (widget.route.isNotEmpty)
           PolylineLayer(
             polylines: [
               Polyline(
-                points: route,
+                points: widget.route,
                 color: AppColors.blush,
                 strokeWidth: 9,
               ),
               Polyline(
-                points: route,
+                points: widget.route,
                 color: AppColors.roseCta,
                 strokeWidth: 4.5,
               ),
@@ -649,30 +674,37 @@ class _MapCanvas extends StatelessWidget {
           ),
         MarkerLayer(
           markers: [
-            if (store != null)
+            if (widget.store != null)
               Marker(
-                point: store!,
+                point: widget.store!,
                 width: 44,
                 height: 44,
                 child: const _ShopPin(),
               ),
-            if (customer != null)
+            if (widget.customer != null)
               Marker(
-                point: customer!,
+                point: widget.customer!,
                 width: 52,
                 height: 58,
                 alignment: Alignment.topCenter,
                 child: const _HomePin(),
               ),
-            if (rider != null)
+            if (widget.rider != null)
               Marker(
-                point: rider!,
+                point: widget.rider!,
                 width: 56,
                 height: 56,
                 child: const _RiderPin(),
               ),
           ],
         ),
+        if (_isMapbox)
+          const RichAttributionWidget(
+            attributions: [
+              TextSourceAttribution('© Mapbox'),
+              TextSourceAttribution('© OpenStreetMap'),
+            ],
+          ),
       ],
     );
   }

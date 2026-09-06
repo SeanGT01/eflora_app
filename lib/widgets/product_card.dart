@@ -35,7 +35,7 @@ class ProductCard extends StatelessWidget {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  _buildImage(),
+                  _buildImage(context),
                   if (!product.hasAnySellableStock)
                     Positioned.fill(
                       child: Container(
@@ -176,23 +176,25 @@ class ProductCard extends StatelessWidget {
         ),
       );
 
-  Widget _buildImage() {
+  Widget _buildImage(BuildContext context) {
     final url = product.primaryImageUrl;
 
     if (url == null || url.isEmpty) {
       return _placeholder();
     }
 
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final cachePx = (220 * dpr).round().clamp(480, 1200);
+
     return DecoratedBox(
       decoration: const BoxDecoration(gradient: AppColors.imageWash),
       child: CachedNetworkImage(
         imageUrl: url,
         fit: BoxFit.cover,
-        memCacheWidth: 200,
-        memCacheHeight: 200,
-        maxWidthDiskCache: 200,
-        maxHeightDiskCache: 200,
-        cacheKey: 'product_${product.id}_home',
+        filterQuality: FilterQuality.high,
+        memCacheWidth: cachePx,
+        maxWidthDiskCache: cachePx,
+        cacheKey: 'product_${product.id}_card_orig',
         placeholder: (context, url) => DecoratedBox(
           decoration: const BoxDecoration(gradient: AppColors.imageWash),
           child: Center(

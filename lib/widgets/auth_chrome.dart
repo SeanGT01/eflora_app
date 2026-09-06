@@ -46,6 +46,7 @@ InputDecoration authInputDecoration({
   String? hint,
   IconData? prefixIcon,
   Widget? suffixIcon,
+  String? counterText,
 }) {
   return InputDecoration(
     hintText: hint,
@@ -57,6 +58,7 @@ InputDecoration authInputDecoration({
         ? null
         : Icon(prefixIcon, size: 19, color: AppColors.muted),
     suffixIcon: suffixIcon,
+    counterText: counterText,
     filled: true,
     fillColor: Colors.white.withValues(alpha: 0.62),
     contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 15),

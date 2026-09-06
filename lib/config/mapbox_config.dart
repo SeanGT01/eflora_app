@@ -28,4 +28,12 @@ class MapboxConfig {
     } catch (_) {}
     return _cached ?? '';
   }
+
+  /// Raster tiles for flutter_map (streets). OSM fallback if token missing.
+  static String rasterTileUrl(String token) {
+    if (token.isEmpty) {
+      return 'https://tile.openstreetmap.org/{z}/{x}/{y}.png';
+    }
+    return 'https://api.mapbox.com/styles/v1/mapbox/streets-v12/tiles/{z}/{x}/{y}@2x?access_token=$token';
+  }
 }

@@ -69,9 +69,10 @@ class ChatService {
         body: jsonEncode({'order_id': orderId}),
       ).timeout(const Duration(seconds: 15));
 
-      final data = jsonDecode(res.body) as Map<String, dynamic>;
-      if (data['conversation'] != null) {
-        return ChatConversation.fromJson(data['conversation']);
+      final data = jsonDecode(res.body);
+      if (data is Map && data['conversation'] is Map) {
+        return ChatConversation.fromJson(
+            Map<String, dynamic>.from(data['conversation'] as Map));
       }
       return null;
     } catch (e) {
@@ -163,6 +164,30 @@ class ChatService {
       return null;
     } catch (e) {
       print('❌ ChatService.sendMessage error: $e');
+      return null;
+    }
+  }
+
+  /// Share a one-time order-details card in a rider↔customer thread.
+  static Future<ChatMessage?> sendOrderCard(int convoId, int orderId) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_api/conversations/$convoId/messages'),
+        headers: await _headers(),
+        body: jsonEncode({'message_type': 'order_card', 'order_id': orderId}),
+      ).timeout(const Duration(seconds: 15));
+
+      if (res.statusCode == 201 || res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final msg = data['message'];
+        if (msg is Map<String, dynamic>) return ChatMessage.fromJson(msg);
+        if (msg is Map) {
+          return ChatMessage.fromJson(Map<String, dynamic>.from(msg));
+        }
+      }
+      return null;
+    } catch (e) {
+      print('❌ ChatService.sendOrderCard error: $e');
       return null;
     }
   }

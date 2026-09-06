@@ -263,8 +263,7 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
               'Delivery Fee',
               storeOrder.deliveryFee,
               isDeliveryFee: true,
-              isFree: storeOrder.canDeliver &&
-                  (storeOrder.freeDeliveryApplied || storeOrder.deliveryFee <= 0),
+              isFree: storeOrder.canDeliver && storeOrder.freeDeliveryApplied,
               infoMessage: storeOrder.canDeliver
                   ? _deliveryFeeInfo(storeOrder, displaySubtotal)
                   : null,
@@ -278,12 +277,12 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
   }
 
   String? _deliveryFeeInfo(StoreOrderTotal storeOrder, double subtotal) {
-    final applied = storeOrder.freeDeliveryApplied ||
-        (storeOrder.deliveryFee <= 0 && storeOrder.freeDeliveryEnabled);
-    if (applied) {
+    if (storeOrder.freeDeliveryApplied) {
       return 'Your order qualifies for free delivery.';
     }
-    if (!storeOrder.freeDeliveryEnabled) return null;
+    if (!storeOrder.freeDeliveryEnabled || storeOrder.deliveryFee <= 0) {
+      return null;
+    }
     final remaining = storeOrder.amountToFreeDelivery ??
         ((storeOrder.freeDeliveryMinimum ?? 0) - subtotal);
     if (remaining <= 0) return null;

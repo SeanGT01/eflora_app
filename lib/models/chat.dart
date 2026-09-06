@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Model for a chat conversation between customer and seller.
 class ChatConversation {
   final int id;
@@ -56,24 +58,35 @@ class ChatConversation {
     orderContext: orderContext ?? this.orderContext,
   );
 
-  factory ChatConversation.fromJson(Map<String, dynamic> j) => ChatConversation(
-    id: j['id'] ?? 0,
-    customerId: j['customer_id'] ?? 0,
-    sellerId: j['seller_id'] ?? 0,
-    storeId: j['store_id'] ?? 0,
-    storeName: j['store_name'],
-    storeLogo: j['store_logo'],
-    otherUser: j['other_user'] != null ? ChatUser.fromJson(j['other_user']) : null,
-    lastMessageText: j['last_message_text'],
-    lastMessageAt: j['last_message_at'],
-    lastSenderId: j['last_sender_id'],
-    unreadCount: j['unread_count'] ?? 0,
-    createdAt: j['created_at'],
-    isRiderThread: j['is_rider_thread'] == true,
-    orderContext: j['order_context'] is Map<String, dynamic>
-        ? ChatOrderContext.fromJson(j['order_context'] as Map<String, dynamic>)
-        : null,
-  );
+  factory ChatConversation.fromJson(Map<String, dynamic> j) {
+    ChatOrderContext? orderContext;
+    final oc = j['order_context'];
+    if (oc is Map) {
+      try {
+        orderContext = ChatOrderContext.fromJson(Map<String, dynamic>.from(oc));
+      } catch (_) {
+        orderContext = null;
+      }
+    }
+    return ChatConversation(
+      id: j['id'] ?? 0,
+      customerId: j['customer_id'] ?? 0,
+      sellerId: j['seller_id'] ?? 0,
+      storeId: j['store_id'] ?? 0,
+      storeName: j['store_name'],
+      storeLogo: j['store_logo'],
+      otherUser: j['other_user'] is Map
+          ? ChatUser.fromJson(Map<String, dynamic>.from(j['other_user'] as Map))
+          : null,
+      lastMessageText: j['last_message_text'],
+      lastMessageAt: j['last_message_at'],
+      lastSenderId: j['last_sender_id'],
+      unreadCount: j['unread_count'] ?? 0,
+      createdAt: j['created_at'],
+      isRiderThread: j['is_rider_thread'] == true,
+      orderContext: orderContext,
+    );
+  }
 }
 
 /// Compact order summary shown above rider↔customer chats.
@@ -101,21 +114,45 @@ class ChatOrderContext {
   });
 
   factory ChatOrderContext.fromJson(Map<String, dynamic> j) {
-    final rawItems = j['items'] as List? ?? [];
+    final rawItems = j['items'] is List ? j['items'] as List : const [];
+    final orderId = _asInt(j['order_id'] ?? j['orderId']);
+    var number = (j['order_number'] ?? j['orderNumber'])?.toString() ?? '';
+    if (number.isEmpty || number.contains('undefined')) {
+      number = orderId > 0 ? 'ORD-${orderId.toString().padLeft(5, '0')}' : 'Order';
+    }
     return ChatOrderContext(
-      orderId: j['order_id'] ?? 0,
-      orderNumber: j['order_number']?.toString() ?? 'ORD-${j['order_id'] ?? 0}',
+      orderId: orderId,
+      orderNumber: number,
       status: j['status']?.toString() ?? '',
-      storeName: j['store_name']?.toString(),
-      totalAmount: (j['total_amount'] as num?)?.toDouble() ?? 0,
-      subtotalAmount: (j['subtotal_amount'] as num?)?.toDouble() ?? 0,
-      deliveryFee: (j['delivery_fee'] as num?)?.toDouble() ?? 0,
-      itemCount: j['item_count'] ?? rawItems.length,
+      storeName: (j['store_name'] ?? j['storeName'])?.toString(),
+      totalAmount: _asDouble(j['total_amount'] ?? j['totalAmount'] ?? j['total']),
+      subtotalAmount: _asDouble(j['subtotal_amount'] ?? j['subtotalAmount']),
+      deliveryFee: _asDouble(j['delivery_fee'] ?? j['deliveryFee']),
+      itemCount: ChatOrderContext._asInt(j['item_count'] ?? j['itemCount'] ?? rawItems.length),
       items: rawItems
           .whereType<Map>()
-          .map((e) => ChatOrderItem.fromJson(Map<String, dynamic>.from(e)))
+          .map((e) {
+            try {
+              return ChatOrderItem.fromJson(Map<String, dynamic>.from(e));
+            } catch (_) {
+              return null;
+            }
+          })
+          .whereType<ChatOrderItem>()
           .toList(),
     );
+  }
+
+  static int _asInt(dynamic v) {
+    if (v is int) return v;
+    if (v is num) return v.toInt();
+    return int.tryParse(v?.toString() ?? '') ?? 0;
+  }
+
+  static double _asDouble(dynamic v) {
+    if (v is double) return v;
+    if (v is num) return v.toDouble();
+    return double.tryParse(v?.toString() ?? '') ?? 0;
   }
 
   String get statusLabel {
@@ -166,19 +203,22 @@ class ChatOrderItem {
     this.addons = const [],
   });
 
-  factory ChatOrderItem.fromJson(Map<String, dynamic> j) => ChatOrderItem(
-    id: j['id'] ?? 0,
-    name: j['name']?.toString() ?? j['product_name']?.toString() ?? 'Product',
-    variantName: j['variant_name']?.toString(),
-    quantity: j['quantity'] ?? 1,
-    price: (j['price'] as num?)?.toDouble() ?? 0,
-    total: (j['total'] as num?)?.toDouble() ?? 0,
-    imageUrl: j['image_url']?.toString() ?? j['product_image_url']?.toString(),
-    addons: (j['addons'] as List? ?? [])
-        .whereType<Map>()
-        .map((a) => Map<String, dynamic>.from(a))
-        .toList(),
-  );
+  factory ChatOrderItem.fromJson(Map<String, dynamic> j) {
+    final q = ChatOrderContext._asInt(j['quantity'] ?? 1);
+    return ChatOrderItem(
+      id: ChatOrderContext._asInt(j['id']),
+      name: j['name']?.toString() ?? j['product_name']?.toString() ?? 'Product',
+      variantName: j['variant_name']?.toString(),
+      quantity: q < 1 ? 1 : q,
+      price: ChatOrderContext._asDouble(j['price']),
+      total: ChatOrderContext._asDouble(j['total']),
+      imageUrl: j['image_url']?.toString() ?? j['product_image_url']?.toString(),
+      addons: (j['addons'] is List ? j['addons'] as List : const [])
+          .whereType<Map>()
+          .map((a) => Map<String, dynamic>.from(a))
+          .toList(),
+    );
+  }
 }
 
 /// Lightweight user info embedded inside a conversation.
@@ -230,6 +270,7 @@ class ChatMessage {
   final String? replyToText;
   final String? replyToSenderName;
   final String? replyToMessageType;
+  final ChatOrderContext? orderCard;
 
   const ChatMessage({
     required this.id,
@@ -250,6 +291,7 @@ class ChatMessage {
     this.replyToText,
     this.replyToSenderName,
     this.replyToMessageType,
+    this.orderCard,
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) => ChatMessage(
@@ -259,7 +301,7 @@ class ChatMessage {
     senderName: j['sender_name'],
     senderAvatar: j['sender_avatar'],
     senderRole: j['sender_role'],
-    messageType: j['message_type'] ?? 'text',
+    messageType: (j['order_card'] is Map) ? 'order_card' : (j['message_type'] ?? 'text'),
     text: j['text'],
     imageUrl: j['image_url'],
     imagePublicId: j['image_public_id'],
@@ -271,7 +313,39 @@ class ChatMessage {
     replyToText: j['reply_to_text'],
     replyToSenderName: j['reply_to_sender_name'],
     replyToMessageType: j['reply_to_message_type'],
+    orderCard: _orderCardFromJson(j),
   );
+
+  static ChatOrderContext? _orderCardFromJson(Map<String, dynamic> j) {
+    if (j['order_card'] is Map) {
+      final card = ChatOrderContext.fromJson(
+          Map<String, dynamic>.from(j['order_card'] as Map));
+      if (card.orderId > 0 || card.items.isNotEmpty) return card;
+    }
+    final text = j['text']?.toString();
+    if (text != null && text.trim().startsWith('{')) {
+      try {
+        final decoded = jsonDecode(text);
+        if (decoded is Map &&
+            (decoded['order_id'] != null || decoded['orderId'] != null)) {
+          return ChatOrderContext.fromJson(Map<String, dynamic>.from(decoded));
+        }
+      } catch (_) {}
+    }
+    return _fromPreviewText(text);
+  }
+
+  static ChatOrderContext? _fromPreviewText(String? text) {
+    final match = RegExp(r'ORD-(\d+)', caseSensitive: false).firstMatch(text ?? '');
+    if (match == null) return null;
+    final orderId = int.tryParse(match.group(1) ?? '') ?? 0;
+    if (orderId <= 0) return null;
+    return ChatOrderContext(
+      orderId: orderId,
+      orderNumber: 'ORD-${orderId.toString().padLeft(5, '0')}',
+      status: '',
+    );
+  }
 
   /// Preview label for a quoted reply target.
   String get replyPreviewLabel {
@@ -285,6 +359,12 @@ class ChatMessage {
   }
 
   bool get isReplyTargetDeleted => replyToMessageType == 'deleted';
+
+  String get orderCardPreview {
+    if (messageType != 'order_card') return text ?? '';
+    final num = orderCard?.orderNumber;
+    return (num != null && num.isNotEmpty) ? 'Order $num' : 'Order details';
+  }
 
   /// Return a copy with soft-delete applied locally.
   ChatMessage asDeleted() => ChatMessage(

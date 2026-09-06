@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:dio/dio.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:debounce_throttle/debounce_throttle.dart';
+import '../../config/mapbox_config.dart';
 import '../../models/checkout.dart';
 import '../../providers/address_provider.dart';
 import '../../theme/app_background.dart';
@@ -14,8 +15,49 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 
+String _normalizeAddressMatch(String? value) {
+  var s = (value ?? '')
+      .toLowerCase()
+      .replaceAll(RegExp(r'[àáâãäå]'), 'a')
+      .replaceAll(RegExp(r'[èéêë]'), 'e')
+      .replaceAll(RegExp(r'[ìíîï]'), 'i')
+      .replaceAll(RegExp(r'[òóôõö]'), 'o')
+      .replaceAll(RegExp(r'[ùúûü]'), 'u')
+      .replaceAll(RegExp(r'[ñ]'), 'n');
+  s = s.replaceAll(
+    RegExp(r'\b(barangay|brgy\.?|city of|city|municipality of|municipality)\b'),
+    ' ',
+  );
+  s = s.replaceAll(RegExp(r'[^a-z0-9\s]'), ' ');
+  return s.replaceAll(RegExp(r'\s+'), ' ').trim();
+}
+
+String? _bestAddressMatch(String haystack, List<String> options) {
+  final h = _normalizeAddressMatch(haystack);
+  if (h.isEmpty || options.isEmpty) return null;
+
+  String? exact;
+  String? contains;
+  for (final option in options) {
+    final n = _normalizeAddressMatch(option);
+    if (n.isEmpty) continue;
+    if (h == n ||
+        h.contains(' $n ') ||
+        h.startsWith('$n ') ||
+        h.endsWith(' $n') ||
+        h.contains(n)) {
+      if (h == n || RegExp('\\b${RegExp.escape(n)}\\b').hasMatch(h)) {
+        exact = option;
+        break;
+      }
+      contains ??= option;
+    }
+  }
+  return exact ?? contains;
+}
+
 /// Grab / Foodpanda–style address form: map-first pin, auto current location,
-/// compact tappable city/barangay rows (bottom-sheet pickers), theme-aligned.
+/// compact tappable city/barangay rows (iOS wheel pickers), theme-aligned.
 class AddEditAddressScreen extends StatefulWidget {
   final Address? address; // null = adding new, non-null = editing
 
@@ -49,7 +91,6 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
   bool _mapReady = false;
 
   final MapController _mapController = MapController();
-  /// Kept stable across rebuilds — new onTap closures break flutter_map's InheritedModel.
   late final MapOptions _mapOptions;
 
   late TextEditingController _searchController;
@@ -128,20 +169,10 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
     if (!mounted) return;
     if (!_mapReady) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!mounted) return;
-        if (_mapReady) {
-          try {
-            _mapController.move(LatLng(lat, lng), zoom);
-          } catch (_) {}
-        } else {
-          // Map may still be mounting; try once more next frame.
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (!mounted || !_mapReady) return;
-            try {
-              _mapController.move(LatLng(lat, lng), zoom);
-            } catch (_) {}
-          });
-        }
+        if (!mounted || !_mapReady) return;
+        try {
+          _mapController.move(LatLng(lat, lng), zoom);
+        } catch (_) {}
       });
       return;
     }
@@ -253,46 +284,8 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
     }
   }
 
-  String _normalizeForMatch(String? value) {
-    var s = (value ?? '')
-        .toLowerCase()
-        .replaceAll(RegExp(r'[àáâãäå]'), 'a')
-        .replaceAll(RegExp(r'[èéêë]'), 'e')
-        .replaceAll(RegExp(r'[ìíîï]'), 'i')
-        .replaceAll(RegExp(r'[òóôõö]'), 'o')
-        .replaceAll(RegExp(r'[ùúûü]'), 'u')
-        .replaceAll(RegExp(r'[ñ]'), 'n');
-    s = s.replaceAll(
-      RegExp(r'\b(barangay|brgy\.?|city of|city|municipality of|municipality)\b'),
-      ' ',
-    );
-    s = s.replaceAll(RegExp(r'[^a-z0-9\s]'), ' ');
-    return s.replaceAll(RegExp(r'\s+'), ' ').trim();
-  }
-
-  String? _bestMatch(String haystack, List<String> options) {
-    final h = _normalizeForMatch(haystack);
-    if (h.isEmpty || options.isEmpty) return null;
-
-    String? exact;
-    String? contains;
-    for (final option in options) {
-      final n = _normalizeForMatch(option);
-      if (n.isEmpty) continue;
-      if (h == n ||
-          h.contains(' $n ') ||
-          h.startsWith('$n ') ||
-          h.endsWith(' $n') ||
-          h.contains(n)) {
-        if (h == n || RegExp('\\b${RegExp.escape(n)}\\b').hasMatch(h)) {
-          exact = option;
-          break;
-        }
-        contains ??= option;
-      }
-    }
-    return exact ?? contains;
-  }
+  String? _bestMatch(String haystack, List<String> options) =>
+      _bestAddressMatch(haystack, options);
 
   /// Reverse-geocode a map pin.
   ///
@@ -307,61 +300,40 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
   }) async {
     setState(() => _isReverseGeocoding = true);
     try {
-      final dio = Dio();
-      final response = await dio.get(
-        'https://nominatim.openstreetmap.org/reverse',
-        queryParameters: {
-          'lat': lat.toString(),
-          'lon': lng.toString(),
-          'format': 'json',
-          'addressdetails': '1',
-          'zoom': '18',
+      final result = await context.read<AddressProvider>().googleReverseGeocode(lat, lng);
+      if (!mounted) return;
+
+      Map<String, dynamic>? data;
+      result.when(
+        success: (payload) => data = payload,
+        error: (message, _) {
+          if (kDebugMode) print('Reverse geocoding failed: $message');
         },
-        options: Options(headers: {'User-Agent': 'eflora-app/1.0'}),
       );
+      if (data == null) return;
 
-      if (!mounted || response.statusCode != 200 || response.data is! Map) return;
-
-      final data = Map<String, dynamic>.from(response.data as Map);
-      final address = Map<String, dynamic>.from(data['address'] as Map? ?? {});
-      final displayName = data['display_name']?.toString() ?? '';
-
-      final contextParts = <String>[
-        displayName,
-        address['suburb']?.toString() ?? '',
-        address['neighbourhood']?.toString() ?? '',
-        address['village']?.toString() ?? '',
-        address['hamlet']?.toString() ?? '',
-        address['city_district']?.toString() ?? '',
-        address['quarter']?.toString() ?? '',
-        address['city']?.toString() ?? '',
-        address['municipality']?.toString() ?? '',
-        address['town']?.toString() ?? '',
-        address['county']?.toString() ?? '',
-        address['state']?.toString() ?? '',
-        address['road']?.toString() ?? '',
-        address['pedestrian']?.toString() ?? '',
-      ].where((e) => e.trim().isNotEmpty);
-
-      final contextText = contextParts.join(', ');
-
-      final streetCandidate = (address['road'] ??
-              address['pedestrian'] ??
-              address['path'] ??
-              address['residential'] ??
-              '')
-          .toString()
-          .trim();
-      final houseNumber = (address['house_number'] ?? '').toString().trim();
-
-      if (overwriteStreet) {
-        _streetController.text = streetCandidate;
-      } else if (streetCandidate.isNotEmpty && _streetController.text.trim().isEmpty) {
-        _streetController.text = streetCandidate;
+      final placeId = data!['place_id']?.toString();
+      if (placeId != null && placeId.isNotEmpty) {
+        _selectedPlaceId = placeId;
       }
 
-      if (houseNumber.isNotEmpty && _buildingDetailsController.text.trim().isEmpty) {
-        _buildingDetailsController.text = houseNumber;
+      final contextText = [
+        data!['formatted_address'],
+        data!['context'],
+        data!['municipality'],
+        data!['barangay'],
+        data!['street'],
+      ].whereType<String>().where((e) => e.trim().isNotEmpty).join(', ');
+
+      final streetCandidate = (data!['street']?.toString() ?? '').trim();
+      final formatted = (data!['formatted_address']?.toString() ?? '').trim();
+
+      if (overwriteStreet) {
+        _streetController.text = streetCandidate.isNotEmpty
+            ? streetCandidate
+            : (formatted.split(',').first.trim());
+      } else if (streetCandidate.isNotEmpty && _streetController.text.trim().isEmpty) {
+        _streetController.text = streetCandidate;
       }
 
       if (!syncArea) {
@@ -370,7 +342,8 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
       }
 
       final municipalities = context.read<AddressProvider>().municipalities;
-      final matchedMunicipality = _bestMatch(contextText, municipalities);
+      final matchedMunicipality = _bestMatch(contextText, municipalities) ??
+          _bestMatch(data!['municipality']?.toString() ?? '', municipalities);
 
       if (matchedMunicipality != null) {
         final municipalityChanged = matchedMunicipality != _selectedMunicipality;
@@ -381,7 +354,8 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
         }
         if (!mounted) return;
 
-        final matchedBarangay = _bestMatch(contextText, _barangays);
+        final matchedBarangay = _bestMatch(contextText, _barangays) ??
+            _bestMatch(data!['barangay']?.toString() ?? '', _barangays);
         if (matchedBarangay != null) {
           setState(() => _selectedBarangay = matchedBarangay);
         }
@@ -398,41 +372,38 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
     if (barangay.isEmpty || _selectedMunicipality == null) return;
 
     try {
-      final dio = Dio();
       final query = '$barangay, $_selectedMunicipality, Laguna, Philippines';
-      final response = await dio.get(
-        'https://nominatim.openstreetmap.org/search',
-        queryParameters: {
-          'q': query,
-          'countrycodes': 'PH',
-          'format': 'json',
-          'limit': '1',
+      final result = await context.read<AddressProvider>().googlePlaceSearch(query);
+      if (!mounted) return;
+
+      List<Map<String, dynamic>> hits = [];
+      result.when(
+        success: (rows) => hits = rows,
+        error: (message, _) {
+          if (kDebugMode) print('Barangay geocoding failed: $message');
         },
-        options: Options(headers: {'User-Agent': 'eflora-app/1.0'}),
       );
+      if (hits.isEmpty) return;
 
-      if (response.statusCode == 200 &&
-          response.data is List &&
-          (response.data as List).isNotEmpty) {
-        final feature = (response.data as List).first;
-        final lat = double.tryParse(feature['lat']?.toString() ?? '');
-        final lng = double.tryParse(feature['lon']?.toString() ?? '');
+      final feature = hits.first;
+      final lat = (feature['lat'] as num?)?.toDouble();
+      final lng = (feature['lng'] as num?)?.toDouble();
 
-        if (lat != null && lng != null && mounted) {
-          setState(() {
-            _selectedLatitude = lat;
-            _selectedLongitude = lng;
-          });
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            _moveMap(lat, lng, 15);
-          });
-          await _reverseGeocodeAndFill(
-            lat,
-            lng,
-            syncArea: false,
-            overwriteStreet: true,
-          );
-        }
+      if (lat != null && lng != null && mounted) {
+        setState(() {
+          _selectedLatitude = lat;
+          _selectedLongitude = lng;
+          _selectedPlaceId = feature['place_id']?.toString();
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _moveMap(lat, lng, 15);
+        });
+        await _reverseGeocodeAndFill(
+          lat,
+          lng,
+          syncArea: false,
+          overwriteStreet: true,
+        );
       }
     } catch (e) {
       if (kDebugMode) print('Barangay geocoding failed: $e');
@@ -506,32 +477,25 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
 
     setState(() => _isSearching = true);
     try {
-      final dio = Dio();
-      final response = await dio.get(
-        'https://nominatim.openstreetmap.org/search',
-        queryParameters: {
-          'q': '$query, Laguna, Philippines',
-          'countrycodes': 'PH',
-          'format': 'json',
-          'limit': '5',
-          'addressdetails': '1',
+      final result = await context.read<AddressProvider>().googlePlaceSearch(query);
+      if (!mounted) return;
+      result.when(
+        success: (rows) {
+          setState(() {
+            _searchResults = rows
+                .map((feature) => {
+                      'name': feature['name'] ?? 'Unknown',
+                      'lat': (feature['lat'] as num?)?.toDouble() ?? 0.0,
+                      'lng': (feature['lng'] as num?)?.toDouble() ?? 0.0,
+                      'place_id': feature['place_id'],
+                    })
+                .toList();
+          });
         },
-        options: Options(headers: {'User-Agent': 'eflora-app/1.0'}),
+        error: (_, __) {
+          setState(() => _searchResults = []);
+        },
       );
-
-      if (response.statusCode == 200) {
-        final features = response.data as List;
-        setState(() {
-          _searchResults = features
-              .map((feature) => {
-                    'name': feature['display_name'] ?? 'Unknown',
-                    'lat': double.tryParse(feature['lat']?.toString() ?? '') ?? 0.0,
-                    'lng': double.tryParse(feature['lon']?.toString() ?? '') ?? 0.0,
-                  })
-              .cast<Map<String, dynamic>>()
-              .toList();
-        });
-      }
     } catch (_) {
       setState(() => _searchResults = []);
     } finally {
@@ -540,11 +504,12 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
   }
 
   void _selectPlace(Map<String, dynamic> place) {
-    final lat = place['lat'] as double;
-    final lng = place['lng'] as double;
+    final lat = (place['lat'] as num).toDouble();
+    final lng = (place['lng'] as num).toDouble();
     setState(() {
       _selectedLatitude = lat;
       _selectedLongitude = lng;
+      _selectedPlaceId = place['place_id']?.toString();
       _searchResults = [];
       _searchController.clear();
     });
@@ -667,35 +632,67 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
     await Future<void>.delayed(Duration.zero);
     if (!mounted) return;
 
-    final items = List<String>.from(options);
-    final current = selected;
-
-    final result = await showModalBottomSheet<String>(
+    final result = await showIosWheelPicker(
       context: context,
-      useRootNavigator: true,
-      // Fixed-height sheet; avoids unbounded flex overflow with isScrollControlled.
-      backgroundColor: AppColors.warmWhite,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          child: SizedBox(
-            height: 440,
-            child: _AddressPickerSheet(
-              title: title,
-              options: items,
-              selected: current,
-            ),
-          ),
-        );
-      },
+      title: title,
+      options: List<String>.from(options),
+      selected: selected,
     );
 
     if (!mounted || result == null) return;
     await Future<void>.delayed(Duration.zero);
     if (!mounted) return;
     onSelected(result);
+  }
+
+  Future<void> _expandAddressMap() async {
+    final lat = _selectedLatitude ?? 14.1694;
+    final lng = _selectedLongitude ?? 121.2934;
+    final result = await Navigator.of(context).push<_ExpandedPinResult>(
+      PageRouteBuilder(
+        opaque: true,
+        transitionDuration: const Duration(milliseconds: 280),
+        reverseTransitionDuration: const Duration(milliseconds: 220),
+        pageBuilder: (_, __, ___) => _ExpandedAddressMapPage(
+          latitude: lat,
+          longitude: lng,
+          street: _streetController.text.trim(),
+          barangay: _selectedBarangay,
+          municipality: _selectedMunicipality,
+        ),
+        transitionsBuilder: (_, anim, __, child) =>
+            FadeTransition(opacity: anim, child: child),
+      ),
+    );
+    if (!mounted || result == null) return;
+    setState(() {
+      _selectedLatitude = result.latitude;
+      _selectedLongitude = result.longitude;
+      if (result.placeId != null && result.placeId!.isNotEmpty) {
+        _selectedPlaceId = result.placeId;
+      }
+      if (result.street != null && result.street!.trim().isNotEmpty) {
+        _streetController.text = result.street!.trim();
+      }
+      if (result.municipality != null && result.municipality!.isNotEmpty) {
+        _selectedMunicipality = result.municipality;
+      }
+      if (result.barangay != null && result.barangay!.isNotEmpty) {
+        _selectedBarangay = result.barangay;
+      }
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _moveMap(result.latitude, result.longitude, 16);
+    });
+    if (result.municipality != null && result.municipality!.isNotEmpty) {
+      await _loadBarangays(
+        result.municipality!,
+        moveMap: false,
+        preferredBarangay: result.barangay,
+      );
+    } else {
+      await _reverseGeocodeAndFill(result.latitude, result.longitude);
+    }
   }
 
   @override
@@ -740,6 +737,7 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
               },
               onSelectPlace: _selectPlace,
               onUseMyLocation: () => _goToMyLocation(),
+              onExpand: _expandAddressMap,
               mapController: _mapController,
               mapOptions: _mapOptions,
             ),
@@ -1176,9 +1174,8 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
   }
 }
 
-/// Map + search chrome. Owns a stable [FlutterMap] configuration so parent
-/// rebuilds (sheets / Provider) do not recreate MapOptions.
-class _PinnedMapBox extends StatelessWidget {
+/// Map + search chrome. Stable [MapOptions] so parent rebuilds do not reset the map.
+class _PinnedMapBox extends StatefulWidget {
   const _PinnedMapBox({
     required this.latitude,
     required this.longitude,
@@ -1192,6 +1189,7 @@ class _PinnedMapBox extends StatelessWidget {
     required this.onClearSearch,
     required this.onSelectPlace,
     required this.onUseMyLocation,
+    required this.onExpand,
     required this.mapController,
     required this.mapOptions,
   });
@@ -1208,30 +1206,59 @@ class _PinnedMapBox extends StatelessWidget {
   final VoidCallback onClearSearch;
   final ValueChanged<Map<String, dynamic>> onSelectPlace;
   final VoidCallback onUseMyLocation;
+  final VoidCallback onExpand;
   final MapController mapController;
   final MapOptions mapOptions;
 
   @override
+  State<_PinnedMapBox> createState() => _PinnedMapBoxState();
+}
+
+class _PinnedMapBoxState extends State<_PinnedMapBox> {
+  String? _tileUrl;
+  bool _isMapbox = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTiles();
+  }
+
+  Future<void> _loadTiles() async {
+    final token = await MapboxConfig.publicToken();
+    if (!mounted) return;
+    setState(() {
+      _isMapbox = token.isNotEmpty;
+      _tileUrl = MapboxConfig.rasterTileUrl(token);
+    });
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final lat = widget.latitude ?? 14.1694;
+    final lng = widget.longitude ?? 121.2934;
+    final tileUrl = _tileUrl ?? MapboxConfig.rasterTileUrl('');
+
     return SizedBox(
       height: 280,
       child: Stack(
         children: [
           FlutterMap(
             key: const ValueKey('pinned-address-map'),
-            mapController: mapController,
-            options: mapOptions,
+            mapController: widget.mapController,
+            options: widget.mapOptions,
             children: [
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                urlTemplate: tileUrl,
                 userAgentPackageName: 'com.seanlazala.eflora',
-                maxZoom: 19,
+                maxZoom: _isMapbox ? 22 : 19,
+                errorTileCallback: (tile, error, stackTrace) {},
               ),
-              if (latitude != null && longitude != null)
+              if (widget.latitude != null && widget.longitude != null)
                 MarkerLayer(
                   markers: [
                     Marker(
-                      point: LatLng(latitude!, longitude!),
+                      point: LatLng(lat, lng),
                       width: 44,
                       height: 44,
                       alignment: Alignment.topCenter,
@@ -1241,6 +1268,13 @@ class _PinnedMapBox extends StatelessWidget {
                         size: 44,
                       ),
                     ),
+                  ],
+                ),
+              if (_isMapbox)
+                const RichAttributionWidget(
+                  attributions: [
+                    TextSourceAttribution('© Mapbox'),
+                    TextSourceAttribution('© OpenStreetMap'),
                   ],
                 ),
             ],
@@ -1278,16 +1312,16 @@ class _PinnedMapBox extends StatelessWidget {
                   borderRadius: BorderRadius.circular(AppRadius.md),
                   color: AppColors.warmWhite.withValues(alpha: 0.96),
                   child: TextField(
-                    controller: searchController,
-                    focusNode: searchFocusNode,
-                    onChanged: onSearchChanged,
+                    controller: widget.searchController,
+                    focusNode: widget.searchFocusNode,
+                    onChanged: widget.onSearchChanged,
                     style: GoogleFonts.dmSans(fontSize: 13.5, color: AppColors.charcoal),
                     decoration: InputDecoration(
                       hintText: 'Search street, landmark…',
                       hintStyle: GoogleFonts.dmSans(color: AppColors.muted, fontSize: 13.5),
                       prefixIcon:
                           const Icon(Icons.search_rounded, color: AppColors.muted, size: 20),
-                      suffixIcon: isSearching
+                      suffixIcon: widget.isSearching
                           ? const Padding(
                               padding: EdgeInsets.all(12),
                               child: SizedBox(
@@ -1299,11 +1333,11 @@ class _PinnedMapBox extends StatelessWidget {
                                 ),
                               ),
                             )
-                          : searchController.text.isNotEmpty
+                          : widget.searchController.text.isNotEmpty
                               ? IconButton(
                                   icon: const Icon(Icons.clear_rounded,
                                       size: 18, color: AppColors.muted),
-                                  onPressed: onClearSearch,
+                                  onPressed: widget.onClearSearch,
                                 )
                               : null,
                       border: InputBorder.none,
@@ -1312,7 +1346,7 @@ class _PinnedMapBox extends StatelessWidget {
                     ),
                   ),
                 ),
-                if (searchResults.isNotEmpty)
+                if (widget.searchResults.isNotEmpty)
                   Container(
                     margin: const EdgeInsets.only(top: 6),
                     constraints: const BoxConstraints(maxHeight: 160),
@@ -1330,11 +1364,11 @@ class _PinnedMapBox extends StatelessWidget {
                     child: ListView.separated(
                       shrinkWrap: true,
                       padding: const EdgeInsets.symmetric(vertical: 4),
-                      itemCount: searchResults.length,
+                      itemCount: widget.searchResults.length,
                       separatorBuilder: (_, __) =>
                           const Divider(height: 1, indent: 48),
                       itemBuilder: (context, index) {
-                        final place = searchResults[index];
+                        final place = widget.searchResults[index];
                         return ListTile(
                           dense: true,
                           leading: const Icon(Icons.place_outlined,
@@ -1346,7 +1380,7 @@ class _PinnedMapBox extends StatelessWidget {
                             style: GoogleFonts.dmSans(
                                 fontSize: 12.5, color: AppColors.charcoal),
                           ),
-                          onTap: () => onSelectPlace(place),
+                          onTap: () => widget.onSelectPlace(place),
                         );
                       },
                     ),
@@ -1356,7 +1390,7 @@ class _PinnedMapBox extends StatelessWidget {
           ),
           Positioned(
             right: 12,
-            bottom: 28,
+            bottom: 80,
             child: Material(
               color: AppColors.warmWhite,
               elevation: 3,
@@ -1364,12 +1398,12 @@ class _PinnedMapBox extends StatelessWidget {
               shape: const CircleBorder(),
               child: InkWell(
                 customBorder: const CircleBorder(),
-                onTap: isLocating ? null : onUseMyLocation,
+                onTap: widget.isLocating ? null : widget.onUseMyLocation,
                 child: SizedBox(
                   width: 44,
                   height: 44,
                   child: Center(
-                    child: isLocating
+                    child: widget.isLocating
                         ? const SizedBox(
                             width: 18,
                             height: 18,
@@ -1385,7 +1419,27 @@ class _PinnedMapBox extends StatelessWidget {
               ),
             ),
           ),
-          if (isReverseGeocoding)
+          Positioned(
+            right: 12,
+            bottom: 28,
+            child: Material(
+              color: AppColors.warmWhite,
+              elevation: 3,
+              shadowColor: const Color(0x33000000),
+              shape: const CircleBorder(),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: widget.onExpand,
+                child: const SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: Icon(Icons.open_in_full_rounded,
+                      color: AppColors.deepRose, size: 20),
+                ),
+              ),
+            ),
+          ),
+          if (widget.isReverseGeocoding)
             Positioned(
               left: 12,
               bottom: 28,
@@ -1417,9 +1471,877 @@ class _PinnedMapBox extends StatelessWidget {
   }
 }
 
-/// Searchable list sheet used for city / barangay selection.
-class _AddressPickerSheet extends StatefulWidget {
-  const _AddressPickerSheet({
+class _ExpandedPinResult {
+  const _ExpandedPinResult({
+    required this.latitude,
+    required this.longitude,
+    this.street,
+    this.barangay,
+    this.municipality,
+    this.placeId,
+  });
+
+  final double latitude;
+  final double longitude;
+  final String? street;
+  final String? barangay;
+  final String? municipality;
+  final String? placeId;
+}
+
+class _ExpandedAddressMapPage extends StatefulWidget {
+  const _ExpandedAddressMapPage({
+    required this.latitude,
+    required this.longitude,
+    this.street,
+    this.barangay,
+    this.municipality,
+  });
+
+  final double latitude;
+  final double longitude;
+  final String? street;
+  final String? barangay;
+  final String? municipality;
+
+  @override
+  State<_ExpandedAddressMapPage> createState() => _ExpandedAddressMapPageState();
+}
+
+class _ExpandedAddressMapPageState extends State<_ExpandedAddressMapPage> {
+  final MapController _mapController = MapController();
+  late final TextEditingController _searchController;
+  late final Debouncer<String> _searchDebouncer;
+  final FocusNode _searchFocusNode = FocusNode();
+
+  late double _lat;
+  late double _lng;
+  bool _mapReady = false;
+  bool _isLocating = false;
+  String? _tileUrl;
+  bool _isMapbox = false;
+  List<Map<String, dynamic>> _searchResults = [];
+  bool _isSearching = false;
+  bool _resolving = false;
+  int _geoSeq = 0;
+  String? _street;
+  String? _barangay;
+  String? _municipality;
+  String? _placeId;
+  List<String> _barangays = [];
+  bool _loadingBarangays = false;
+  bool _lockArea = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _lat = widget.latitude;
+    _lng = widget.longitude;
+    _street = widget.street;
+    _barangay = widget.barangay;
+    _municipality = widget.municipality;
+    _searchController = TextEditingController();
+    _searchDebouncer = Debouncer<String>(
+      const Duration(milliseconds: 300),
+      initialValue: '',
+      onChanged: (query) {
+        if (!mounted) return;
+        if (query.isNotEmpty) {
+          _searchPlaces(query);
+        } else {
+          setState(() => _searchResults = []);
+        }
+      },
+    );
+    _loadTiles();
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await _ensureBarangays();
+      if (mounted) await _refreshDetails();
+    });
+  }
+
+  Future<void> _loadTiles() async {
+    final token = await MapboxConfig.publicToken();
+    if (!mounted) return;
+    setState(() {
+      _isMapbox = token.isNotEmpty;
+      _tileUrl = MapboxConfig.rasterTileUrl(token);
+    });
+  }
+
+  @override
+  void dispose() {
+    _searchDebouncer.cancel();
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    _mapController.dispose();
+    super.dispose();
+  }
+
+  void _popWithPin() {
+    Navigator.pop(
+      context,
+      _ExpandedPinResult(
+        latitude: _lat,
+        longitude: _lng,
+        street: _street,
+        barangay: _barangay,
+        municipality: _municipality,
+        placeId: _placeId,
+      ),
+    );
+  }
+
+  void _onMapTap(TapPosition _, LatLng point) {
+    setState(() {
+      _lat = point.latitude;
+      _lng = point.longitude;
+      _searchResults = [];
+      _lockArea = false;
+    });
+    _refreshDetails();
+  }
+
+  Future<void> _refreshDetails() async {
+    final seq = ++_geoSeq;
+    setState(() => _resolving = true);
+    try {
+      final provider = context.read<AddressProvider>();
+      if (provider.municipalities.isEmpty) {
+        await provider.loadMunicipalities();
+      }
+      if (!mounted || seq != _geoSeq) return;
+
+      final result = await provider.googleReverseGeocode(_lat, _lng);
+      if (!mounted || seq != _geoSeq) return;
+
+      Map<String, dynamic>? data;
+      result.when(
+        success: (payload) => data = payload,
+        error: (_, __) {},
+      );
+      if (data == null) return;
+
+      final streetCandidate = (data!['street']?.toString() ?? '').trim();
+      final formatted = (data!['formatted_address']?.toString() ?? '').trim();
+      final street = streetCandidate.isNotEmpty
+          ? streetCandidate
+          : (formatted.split(',').first.trim());
+      final placeId = data!['place_id']?.toString();
+      final contextText = [
+        data!['formatted_address'],
+        data!['context'],
+        data!['municipality'],
+        data!['barangay'],
+        data!['street'],
+      ].whereType<String>().where((e) => e.trim().isNotEmpty).join(', ');
+
+      final matchedMunicipality = _bestAddressMatch(
+            contextText,
+            provider.municipalities,
+          ) ??
+          _bestAddressMatch(
+            data!['municipality']?.toString() ?? '',
+            provider.municipalities,
+          );
+
+      String? matchedBarangay;
+      if (matchedMunicipality != null) {
+        await provider.loadBarangays(matchedMunicipality);
+        if (!mounted || seq != _geoSeq) return;
+        matchedBarangay = _bestAddressMatch(contextText, provider.barangays) ??
+            _bestAddressMatch(
+              data!['barangay']?.toString() ?? '',
+              provider.barangays,
+            );
+      }
+
+      setState(() {
+        _street = street.isNotEmpty ? street : null;
+        if (placeId != null && placeId.isNotEmpty) _placeId = placeId;
+        if (!_lockArea) {
+          _municipality = matchedMunicipality;
+          _barangay = matchedBarangay;
+          if (matchedMunicipality != null) {
+            _barangays = List<String>.from(provider.barangays);
+          }
+        }
+      });
+    } finally {
+      if (mounted && seq == _geoSeq) setState(() => _resolving = false);
+    }
+  }
+
+  Future<void> _ensureBarangays() async {
+    if (_municipality == null || _municipality!.isEmpty) return;
+    final provider = context.read<AddressProvider>();
+    setState(() => _loadingBarangays = true);
+    await provider.loadBarangays(_municipality!);
+    if (!mounted) return;
+    setState(() {
+      _barangays = List<String>.from(provider.barangays);
+      _loadingBarangays = false;
+    });
+  }
+
+  Future<void> _openPicker({
+    required String title,
+    required List<String> options,
+    required String? selected,
+    required ValueChanged<String> onSelected,
+  }) async {
+    if (options.isEmpty || !mounted) return;
+    await Future<void>.delayed(Duration.zero);
+    if (!mounted) return;
+    final result = await showIosWheelPicker(
+      context: context,
+      title: title,
+      options: List<String>.from(options),
+      selected: selected,
+    );
+    if (!mounted || result == null) return;
+    onSelected(result);
+  }
+
+  Future<void> _onCitySelected(String city) async {
+    setState(() {
+      _municipality = city;
+      _barangay = null;
+      _barangays = [];
+      _loadingBarangays = true;
+      _lockArea = true;
+    });
+    final provider = context.read<AddressProvider>();
+    await provider.loadBarangays(city);
+    if (!mounted) return;
+    setState(() {
+      _barangays = List<String>.from(provider.barangays);
+      _loadingBarangays = false;
+    });
+    final lat = provider.barangayLat;
+    final lng = provider.barangayLng;
+    if (lat != null && lng != null) {
+      setState(() {
+        _lat = lat;
+        _lng = lng;
+      });
+      if (_mapReady) {
+        try {
+          _mapController.move(LatLng(lat, lng), 14);
+        } catch (_) {}
+      }
+      await _refreshDetails();
+    }
+  }
+
+  Future<void> _onBarangaySelected(String barangay) async {
+    if (_municipality == null) return;
+    setState(() {
+      _barangay = barangay;
+      _lockArea = true;
+    });
+    final query = '$barangay, $_municipality, Laguna, Philippines';
+    final result = await context.read<AddressProvider>().googlePlaceSearch(query);
+    if (!mounted) return;
+    List<Map<String, dynamic>> hits = [];
+    result.when(success: (rows) => hits = rows, error: (_, __) {});
+    if (hits.isEmpty) return;
+    final lat = (hits.first['lat'] as num?)?.toDouble();
+    final lng = (hits.first['lng'] as num?)?.toDouble();
+    if (lat == null || lng == null) return;
+    setState(() {
+      _lat = lat;
+      _lng = lng;
+      _placeId = hits.first['place_id']?.toString();
+    });
+    if (_mapReady) {
+      try {
+        _mapController.move(LatLng(lat, lng), 16);
+      } catch (_) {}
+    }
+    await _refreshDetails();
+  }
+
+  void _zoomBy(double delta) {
+    if (!_mapReady) return;
+    try {
+      final cam = _mapController.camera;
+      _mapController.move(cam.center, (cam.zoom + delta).clamp(3.0, 19.0));
+    } catch (_) {}
+  }
+
+  Future<void> _goToMyLocation() async {
+    setState(() => _isLocating = true);
+    try {
+      final serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.denied ||
+          permission == LocationPermission.deniedForever) {
+        return;
+      }
+      final position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+      );
+      if (!mounted) return;
+      setState(() {
+        _lat = position.latitude;
+        _lng = position.longitude;
+        _lockArea = false;
+      });
+      if (_mapReady) {
+        _mapController.move(LatLng(_lat, _lng), 17);
+      }
+      await _refreshDetails();
+    } finally {
+      if (mounted) setState(() => _isLocating = false);
+    }
+  }
+
+  Future<void> _searchPlaces(String query) async {
+    setState(() => _isSearching = true);
+    try {
+      final result = await context.read<AddressProvider>().googlePlaceSearch(query);
+      if (!mounted) return;
+      result.when(
+        success: (rows) {
+          setState(() {
+            _searchResults = rows
+                .map((feature) => {
+                      'name': feature['name'] ?? 'Unknown',
+                      'lat': (feature['lat'] as num?)?.toDouble() ?? 0.0,
+                      'lng': (feature['lng'] as num?)?.toDouble() ?? 0.0,
+                    })
+                .toList();
+          });
+        },
+        error: (_, __) => setState(() => _searchResults = []),
+      );
+    } catch (_) {
+      setState(() => _searchResults = []);
+    } finally {
+      if (mounted) setState(() => _isSearching = false);
+    }
+  }
+
+  void _selectPlace(Map<String, dynamic> place) {
+    final lat = (place['lat'] as num).toDouble();
+    final lng = (place['lng'] as num).toDouble();
+    setState(() {
+      _lat = lat;
+      _lng = lng;
+      _searchResults = [];
+      _searchController.clear();
+      _lockArea = false;
+    });
+    _searchFocusNode.unfocus();
+    if (_mapReady) _mapController.move(LatLng(lat, lng), 16);
+    _refreshDetails();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.paddingOf(context).top;
+    final bottom = MediaQuery.paddingOf(context).bottom;
+    final tileUrl = _tileUrl ?? MapboxConfig.rasterTileUrl('');
+
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _popWithPin();
+      },
+      child: Scaffold(
+        backgroundColor: AppColors.charcoal,
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            FlutterMap(
+              mapController: _mapController,
+              options: MapOptions(
+                initialCenter: LatLng(_lat, _lng),
+                initialZoom: 16,
+                keepAlive: true,
+                onMapReady: () => _mapReady = true,
+                onTap: _onMapTap,
+              ),
+              children: [
+                TileLayer(
+                  urlTemplate: tileUrl,
+                  userAgentPackageName: 'com.seanlazala.eflora',
+                  maxZoom: _isMapbox ? 22 : 19,
+                  errorTileCallback: (tile, error, stackTrace) {},
+                ),
+                MarkerLayer(
+                  markers: [
+                    Marker(
+                      point: LatLng(_lat, _lng),
+                      width: 48,
+                      height: 48,
+                      alignment: Alignment.topCenter,
+                      child: const Icon(
+                        Icons.location_pin,
+                        color: AppColors.deepRose,
+                        size: 48,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            Positioned(
+              top: top + 8,
+              left: 12,
+              child: _AddressMapControl(
+                icon: Icons.close_rounded,
+                iconColor: AppColors.deepRose,
+                onTap: _popWithPin,
+              ),
+            ),
+            Positioned(
+              top: top + 8,
+              left: 0,
+              right: 0,
+              child: IgnorePointer(
+                child: Center(
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    decoration: BoxDecoration(
+                      color: AppColors.deepRose.withValues(alpha: 0.94),
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: const [
+                        BoxShadow(
+                          color: Color(0x33000000),
+                          blurRadius: 8,
+                          offset: Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Text(
+                      'ADJUST PIN',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 0.8,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              top: top + 8,
+              right: 12,
+              child: Column(
+                children: [
+                  _AddressMapControl(
+                    icon: Icons.my_location_rounded,
+                    onTap: _isLocating ? () {} : _goToMyLocation,
+                  ),
+                  const SizedBox(height: 8),
+                  _AddressZoomControls(
+                    onZoomIn: () => _zoomBy(1),
+                    onZoomOut: () => _zoomBy(-1),
+                  ),
+                ],
+              ),
+            ),
+            Positioned(
+              top: top + 58,
+              left: 12,
+              right: 68,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Material(
+                    elevation: 2,
+                    shadowColor: const Color(0x33000000),
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    color: AppColors.warmWhite.withValues(alpha: 0.96),
+                    child: TextField(
+                      controller: _searchController,
+                      focusNode: _searchFocusNode,
+                      onChanged: (q) {
+                        setState(() {});
+                        _searchDebouncer.value = q;
+                      },
+                      style: GoogleFonts.dmSans(fontSize: 13.5, color: AppColors.charcoal),
+                      decoration: InputDecoration(
+                        hintText: 'Search street, landmark…',
+                        hintStyle: GoogleFonts.dmSans(color: AppColors.muted, fontSize: 13.5),
+                        prefixIcon: const Icon(Icons.search_rounded,
+                            color: AppColors.muted, size: 20),
+                        suffixIcon: _isSearching
+                            ? const Padding(
+                                padding: EdgeInsets.all(12),
+                                child: SizedBox(
+                                  width: 18,
+                                  height: 18,
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: AppColors.deepRose,
+                                  ),
+                                ),
+                              )
+                            : _searchController.text.isNotEmpty
+                                ? IconButton(
+                                    icon: const Icon(Icons.clear_rounded,
+                                        size: 18, color: AppColors.muted),
+                                    onPressed: () {
+                                      _searchController.clear();
+                                      setState(() => _searchResults = []);
+                                    },
+                                  )
+                                : null,
+                        border: InputBorder.none,
+                        contentPadding:
+                            const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                      ),
+                    ),
+                  ),
+                  if (_searchResults.isNotEmpty)
+                    Container(
+                      margin: const EdgeInsets.only(top: 6),
+                      constraints: const BoxConstraints(maxHeight: 180),
+                      decoration: BoxDecoration(
+                        color: AppColors.warmWhite,
+                        borderRadius: BorderRadius.circular(AppRadius.md),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x22000000),
+                            blurRadius: 12,
+                            offset: Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        itemCount: _searchResults.length,
+                        separatorBuilder: (_, __) =>
+                            const Divider(height: 1, indent: 48),
+                        itemBuilder: (context, index) {
+                          final place = _searchResults[index];
+                          return ListTile(
+                            dense: true,
+                            leading: const Icon(Icons.place_outlined,
+                                color: AppColors.deepRose, size: 20),
+                            title: Text(
+                              place['name'],
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: GoogleFonts.dmSans(
+                                  fontSize: 12.5, color: AppColors.charcoal),
+                            ),
+                            onTap: () => _selectPlace(place),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 12 + bottom,
+              child: Material(
+                color: AppColors.warmWhite,
+                elevation: 6,
+                shadowColor: const Color(0x33000000),
+                borderRadius: BorderRadius.circular(18),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        'LOCATION',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 1.4,
+                          color: AppColors.muted,
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      if (_resolving)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: Row(
+                            children: [
+                              const SizedBox(
+                                width: 14,
+                                height: 14,
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: AppColors.deepRose,
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Text(
+                                'Detecting address…',
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 12,
+                                  color: AppColors.muted,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      _ExpandedDetailRow(
+                        label: 'Street',
+                        value: _street,
+                      ),
+                      const SizedBox(height: 8),
+                      _ExpandedDetailRow(
+                        label: 'City / Municipality',
+                        value: _municipality,
+                        placeholder: 'Select city',
+                        onTap: () => _openPicker(
+                          title: 'City / Municipality',
+                          options: List<String>.from(
+                            context.read<AddressProvider>().municipalities,
+                          ),
+                          selected: _municipality,
+                          onSelected: _onCitySelected,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      _ExpandedDetailRow(
+                        label: 'Barangay',
+                        value: _barangay,
+                        placeholder: _municipality == null
+                            ? 'Select city first'
+                            : (_loadingBarangays ? 'Loading…' : 'Select barangay'),
+                        loading: _loadingBarangays,
+                        enabled: _municipality != null &&
+                            !_loadingBarangays &&
+                            _barangays.isNotEmpty,
+                        onTap: () => _openPicker(
+                          title: 'Barangay',
+                          options: List<String>.from(_barangays),
+                          selected: _barangay,
+                          onSelected: _onBarangaySelected,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 48,
+                        child: ElevatedButton(
+                          onPressed: _popWithPin,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.deepRose,
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(AppRadius.md),
+                            ),
+                          ),
+                          child: Text(
+                            'Use this location',
+                            style: GoogleFonts.dmSans(
+                                fontWeight: FontWeight.w700, fontSize: 15),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ExpandedDetailRow extends StatelessWidget {
+  const _ExpandedDetailRow({
+    required this.label,
+    required this.value,
+    this.placeholder,
+    this.onTap,
+    this.enabled = true,
+    this.loading = false,
+  });
+
+  final String label;
+  final String? value;
+  final String? placeholder;
+  final VoidCallback? onTap;
+  final bool enabled;
+  final bool loading;
+
+  @override
+  Widget build(BuildContext context) {
+    final filled = value != null && value!.trim().isNotEmpty;
+    final display = filled ? value!.trim() : (placeholder ?? '—');
+    final row = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          label,
+          style: GoogleFonts.dmSans(
+            fontSize: 11,
+            fontWeight: FontWeight.w600,
+            color: AppColors.muted,
+          ),
+        ),
+        const SizedBox(height: 2),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                display,
+                style: GoogleFonts.dmSans(
+                  fontSize: 14,
+                  fontWeight: filled ? FontWeight.w600 : FontWeight.w500,
+                  color: filled ? AppColors.charcoal : AppColors.muted,
+                ),
+              ),
+            ),
+            if (onTap != null)
+              loading
+                  ? const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.deepRose,
+                      ),
+                    )
+                  : const Icon(Icons.keyboard_arrow_down_rounded,
+                      size: 22, color: AppColors.muted),
+          ],
+        ),
+      ],
+    );
+
+    if (onTap == null) return row;
+    return Opacity(
+      opacity: enabled ? 1 : 0.55,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: enabled ? onTap : null,
+          borderRadius: BorderRadius.circular(8),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 2),
+            child: row,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddressMapControl extends StatelessWidget {
+  const _AddressMapControl({
+    required this.icon,
+    required this.onTap,
+    this.iconColor,
+  });
+
+  final IconData icon;
+  final Color? iconColor;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      shape: const CircleBorder(),
+      elevation: 3,
+      shadowColor: Colors.black26,
+      child: InkWell(
+        customBorder: const CircleBorder(),
+        onTap: onTap,
+        child: SizedBox(
+          width: 42,
+          height: 42,
+          child: Icon(icon, size: 20, color: iconColor ?? AppColors.deepRose),
+        ),
+      ),
+    );
+  }
+}
+
+class _AddressZoomControls extends StatelessWidget {
+  const _AddressZoomControls({
+    required this.onZoomIn,
+    required this.onZoomOut,
+  });
+
+  final VoidCallback onZoomIn;
+  final VoidCallback onZoomOut;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(10),
+      elevation: 3,
+      shadowColor: Colors.black26,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            InkWell(
+              onTap: onZoomIn,
+              child: const SizedBox(
+                width: 42,
+                height: 38,
+                child: Icon(Icons.add, size: 20, color: AppColors.deepRose),
+              ),
+            ),
+            Container(height: 1, color: AppColors.borderStrong),
+            InkWell(
+              onTap: onZoomOut,
+              child: const SizedBox(
+                width: 42,
+                height: 38,
+                child: Icon(Icons.remove, size: 20, color: AppColors.deepRose),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// iOS-style wheel picker — same chrome as the birthday date picker.
+Future<String?> showIosWheelPicker({
+  required BuildContext context,
+  required String title,
+  required List<String> options,
+  String? selected,
+}) {
+  return showModalBottomSheet<String>(
+    context: context,
+    useRootNavigator: true,
+    backgroundColor: AppColors.warmWhite,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
+    ),
+    builder: (ctx) => _IosWheelPickerSheet(
+      title: title,
+      options: options,
+      selected: selected,
+    ),
+  );
+}
+
+class _IosWheelPickerSheet extends StatefulWidget {
+  const _IosWheelPickerSheet({
     required this.title,
     required this.options,
     required this.selected,
@@ -1430,122 +2352,119 @@ class _AddressPickerSheet extends StatefulWidget {
   final String? selected;
 
   @override
-  State<_AddressPickerSheet> createState() => _AddressPickerSheetState();
+  State<_IosWheelPickerSheet> createState() => _IosWheelPickerSheetState();
 }
 
-class _AddressPickerSheetState extends State<_AddressPickerSheet> {
-  late final TextEditingController _queryController;
-  late List<String> _filtered;
+class _IosWheelPickerSheetState extends State<_IosWheelPickerSheet> {
+  late int _index;
+  late FixedExtentScrollController _controller;
 
   @override
   void initState() {
     super.initState();
-    _queryController = TextEditingController();
-    _filtered = List<String>.from(widget.options);
+    final i = widget.selected == null
+        ? 0
+        : widget.options.indexOf(widget.selected!);
+    _index = i < 0 ? 0 : i;
+    _controller = FixedExtentScrollController(initialItem: _index);
   }
 
   @override
   void dispose() {
-    _queryController.dispose();
+    _controller.dispose();
     super.dispose();
-  }
-
-  void _onQueryChanged(String q) {
-    final n = q.trim().toLowerCase();
-    setState(() {
-      _filtered = n.isEmpty
-          ? List<String>.from(widget.options)
-          : widget.options.where((o) => o.toLowerCase().contains(n)).toList();
-    });
   }
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        const SizedBox(height: 10),
-        Container(
-          width: 40,
-          height: 4,
-          decoration: BoxDecoration(
-            color: AppColors.borderStrong,
-            borderRadius: BorderRadius.circular(4),
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.fromLTRB(20, 16, 12, 8),
-          child: Row(
-            children: [
-              Expanded(
-                child: Text(
-                  widget.title,
-                  style: GoogleFonts.cormorantGaramond(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.charcoal,
+    return SafeArea(
+      top: false,
+      child: SizedBox(
+        height: 300,
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
+              child: Row(
+                children: [
+                  CupertinoButton(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    onPressed: () => Navigator.pop(context),
+                    child: Text(
+                      'Cancel',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 16,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                  ),
+                  Expanded(
+                    child: Text(
+                      widget.title,
+                      textAlign: TextAlign.center,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.charcoal,
+                      ),
+                    ),
+                  ),
+                  CupertinoButton(
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
+                    onPressed: () =>
+                        Navigator.pop(context, widget.options[_index]),
+                    child: Text(
+                      'Done',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.deepRose,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            Expanded(
+              child: CupertinoTheme(
+                data: const CupertinoThemeData(
+                  brightness: Brightness.light,
+                  primaryColor: AppColors.deepRose,
+                  textTheme: CupertinoTextThemeData(
+                    pickerTextStyle: TextStyle(
+                      fontSize: 21,
+                      color: AppColors.charcoal,
+                    ),
                   ),
                 ),
-              ),
-              IconButton(
-                onPressed: () => Navigator.pop(context),
-                icon: const Icon(Icons.close_rounded, color: AppColors.muted),
-              ),
-            ],
-          ),
-        ),
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          child: TextField(
-            controller: _queryController,
-            onChanged: _onQueryChanged,
-            textInputAction: TextInputAction.search,
-            decoration: InputDecoration(
-              hintText: 'Search…',
-              prefixIcon: const Icon(Icons.search_rounded, color: AppColors.muted),
-              filled: true,
-              fillColor: AppColors.cream,
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(AppRadius.md),
-                borderSide: BorderSide.none,
-              ),
-              contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-            ),
-          ),
-        ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: _filtered.isEmpty
-              ? Center(
-                  child: Text(
-                    'No matches',
-                    style: GoogleFonts.dmSans(color: AppColors.muted),
-                  ),
-                )
-              : ListView.separated(
-                  itemCount: _filtered.length,
-                  separatorBuilder: (_, __) =>
-                      const Divider(height: 1, indent: 20, endIndent: 20),
-                  itemBuilder: (_, i) {
-                    final item = _filtered[i];
-                    final isSelected = item == widget.selected;
-                    return ListTile(
-                      title: Text(
-                        item,
-                        style: GoogleFonts.dmSans(
-                          fontSize: 14.5,
-                          fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                          color: AppColors.charcoal,
+                child: CupertinoPicker(
+                  scrollController: _controller,
+                  itemExtent: 36,
+                  magnification: 1.08,
+                  squeeze: 1.12,
+                  useMagnifier: true,
+                  onSelectedItemChanged: (i) => _index = i,
+                  children: [
+                    for (final option in widget.options)
+                      Center(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 20),
+                          child: Text(
+                            option,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ),
-                      trailing: isSelected
-                          ? const Icon(Icons.check_circle_rounded, color: AppColors.deepRose)
-                          : null,
-                      onTap: () => Navigator.pop(context, item),
-                    );
-                  },
+                  ],
                 ),
+              ),
+            ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }

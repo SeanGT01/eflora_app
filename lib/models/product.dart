@@ -392,20 +392,13 @@ class Product {
     );
   }
 
-  /// Get optimized primary image URL for home screen (thumbnail)
+  /// Same source as the website product card (`image_url` / original Cloudinary file).
   String? get primaryImageUrl {
     if (images.isEmpty) {
       debugPrint('⚠️ No images for product $id ($name)');
       return null;
     }
-    
     final primary = images.where((i) => i.isPrimary).firstOrNull ?? images.first;
-    
-    // If it's already a Cloudinary URL, optimize it
-    if (primary.filename.contains('cloudinary.com')) {
-      return CloudinaryService.getOptimizedUrl(primary.filename, width: 300, height: 300);
-    }
-    
     return primary.filename;
   }
 

@@ -14,7 +14,6 @@ import '../../services/chat_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/datetime_ph.dart';
 import '../../widgets/customer_default_avatar.dart';
-import '../../widgets/chat_order_context_banner.dart';
 import '../../widgets/common.dart';
 
 /// Instagram-style chat detail screen.
@@ -39,7 +38,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   String? _typingName;
   bool _otherOnline = false;
   List<File> _pendingImages = [];
-  ChatOrderContext? _orderContext;
 
   Timer? _pollTimer;
   Timer? _typingDebounce;
@@ -79,25 +77,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   void initState() {
     super.initState();
-    _orderContext = widget.conversation.orderContext;
     _loadMessages(forceScroll: true);
     _markRead();
     _checkOnline();
-    _ensureOrderContext();
     _startPoll();
-  }
-
-  Future<void> _ensureOrderContext() async {
-    if (_orderContext != null) return;
-    final role = context.read<AuthProvider>().user?.role;
-    final looksLikeRiderThread = widget.conversation.isRiderThread
-        || widget.conversation.otherUser?.role == 'rider'
-        || role == 'rider';
-    if (!looksLikeRiderThread) return;
-
-    final enriched = await ChatService.getConversation(widget.conversation.id);
-    if (!mounted || enriched?.orderContext == null) return;
-    setState(() => _orderContext = enriched!.orderContext);
   }
 
   @override
@@ -366,7 +349,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       ),
       body: Column(
         children: [
-          if (_orderContext != null) ChatOrderContextBanner(orderContext: _orderContext!),
           // Messages
           Expanded(
             child: _loading

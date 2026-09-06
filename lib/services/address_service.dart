@@ -7,6 +7,8 @@ class AddressService {
   // Use production Railway URL (same as main API)
   // The address endpoints are under /api (not /api/v1)
   static const String _baseUrl = 'https://eflora-system-production.up.railway.app/api';
+  static const String _customerApi =
+      'https://eflora-system-production.up.railway.app/api/v1/customer';
 
   AddressService({required Dio dio}) : _dio = dio;
 
@@ -288,6 +290,145 @@ class AddressService {
         e.message ?? 'Failed to load barangays',
         e.response?.statusCode ?? 500,
       );
+    }
+  }
+
+  /// Reverse geocode a pin via Google (backend Geocoding API).
+  Future<ApiResult<Map<String, dynamic>>> googleReverseGeocode(
+    double latitude,
+    double longitude,
+  ) async {
+    try {
+      final response = await _dio.get(
+        '$_customerApi/maps/geocode/reverse',
+        queryParameters: {'lat': latitude, 'lng': longitude},
+        options: Options(headers: {'Content-Type': 'application/json'}),
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        return ApiResult.success(Map<String, dynamic>.from(response.data as Map));
+      }
+      return await _nominatimReverse(latitude, longitude);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404 || e.response?.statusCode == 503) {
+        return _nominatimReverse(latitude, longitude);
+      }
+      return ApiResult.error(
+        e.response?.data is Map
+            ? (e.response!.data['error']?.toString() ?? e.message ?? 'Failed to reverse geocode')
+            : (e.message ?? 'Failed to reverse geocode'),
+        e.response?.statusCode ?? 500,
+      );
+    }
+  }
+
+  /// Text search via Google Geocoding (Laguna, PH).
+  Future<ApiResult<List<Map<String, dynamic>>>> googlePlaceSearch(String query) async {
+    try {
+      final response = await _dio.get(
+        '$_customerApi/maps/places/search',
+        queryParameters: {'q': query},
+        options: Options(headers: {'Content-Type': 'application/json'}),
+      );
+      if (response.statusCode == 200 && response.data['success'] == true) {
+        final raw = response.data['results'] as List? ?? [];
+        return ApiResult.success(
+          raw.map((e) => Map<String, dynamic>.from(e as Map)).toList(),
+        );
+      }
+      return await _nominatimSearch(query);
+    } on DioException catch (e) {
+      if (e.response?.statusCode == 404 || e.response?.statusCode == 503) {
+        return _nominatimSearch(query);
+      }
+      return ApiResult.error(
+        e.response?.data is Map
+            ? (e.response!.data['error']?.toString() ?? e.message ?? 'Search failed')
+            : (e.message ?? 'Search failed'),
+        e.response?.statusCode ?? 500,
+      );
+    }
+  }
+
+  Future<ApiResult<Map<String, dynamic>>> _nominatimReverse(
+    double latitude,
+    double longitude,
+  ) async {
+    try {
+      final response = await _dio.get(
+        'https://nominatim.openstreetmap.org/reverse',
+        queryParameters: {
+          'lat': latitude.toString(),
+          'lon': longitude.toString(),
+          'format': 'json',
+          'addressdetails': '1',
+          'zoom': '18',
+        },
+        options: Options(headers: {'User-Agent': 'eflora-app/1.0'}),
+      );
+      if (response.statusCode != 200 || response.data is! Map) {
+        return ApiResult.error('Failed to reverse geocode', response.statusCode ?? 500);
+      }
+      final data = Map<String, dynamic>.from(response.data as Map);
+      final address = Map<String, dynamic>.from(data['address'] as Map? ?? {});
+      final street = [
+        address['house_number'],
+        address['road'] ?? address['pedestrian'] ?? address['residential'],
+      ].where((e) => (e?.toString().trim().isNotEmpty ?? false)).join(' ');
+      return ApiResult.success({
+        'success': true,
+        'formatted_address': data['display_name']?.toString() ?? '',
+        'street': street,
+        'barangay': (address['suburb'] ??
+                address['neighbourhood'] ??
+                address['village'] ??
+                address['quarter'] ??
+                '')
+            .toString(),
+        'municipality': (address['city'] ??
+                address['municipality'] ??
+                address['town'] ??
+                address['county'] ??
+                '')
+            .toString(),
+        'context': data['display_name']?.toString() ?? '',
+        'lat': latitude,
+        'lng': longitude,
+        'place_id': data['place_id']?.toString(),
+      });
+    } on DioException catch (e) {
+      return ApiResult.error(e.message ?? 'Failed to reverse geocode', e.response?.statusCode ?? 500);
+    }
+  }
+
+  Future<ApiResult<List<Map<String, dynamic>>>> _nominatimSearch(String query) async {
+    try {
+      final q = query.toLowerCase().contains('laguna')
+          ? query
+          : '$query, Laguna, Philippines';
+      final response = await _dio.get(
+        'https://nominatim.openstreetmap.org/search',
+        queryParameters: {
+          'q': q,
+          'countrycodes': 'PH',
+          'format': 'json',
+          'limit': '5',
+        },
+        options: Options(headers: {'User-Agent': 'eflora-app/1.0'}),
+      );
+      if (response.statusCode != 200 || response.data is! List) {
+        return ApiResult.error('Search failed', response.statusCode ?? 500);
+      }
+      final rows = (response.data as List)
+          .map((feature) => {
+                'name': feature['display_name'] ?? 'Unknown',
+                'lat': double.tryParse(feature['lat']?.toString() ?? '') ?? 0.0,
+                'lng': double.tryParse(feature['lon']?.toString() ?? '') ?? 0.0,
+                'place_id': feature['place_id']?.toString(),
+              })
+          .toList();
+      return ApiResult.success(rows);
+    } on DioException catch (e) {
+      return ApiResult.error(e.message ?? 'Search failed', e.response?.statusCode ?? 500);
     }
   }
 

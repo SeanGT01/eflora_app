@@ -15,8 +15,8 @@ import '../theme/app_theme.dart';
 import '../utils/datetime_ph.dart';
 import '../utils/responsive.dart';
 import 'customer_default_avatar.dart';
-import 'chat_order_context_banner.dart';
 import 'common.dart';
+import 'chat_order_card.dart';
 
 // ═══════════════════════════════════════════════════════════════════════
 // FLOATING CHAT BUTTON — AssistiveTouch-style dockable FAB
@@ -325,6 +325,9 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   bool _loadingMessages = false;
   bool _pollingTyping = false;
   bool _markingRead = false;
+  int? _suggestOrderId;
+  int? _suggestForConvoId;
+  bool _orderSuggestDismissed = false;
 
   int get _myId => context.read<AuthProvider>().user?.id ?? 0;
 
@@ -546,6 +549,9 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     _stopPoll();
     _stopInboxPresencePoll();
     _chatProvider.setLiveMode(false);
+    if (convo.id != _suggestForConvoId) {
+      _suggestOrderId = null;
+    }
     setState(() {
       _showDetail = true;
       _activeConversation = convo;
@@ -562,6 +568,64 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     _checkOnline();
     _startPoll();
     _ensureOrderContext(convo);
+  }
+
+  ChatOrderContext _cardContextForMessage(ChatMessage msg) {
+    if (msg.orderCard != null &&
+        (msg.orderCard!.orderId > 0 || msg.orderCard!.items.isNotEmpty)) {
+      return msg.orderCard!;
+    }
+    return const ChatOrderContext(
+      orderId: 0,
+      orderNumber: 'Order details',
+      status: '',
+    );
+  }
+
+  bool _threadHasOrderCard(int oid) {
+    return _messages.any((m) {
+      if (m.isDeleted) return false;
+      if (m.messageType != 'order_card') return false;
+      final id = m.orderCard?.orderId ?? 0;
+      return id == oid;
+    });
+  }
+
+  bool get _showOrderSuggest {
+    if (_orderSuggestDismissed || _messagesLoading) return false;
+    final oid = _suggestOrderId;
+    if (oid == null || _activeConversation?.id != _suggestForConvoId) {
+      return false;
+    }
+    return !_threadHasOrderCard(oid);
+  }
+
+  Future<void> _shareOrderCard() async {
+    final convo = _activeConversation;
+    final oid = _suggestOrderId;
+    if (convo == null || oid == null) return;
+    if (_threadHasOrderCard(oid)) {
+      setState(() {
+        _orderSuggestDismissed = true;
+        _suggestOrderId = null;
+      });
+      return;
+    }
+    final msg = await ChatService.sendOrderCard(convo.id, oid);
+    if (!mounted) return;
+    if (msg == null) {
+      showToast(context, 'Could not share order details', isError: true);
+      return;
+    }
+    setState(() {
+      if (!_messages.any((m) => m.id == msg.id)) {
+        _messages.add(msg);
+      }
+      _orderSuggestDismissed = true;
+      _suggestOrderId = null;
+    });
+    _applyLocalPreview(convo.id, msg.orderCardPreview, senderId: msg.senderId);
+    _scrollToBottom();
   }
 
   Future<void> _ensureOrderContext(ChatConversation convo) async {
@@ -611,6 +675,9 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
           await ChatService.getOrCreateRiderConversation(widget.openOrderId!);
       if (!mounted) return;
       if (convo != null) {
+        _suggestOrderId = widget.openOrderId;
+        _suggestForConvoId = convo.id;
+        _orderSuggestDismissed = false;
         _openConversation(convo);
         return;
       }
@@ -703,6 +770,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         final last = msgs.last;
         final preview = last.messageType == 'image'
             ? (last.text?.isNotEmpty == true ? last.text! : '[Image]')
+            : last.messageType == 'order_card'
+                ? last.orderCardPreview
             : (last.text ?? '');
         _applyLocalPreview(_activeConversation!.id, preview,
             senderId: last.senderId);
@@ -1438,8 +1507,6 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
             ],
           ),
         ),
-        if (_orderContext != null)
-          ChatOrderContextBanner(orderContext: _orderContext!),
         // Messages
         Expanded(
           child: _messagesLoading
@@ -1479,6 +1546,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
           ),
         // Image preview bar
         if (_pendingImages.isNotEmpty) _buildImagePreview(),
+        if (_showOrderSuggest) _buildOrderSuggestBar(),
         // Input bar
         _buildInputBar(),
       ],
@@ -1543,6 +1611,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
         orElse: () => _messages.first);
     final isLastSent = isSent && group.contains(lastSentByMe);
     final isImageGrid = group.length > 1 && !msg.isDeleted;
+    final isOrderCard = !msg.isDeleted &&
+        (msg.orderCard != null || msg.messageType == 'order_card');
 
     return Column(
       crossAxisAlignment:
@@ -1578,7 +1648,37 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                 const SizedBox(width: 4),
               ],
               Flexible(
-                child: Container(
+                child: isOrderCard
+                    ? Column(
+                        crossAxisAlignment: isSent
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                        children: [
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth:
+                                  MediaQuery.of(context).size.width * 0.78,
+                            ),
+                            child: SizedBox(
+                              width: 252,
+                              child: ChatOrderCardMessage(
+                              ctx: _cardContextForMessage(msg),
+                              isSent: isSent,
+                            ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Text(
+                              _formatTime(msg.createdAt),
+                              style: GoogleFonts.dmSans(
+                                  fontSize: 9.5, color: Colors.grey[500]),
+                            ),
+                          ),
+                        ],
+                      )
+                    : Container(
                   constraints: BoxConstraints(
                       maxWidth: isImageGrid
                           ? 160.0
@@ -1690,6 +1790,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                             const SizedBox(height: 3),
                         ],
                         if (!isImageGrid &&
+                            msg.messageType != 'order_card' &&
                             msg.text != null &&
                             msg.text!.isNotEmpty)
                           Text(msg.text!,
@@ -1926,6 +2027,58 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildOrderSuggestBar() {
+    final isRider = context.read<AuthProvider>().user?.role == 'rider';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+      decoration: BoxDecoration(
+        color: AppColors.blush.withOpacity(0.28),
+        border: Border(top: BorderSide(color: AppColors.border, width: 0.5)),
+      ),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              isRider
+                  ? 'Share this order so the customer knows which delivery you mean.'
+                  : 'Share this order so your rider knows what you’re asking about.',
+              style: GoogleFonts.dmSans(
+                fontSize: 12.5,
+                height: 1.35,
+                color: AppColors.charcoal,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          TextButton(
+            onPressed: _shareOrderCard,
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.white,
+              backgroundColor: AppColors.deepRose,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              minimumSize: Size.zero,
+              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+            ),
+            child: Text('Share order',
+                style: GoogleFonts.dmSans(
+                    fontSize: 12, fontWeight: FontWeight.w700)),
+          ),
+          IconButton(
+            onPressed: () => setState(() {
+              _orderSuggestDismissed = true;
+              _suggestOrderId = null;
+            }),
+            icon: Icon(Icons.close_rounded, size: 18, color: AppColors.muted),
+            splashRadius: 16,
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildInputBar() {
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -1958,7 +2111,9 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                               fontWeight: FontWeight.w600,
                               color: AppColors.deepRose)),
                       Text(
-                        _replyingTo!.text ?? '(Image)',
+                        _replyingTo!.messageType == 'order_card'
+                            ? _replyingTo!.orderCardPreview
+                            : (_replyingTo!.text ?? '(Image)'),
                         style: GoogleFonts.dmSans(
                             fontSize: 11, color: AppColors.charcoal),
                         maxLines: 1,
