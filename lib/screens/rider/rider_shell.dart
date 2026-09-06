@@ -7,6 +7,7 @@ import '../../providers/rider_provider.dart';
 import '../../services/app_quality.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
+import '../../services/push_service.dart';
 import '../../widgets/adaptive_blur.dart';
 import '../../widgets/auth_required_sheet.dart';
 import '../../widgets/chat_drawer.dart';
@@ -22,9 +23,10 @@ class RiderShell extends StatefulWidget {
   State<RiderShell> createState() => _RiderShellState();
 }
 
-class _RiderShellState extends State<RiderShell> {
+class _RiderShellState extends State<RiderShell> with WidgetsBindingObserver {
   int _idx = 0;
   bool _chatOpen = false;
+  RiderProvider? _rider;
 
   final _screens = const [
     RiderHomeScreen(),
@@ -36,13 +38,33 @@ class _RiderShellState extends State<RiderShell> {
   @override
   void initState() {
     super.initState();
-    // Load initial data
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       final rider = context.read<RiderProvider>();
+      _rider = rider;
       rider.loadDashboard();
       rider.loadAvailableOrders();
       rider.loadActiveDeliveries();
+      rider.startAvailableOrdersPolling();
+      PushService.instance.onRiderOrdersChanged = () {
+        rider.refreshAvailableOrdersSilent();
+      };
     });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && mounted) {
+      context.read<RiderProvider>().refreshAvailableOrdersSilent();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    PushService.instance.onRiderOrdersChanged = null;
+    _rider?.stopAvailableOrdersPolling();
+    super.dispose();
   }
 
   @override

@@ -294,6 +294,84 @@ class ApiService {
     }
   }
 
+  static Future<ApiResult> registerDeviceToken(String token) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_api/auth/device-token'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({'token': token}),
+      ).timeout(const Duration(seconds: 12));
+      dynamic data;
+      if (res.body.isNotEmpty) {
+        try {
+          data = jsonDecode(res.body);
+        } catch (_) {
+          data = {'raw': res.body};
+        }
+      }
+      return ApiResult(statusCode: res.statusCode, data: data);
+    } catch (e) {
+      print('❌ device-token error: $e');
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  static Future<ApiResult> clearDeviceToken() async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_api/auth/device-token'),
+        headers: await _headers(auth: true),
+      ).timeout(const Duration(seconds: 12));
+      return ApiResult(
+        statusCode: res.statusCode,
+        data: res.body.isEmpty ? null : jsonDecode(res.body),
+      );
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  static Future<ApiResult> requestPushTest() async {
+    try {
+      print('📡 push-test POST');
+      final res = await http.post(
+        Uri.parse('$_api/auth/push-test'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({}),
+      ).timeout(const Duration(seconds: 15));
+      print('📡 push-test ${res.statusCode} ${res.body}');
+      dynamic data;
+      if (res.body.isNotEmpty) {
+        try {
+          data = jsonDecode(res.body);
+        } catch (_) {
+          data = {'raw': res.body};
+        }
+      }
+      return ApiResult(statusCode: res.statusCode, data: data);
+    } catch (e) {
+      print('❌ push-test error: $e');
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  static Future<ApiResult> getPushStatus() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_api/auth/push-status'),
+        headers: await _headers(auth: true),
+      ).timeout(const Duration(seconds: 12));
+      print('📡 push-status ${res.statusCode} ${res.body}');
+      return ApiResult(
+        statusCode: res.statusCode,
+        data: res.body.isEmpty ? null : jsonDecode(res.body),
+      );
+    } catch (e) {
+      print('❌ push-status error: $e');
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
   static Future<ApiResult> updateProfile({
     required String firstName,
     required String lastName,

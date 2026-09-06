@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "885043482131",
+    "project_id": "e-flora-5057e",
+    "storage_bucket": "e-flora-5057e.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:885043482131:android:42968571c983af635c79e6",
+        "android_client_info": {
+          "package_name": "com.seanlazala.eflora"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCLrPQY-6TAFUQkTQilBCO3khw-mBgQNsw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

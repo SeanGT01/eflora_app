@@ -13,6 +13,7 @@ import 'screens/main_shell.dart';
 import 'screens/rider/rider_shell.dart';
 import 'services/app_quality.dart';
 import 'services/presence_service.dart';
+import 'services/push_service.dart';
 import 'theme/app_background.dart';
 import 'theme/app_theme.dart';
 import 'utils/responsive.dart';
@@ -23,6 +24,7 @@ void main() async {
 
   await AppQuality.instance.init();
   await initializeImageCache();
+  await PushService.instance.init();
 
   await SystemChrome.setPreferredOrientations([
     DeviceOrientation.portraitUp, DeviceOrientation.portraitDown,

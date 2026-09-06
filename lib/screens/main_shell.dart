@@ -130,8 +130,8 @@ class MainShellState extends State<MainShell> {
                 ),
                 child: SafeArea(
                   top: false,
-                  child: SizedBox(
-                    height: context.s(62).clamp(56.0, 70.0),
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(0, 6, 0, 4),
                     child: Row(
                       children: [
                         _NavItem(
@@ -202,6 +202,7 @@ class _NavItem extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             AnimatedContainer(
@@ -251,6 +252,7 @@ class _CartNavItem extends StatelessWidget {
         onTap: onTap,
         borderRadius: BorderRadius.circular(12),
         child: Column(
+          mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             AnimatedContainer(

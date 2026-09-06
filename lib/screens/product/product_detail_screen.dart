@@ -2773,13 +2773,15 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       child: AdaptiveBlur(
         sigma: 16,
         child: Container(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 28),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
       decoration: BoxDecoration(
         gradient: AppQuality.instance.useBlur ? AppColors.headerGlass : null,
         color: AppQuality.instance.useBlur ? null : const Color(0xF5FFFAFC),
         border: const Border(top: BorderSide(color: AppColors.glassBorder)),
       ),
-      child: Row(
+      child: SafeArea(
+        top: false,
+        child: Row(
         children: [
           Container(
             padding: const EdgeInsets.all(12),
@@ -2885,6 +2887,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       ),
           ),
         ],
+      ),
       ),
         ),
       ),

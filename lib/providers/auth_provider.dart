@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/user.dart';
 import '../services/api_service.dart';
+import '../services/push_service.dart';
 
 class AuthProvider extends ChangeNotifier {
   User? _user;
@@ -42,6 +43,9 @@ class AuthProvider extends ChangeNotifier {
     } else if (result.statusCode == 401) {
       await logout(notify: true);
     }
+    if (_user != null) {
+      await PushService.instance.syncToken();
+    }
     // Other errors (network down etc.) → keep cached user logged in
   }
 
@@ -63,6 +67,7 @@ class AuthProvider extends ChangeNotifier {
       notifyListeners();
       // Login payloads can be partial — pull full profile (avatar, etc.)
       await refreshUser();
+      await PushService.instance.syncToken();
       return null;
     }
 
@@ -93,6 +98,7 @@ class AuthProvider extends ChangeNotifier {
       await p.setString('user_data', jsonEncode(d));
 
       notifyListeners();
+      await PushService.instance.syncToken();
       return null;
     }
 
@@ -281,6 +287,7 @@ class AuthProvider extends ChangeNotifier {
 
   // ── Logout ───────────────────────────────────────────────────────────
   Future<void> logout({bool notify = true}) async {
+    await PushService.instance.clearToken();
     await ApiService.clearToken();
     _user = null;
     if (notify) notifyListeners();

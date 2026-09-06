@@ -15,6 +15,7 @@ class RiderProvider extends ChangeNotifier {
   Position? _currentPosition;
   Timer? _locationTimer;
   StreamSubscription<Position>? _positionStream;
+  Timer? _availablePoll;
   int? _trackingOrderId;
 
   RiderDashboard? get dashboard => _dashboard;
@@ -51,19 +52,45 @@ class RiderProvider extends ChangeNotifier {
     _loading = true;
     _error = null;
     notifyListeners();
-
-    final result = await RiderService.getAvailableOrders();
+    await refreshAvailableOrdersSilent();
     _loading = false;
+    notifyListeners();
+  }
 
+  /// Refresh the available list without a full-screen spinner (live badge/list).
+  Future<void> refreshAvailableOrdersSilent() async {
+    final result = await RiderService.getAvailableOrders();
     if (result.isSuccess && result.data is Map) {
       final data = result.data as Map<String, dynamic>;
-      _availableOrders = (data['orders'] as List? ?? [])
+      final next = (data['orders'] as List? ?? [])
           .map((o) => RiderOrder.fromJson(o as Map<String, dynamic>))
           .toList();
-    } else {
-      _error = result.errorMessage ?? 'Failed to load orders';
+      final changed = next.length != _availableOrders.length ||
+          !_sameOrderIds(next, _availableOrders);
+      _availableOrders = next;
+      if (changed) notifyListeners();
     }
-    notifyListeners();
+  }
+
+  bool _sameOrderIds(List<RiderOrder> a, List<RiderOrder> b) {
+    if (a.length != b.length) return false;
+    for (var i = 0; i < a.length; i++) {
+      if (a[i].id != b[i].id) return false;
+    }
+    return true;
+  }
+
+  void startAvailableOrdersPolling() {
+    if (_availablePoll != null) return;
+    refreshAvailableOrdersSilent();
+    _availablePoll = Timer.periodic(const Duration(seconds: 8), (_) {
+      refreshAvailableOrdersSilent();
+    });
+  }
+
+  void stopAvailableOrdersPolling() {
+    _availablePoll?.cancel();
+    _availablePoll = null;
   }
 
   // ── Active Deliveries ──────────────────────────────────────────────
@@ -251,6 +278,7 @@ class RiderProvider extends ChangeNotifier {
 
   void clear() {
     stopLocationTracking();
+    stopAvailableOrdersPolling();
     _dashboard = null;
     _availableOrders = [];
     _activeDeliveries = [];
@@ -263,6 +291,7 @@ class RiderProvider extends ChangeNotifier {
   @override
   void dispose() {
     stopLocationTracking();
+    stopAvailableOrdersPolling();
     super.dispose();
   }
 }

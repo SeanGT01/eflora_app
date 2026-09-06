@@ -1179,24 +1179,37 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             ? constraints.maxHeight
             : (compact ? 180.0 : 260.0);
 
-        // Scale type from banner height so copy fills the vacated button space.
+        final padTop = compact ? 2.0 : 8.0;
+        final padBottom = compact ? 2.0 : 10.0;
+        final innerH = (maxH - padTop - padBottom).clamp(48.0, maxH);
+
+        // Scale type from usable banner height (padding already subtracted).
         final titleSize =
-            (maxH * 0.195).clamp(compact ? 20.0 : 24.0, isWide ? 36.0 : 30.0);
+            (innerH * 0.175).clamp(compact ? 16.0 : 20.0, isWide ? 34.0 : 28.0);
         final italicSize = titleSize * 0.78;
-        final subtitleSize = (maxH * 0.078).clamp(11.5, 15.5);
-        final eyebrowSize = (maxH * 0.058).clamp(9.0, 11.5);
-        final gapEyebrow = (maxH * 0.04).clamp(4.0, 10.0);
-        final gapBody = (maxH * 0.048).clamp(6.0, 14.0);
+        final subtitleSize = (innerH * 0.068).clamp(10.5, 14.5);
+        final eyebrowSize = (innerH * 0.05).clamp(8.0, 11.0);
+        final gapEyebrow = (innerH * 0.032).clamp(3.0, 8.0);
+        final gapBody = (innerH * 0.036).clamp(4.0, 10.0);
 
         return Padding(
           padding: EdgeInsets.fromLTRB(
             compact ? 0 : _kHomeGutter,
-            compact ? 2 : 8,
+            padTop,
             compact ? 4 : _kHomeGutter,
-            compact ? 2 : 10,
+            padBottom,
           ),
-          child: Column(
+          child: FittedBox(
+            alignment: Alignment.centerLeft,
+            fit: BoxFit.scaleDown,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: constraints.maxWidth -
+                    (compact ? 4 : _kHomeGutter * 2),
+              ),
+              child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Row(
@@ -1259,6 +1272,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 ),
               ),
             ],
+          ),
+            ),
           ),
         );
       },
