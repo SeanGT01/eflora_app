@@ -373,22 +373,25 @@ class ApiService {
   }
 
   static Future<ApiResult> updateProfile({
-    required String firstName,
-    required String lastName,
+    String? firstName,
+    String? lastName,
     String? birthday,
     String? gender,
   }) async {
     try {
       print('🔵 UpdateProfile: sending to $_api/auth/profile/update');
+      final body = <String, dynamic>{
+        if (firstName != null && firstName.trim().isNotEmpty)
+          'first_name': firstName.trim(),
+        if (lastName != null && lastName.trim().isNotEmpty)
+          'last_name': lastName.trim(),
+        if (birthday != null) 'birthday': birthday,
+        if (gender != null) 'gender': gender,
+      };
       final res = await http.post(
         Uri.parse('$_api/auth/profile/update'),
         headers: await _headers(auth: true),
-        body: jsonEncode({
-          'first_name': firstName,
-          'last_name': lastName,
-          if (birthday != null) 'birthday': birthday,
-          if (gender != null) 'gender': gender,
-        }),
+        body: jsonEncode(body),
       ).timeout(const Duration(seconds: 20));
       
       print('📨 UpdateProfile response status: ${res.statusCode}');

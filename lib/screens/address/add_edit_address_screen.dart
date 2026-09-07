@@ -32,28 +32,77 @@ String _normalizeAddressMatch(String? value) {
   return s.replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
+String _streetNameCore(String street) {
+  return _normalizeAddressMatch(
+    street.replaceAll(
+      RegExp(
+        r'\b(street|st|road|rd|avenue|ave|blvd|boulevard|drive|dr|lane|ln|highway|hwy)\b',
+        caseSensitive: false,
+      ),
+      ' ',
+    ),
+  );
+}
+
+String _stripStreetFromAddress(String haystack, String street) {
+  var h = haystack;
+  final streetNorm = street.trim();
+  if (streetNorm.isNotEmpty) {
+    h = h.replaceAll(RegExp(RegExp.escape(streetNorm), caseSensitive: false), ' ');
+    final core = streetNorm
+        .replaceAll(
+          RegExp(
+            r'\b(street|st|road|rd|avenue|ave|blvd|boulevard|drive|dr|lane|ln|highway|hwy)\b',
+            caseSensitive: false,
+          ),
+          ' ',
+        )
+        .trim();
+    if (core.isNotEmpty) {
+      h = h.replaceAll(RegExp('\\b${RegExp.escape(core)}\\b', caseSensitive: false), ' ');
+    }
+  }
+  return h;
+}
+
 String? _bestAddressMatch(String haystack, List<String> options) {
   final h = _normalizeAddressMatch(haystack);
   if (h.isEmpty || options.isEmpty) return null;
 
-  String? exact;
-  String? contains;
+  String? best;
+  var bestLen = -1;
   for (final option in options) {
     final n = _normalizeAddressMatch(option);
     if (n.isEmpty) continue;
-    if (h == n ||
-        h.contains(' $n ') ||
-        h.startsWith('$n ') ||
-        h.endsWith(' $n') ||
-        h.contains(n)) {
-      if (h == n || RegExp('\\b${RegExp.escape(n)}\\b').hasMatch(h)) {
-        exact = option;
-        break;
-      }
-      contains ??= option;
+    final isWord = h == n || RegExp('\\b${RegExp.escape(n)}\\b').hasMatch(h);
+    if (!isWord) continue;
+    if (n.length > bestLen) {
+      best = option;
+      bestLen = n.length;
     }
   }
-  return exact ?? contains;
+  return best;
+}
+
+String? _matchMunicipality({
+  required String? geocodedMunicipality,
+  required String formattedAddress,
+  required String context,
+  required String street,
+  required List<String> municipalities,
+}) {
+  final areaText = _stripStreetFromAddress(
+    [formattedAddress, context].where((e) => e.trim().isNotEmpty).join(', '),
+    street,
+  );
+  final fromArea = _bestAddressMatch(areaText, municipalities);
+  if (fromArea != null) return fromArea;
+
+  final geo = (geocodedMunicipality ?? '').trim();
+  if (geo.isNotEmpty && _normalizeAddressMatch(geo) == _streetNameCore(street)) {
+    return null;
+  }
+  return _bestAddressMatch(geo, municipalities);
 }
 
 /// Grab / Foodpanda–style address form: map-first pin, auto current location,
@@ -317,16 +366,17 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
         _selectedPlaceId = placeId;
       }
 
-      final contextText = [
-        data!['formatted_address'],
-        data!['context'],
-        data!['municipality'],
-        data!['barangay'],
-        data!['street'],
-      ].whereType<String>().where((e) => e.trim().isNotEmpty).join(', ');
-
       final streetCandidate = (data!['street']?.toString() ?? '').trim();
       final formatted = (data!['formatted_address']?.toString() ?? '').trim();
+      final geoContext = (data!['context']?.toString() ?? '').trim();
+      final geoMunicipality = (data!['municipality']?.toString() ?? '').trim();
+      final geoBarangay = (data!['barangay']?.toString() ?? '').trim();
+      final areaText = _stripStreetFromAddress(
+        [formatted, geoContext, geoMunicipality, geoBarangay]
+            .where((e) => e.trim().isNotEmpty)
+            .join(', '),
+        streetCandidate,
+      );
 
       if (overwriteStreet) {
         _streetController.text = streetCandidate.isNotEmpty
@@ -342,8 +392,13 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
       }
 
       final municipalities = context.read<AddressProvider>().municipalities;
-      final matchedMunicipality = _bestMatch(contextText, municipalities) ??
-          _bestMatch(data!['municipality']?.toString() ?? '', municipalities);
+      final matchedMunicipality = _matchMunicipality(
+        geocodedMunicipality: geoMunicipality,
+        formattedAddress: formatted,
+        context: geoContext,
+        street: streetCandidate,
+        municipalities: municipalities,
+      );
 
       if (matchedMunicipality != null) {
         final municipalityChanged = matchedMunicipality != _selectedMunicipality;
@@ -354,8 +409,8 @@ class _AddEditAddressScreenState extends State<AddEditAddressScreen> {
         }
         if (!mounted) return;
 
-        final matchedBarangay = _bestMatch(contextText, _barangays) ??
-            _bestMatch(data!['barangay']?.toString() ?? '', _barangays);
+        final matchedBarangay = _bestMatch(geoBarangay, _barangays) ??
+            _bestMatch(areaText, _barangays);
         if (matchedBarangay != null) {
           setState(() => _selectedBarangay = matchedBarangay);
         }
@@ -1625,36 +1680,34 @@ class _ExpandedAddressMapPageState extends State<_ExpandedAddressMapPage> {
 
       final streetCandidate = (data!['street']?.toString() ?? '').trim();
       final formatted = (data!['formatted_address']?.toString() ?? '').trim();
+      final geoContext = (data!['context']?.toString() ?? '').trim();
+      final geoMunicipality = (data!['municipality']?.toString() ?? '').trim();
+      final geoBarangay = (data!['barangay']?.toString() ?? '').trim();
       final street = streetCandidate.isNotEmpty
           ? streetCandidate
           : (formatted.split(',').first.trim());
       final placeId = data!['place_id']?.toString();
-      final contextText = [
-        data!['formatted_address'],
-        data!['context'],
-        data!['municipality'],
-        data!['barangay'],
-        data!['street'],
-      ].whereType<String>().where((e) => e.trim().isNotEmpty).join(', ');
+      final areaText = _stripStreetFromAddress(
+        [formatted, geoContext, geoMunicipality, geoBarangay]
+            .where((e) => e.trim().isNotEmpty)
+            .join(', '),
+        street,
+      );
 
-      final matchedMunicipality = _bestAddressMatch(
-            contextText,
-            provider.municipalities,
-          ) ??
-          _bestAddressMatch(
-            data!['municipality']?.toString() ?? '',
-            provider.municipalities,
-          );
+      final matchedMunicipality = _matchMunicipality(
+        geocodedMunicipality: geoMunicipality,
+        formattedAddress: formatted,
+        context: geoContext,
+        street: street,
+        municipalities: provider.municipalities,
+      );
 
       String? matchedBarangay;
       if (matchedMunicipality != null) {
         await provider.loadBarangays(matchedMunicipality);
         if (!mounted || seq != _geoSeq) return;
-        matchedBarangay = _bestAddressMatch(contextText, provider.barangays) ??
-            _bestAddressMatch(
-              data!['barangay']?.toString() ?? '',
-              provider.barangays,
-            );
+        matchedBarangay = _bestAddressMatch(geoBarangay, provider.barangays) ??
+            _bestAddressMatch(areaText, provider.barangays);
       }
 
       setState(() {

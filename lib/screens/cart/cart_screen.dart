@@ -7,6 +7,7 @@ import '../../models/checkout.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/address_provider.dart';
 import '../../services/checkout_service.dart';
+import '../../navigation/floating_nav_metrics.dart';
 import '../../services/app_quality.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
@@ -18,6 +19,7 @@ import '../../widgets/active_order_limit_dialog.dart';
 import '../../widgets/stock_issue_dialog.dart';
 import '../checkout/checkout_modal.dart';
 import '../main_shell.dart';
+import '../orders/orders_screen.dart';
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -123,7 +125,9 @@ class _CartScreenState extends State<CartScreen> {
     final bottomInset = MediaQuery.paddingOf(context).bottom;
     final insideShell =
         context.findAncestorStateOfType<MainShellState>() != null;
-    return insideShell ? 62 + bottomInset : bottomInset;
+    return insideShell
+        ? floatingNavScrollClearance(context, extra: 0)
+        : bottomInset;
   }
 
   Widget _buildEmpty(BuildContext context) {
@@ -454,6 +458,7 @@ class _CartScreenState extends State<CartScreen> {
       selectedItems: selectedItems,
       onComplete: () {
         cart.load();
+        OrdersScreen.reload(targetStatus: 'to_ship');
         showToast(context, 'Order placed successfully!');
       },
     );

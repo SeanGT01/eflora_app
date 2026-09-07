@@ -191,28 +191,9 @@ class StoreDetailSheet extends StatelessWidget {
           image: CachedNetworkImageProvider(resolvedBannerUrl),
           fit: BoxFit.cover,
         ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x3D6E2A4C),
-            blurRadius: 32,
-            offset: Offset(0, 14),
-          ),
-        ],
       ),
       child: Stack(
         children: [
-          Positioned.fill(
-            child: DecoratedBox(
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(28),
-                gradient: const LinearGradient(
-                  begin: Alignment.topCenter,
-                  end: Alignment.bottomCenter,
-                  colors: [Color(0x331C1620), Color(0xC9161218)],
-                ),
-              ),
-            ),
-          ),
           Row(children: [
           Container(
             width: 64,
@@ -297,13 +278,6 @@ class StoreDetailSheet extends StatelessWidget {
                 decoration: BoxDecoration(
                   color: Colors.white.withValues(alpha: 0.92),
                   borderRadius: BorderRadius.circular(AppRadius.pill),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x2E4A1A34),
-                      blurRadius: 14,
-                      offset: Offset(0, 6),
-                    ),
-                  ],
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -348,7 +322,7 @@ class StoreDetailSheet extends StatelessWidget {
           _statCell(
               Icons.delivery_dining_outlined,
               store.deliveryCoverageStatValue,
-              store.deliveryCoverageStatLabel),
+              'Coverage'),
           _statDivider(),
           _reviewsStatCell(context),
         ],
@@ -363,7 +337,19 @@ class StoreDetailSheet extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         child: Column(
           children: [
-            const Icon(Icons.rate_review_outlined, size: 19, color: AppColors.deepRose),
+            Container(
+              width: 28,
+              height: 28,
+              decoration: BoxDecoration(
+                color: AppColors.blush.withValues(alpha: 0.38),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(
+                Icons.rate_review_outlined,
+                size: 15,
+                color: AppColors.deepRose,
+              ),
+            ),
             const SizedBox(height: 5),
             Text(
               '${store.reviewCount ?? 0}',
@@ -408,7 +394,15 @@ class StoreDetailSheet extends StatelessWidget {
     return Expanded(
       child: Column(
         children: [
-          Icon(icon, size: 19, color: AppColors.labelPink),
+          Container(
+            width: 28,
+            height: 28,
+            decoration: BoxDecoration(
+              color: AppColors.blush.withValues(alpha: 0.38),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, size: 15, color: AppColors.deepRose),
+          ),
           const SizedBox(height: 5),
           Text(value,
               textAlign: TextAlign.center,
@@ -497,8 +491,8 @@ class StoreDetailSheet extends StatelessWidget {
               width: 36,
               height: 36,
               decoration: BoxDecoration(
-                gradient: AppColors.imageWash,
-                borderRadius: BorderRadius.circular(12),
+                color: AppColors.blush.withValues(alpha: 0.38),
+                borderRadius: BorderRadius.circular(8),
               ),
               child: Icon(icon, size: 18, color: AppColors.deepRose),
             ),

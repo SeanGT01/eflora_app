@@ -530,7 +530,7 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
                   ),
                 ),
                 const SizedBox(width: 10),
-                Flexible(
+                Expanded(
                   child: ElevatedButton(
                     onPressed: hasSelection && !_adding ? _confirm : null,
                     style: ElevatedButton.styleFrom(
@@ -539,7 +539,7 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
                       disabledBackgroundColor: AppColors.borderStrong,
                       minimumSize: const Size(0, 50),
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 18,
+                        horizontal: 10,
                         vertical: 14,
                       ),
                       shape: RoundedRectangleBorder(
@@ -563,12 +563,15 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
                               const Icon(Icons.shopping_bag_outlined, size: 18),
                               const SizedBox(width: 8),
                               Flexible(
-                                child: Text(
-                                  'Add to basket',
-                                  overflow: TextOverflow.ellipsis,
-                                  style: GoogleFonts.dmSans(
-                                    fontWeight: FontWeight.w700,
-                                    fontSize: 14.5,
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  child: Text(
+                                    'Add to basket',
+                                    maxLines: 1,
+                                    style: GoogleFonts.dmSans(
+                                      fontWeight: FontWeight.w700,
+                                      fontSize: 14.5,
+                                    ),
                                   ),
                                 ),
                               ),

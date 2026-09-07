@@ -25,6 +25,7 @@ import '../../widgets/delivery_unavailable_dialog.dart';
 import '../../widgets/stock_issue_dialog.dart';
 import '../../widgets/active_order_limit_dialog.dart';
 import '../store/store_page.dart';
+import '../orders/orders_screen.dart';
 
 /// Web `.gallery-main` / `.gallery-thumb` fill: `linear-gradient(145deg,#f8eef2,#ebe4f4)`.
 const LinearGradient _kImageFrameWash = LinearGradient(
@@ -666,6 +667,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           : null,
       initialDeliveryTime: _selectedTimeSlot,
       initialStoreId: _product!.storeId,
+      onComplete: () {
+        context.read<CartProvider>().load();
+        OrdersScreen.reload(targetStatus: 'to_ship');
+      },
     );
   }
 

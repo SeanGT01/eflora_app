@@ -7,12 +7,14 @@ class CheckoutSuccess extends StatelessWidget {
   final List<Order> orders;
   final double grandTotal;
   final VoidCallback onClose;
+  final VoidCallback? onViewOrders;
 
   const CheckoutSuccess({
     super.key,
     required this.orders,
     required this.grandTotal,
     required this.onClose,
+    this.onViewOrders,
   });
 
   @override
@@ -261,21 +263,47 @@ class CheckoutSuccess extends StatelessWidget {
 
             const SizedBox(height: 28),
 
-            // Close button
+            // Primary: View My Orders button
             SizedBox(
               width: double.infinity,
-              child: ElevatedButton(
-                onPressed: onClose,
+              child: ElevatedButton.icon(
+                onPressed: onViewOrders ?? onClose,
+                icon: const Icon(Icons.receipt_long_outlined, size: 18),
+                label: const Text('View My Orders'),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.deepRose,
                   foregroundColor: Colors.white,
                   padding: const EdgeInsets.symmetric(vertical: 14),
+                  elevation: 2,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
                   textStyle: GoogleFonts.dmSans(
                     fontSize: 15,
                     fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            // Secondary: Back to Shopping button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: onClose,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: AppColors.charcoal,
+                  side: const BorderSide(color: AppColors.border, width: 1.2),
+                  backgroundColor: Colors.white.withOpacity(0.5),
+                  padding: const EdgeInsets.symmetric(vertical: 13),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  textStyle: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
                   ),
                 ),
                 child: const Text('Back to Shopping'),

@@ -9,6 +9,7 @@ import '../providers/auth_provider.dart';
 import '../screens/address/add_edit_address_screen.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/birthday_picker.dart';
 import 'common.dart';
 
 const _kPromptOnboardingKey = 'prompt_profile_onboarding';
@@ -51,11 +52,11 @@ Future<void> maybeRunProfileOnboarding(BuildContext context) async {
     await auth.refreshUser();
     if (!context.mounted) return;
 
-    var user = auth.user;
+    final user = auth.user;
     final needsGender = (user?.gender ?? '').trim().isEmpty;
     final needsBirthday = (user?.birthday ?? '').trim().isEmpty;
-    final needsPhone = user?.needsPhone == true ||
-        ((user?.phone ?? '').trim().isEmpty && (user?.email ?? '').contains('@'));
+    final needsPhone = user?.isPhoneLogin != true &&
+        (user?.needsPhone == true || (user?.phone ?? '').trim().isEmpty);
 
     final addresses = context.read<AddressProvider>();
     if (addresses.addresses.isEmpty) {
@@ -70,7 +71,6 @@ Future<void> maybeRunProfileOnboarding(BuildContext context) async {
       final ok = await _showGenderStep(context);
       if (!ok || !context.mounted) return;
       await auth.refreshUser();
-      user = auth.user;
     }
 
     final birthdayStillMissing = (auth.user?.birthday ?? '').trim().isEmpty;
@@ -81,9 +81,9 @@ Future<void> maybeRunProfileOnboarding(BuildContext context) async {
       await auth.refreshUser();
     }
 
-    final phoneStillMissing = auth.user?.needsPhone == true ||
-        ((auth.user?.phone ?? '').trim().isEmpty &&
-            (auth.user?.email ?? '').contains('@'));
+    final phoneStillMissing = auth.user?.isPhoneLogin != true &&
+        (auth.user?.needsPhone == true ||
+            (auth.user?.phone ?? '').trim().isEmpty);
     if (phoneStillMissing) {
       if (!context.mounted) return;
       final ok = await _showPhoneStep(context);
@@ -94,11 +94,12 @@ Future<void> maybeRunProfileOnboarding(BuildContext context) async {
     }
 
     if (!context.mounted) return;
-    if (addresses.addresses.isEmpty) {
-      await addresses.loadAddresses();
-    }
-    if (!context.mounted) return;
-    if (addresses.addresses.isEmpty) {
+    while (context.mounted) {
+      if (addresses.addresses.isEmpty) {
+        await addresses.loadAddresses();
+      }
+      if (!context.mounted) return;
+      if (addresses.addresses.isNotEmpty) break;
       showToast(context, 'Please add your delivery address to continue.');
       await Navigator.of(context, rootNavigator: true).push(
         MaterialPageRoute(
@@ -106,6 +107,8 @@ Future<void> maybeRunProfileOnboarding(BuildContext context) async {
           fullscreenDialog: true,
         ),
       );
+      if (!context.mounted) return;
+      await addresses.loadAddresses();
     }
   } finally {
     _onboardingInFlight = false;
@@ -133,9 +136,7 @@ Future<bool> _showBirthdayStep(BuildContext context) async {
         builder: (ctx, setLocal) {
           final label = picked == null
               ? 'Tap to choose date'
-              : '${picked!.year.toString().padLeft(4, '0')}-'
-                  '${picked!.month.toString().padLeft(2, '0')}-'
-                  '${picked!.day.toString().padLeft(2, '0')}';
+              : formatBirthdayDisplay(picked!);
           return PopScope(
             canPop: false,
             child: AlertDialog(
@@ -157,12 +158,9 @@ Future<bool> _showBirthdayStep(BuildContext context) async {
                   const SizedBox(height: 14),
                   OutlinedButton.icon(
                     onPressed: () async {
-                      final now = DateTime.now();
-                      final date = await showDatePicker(
-                        context: ctx,
-                        initialDate: DateTime(now.year - 18, now.month, now.day),
-                        firstDate: DateTime(now.year - 120),
-                        lastDate: DateTime(now.year - 13, now.month, now.day),
+                      final date = await showBirthdayWheelPicker(
+                        ctx,
+                        selected: picked,
                       );
                       if (date != null) setLocal(() => picked = date);
                     },
@@ -192,8 +190,6 @@ Future<bool> _showBirthdayStep(BuildContext context) async {
                         '${picked!.month.toString().padLeft(2, '0')}-'
                         '${picked!.day.toString().padLeft(2, '0')}';
                     final res = await ApiService.updateProfile(
-                      firstName: _splitName(ctx).$1,
-                      lastName: _splitName(ctx).$2,
                       birthday: bday,
                     );
                     if (!ctx.mounted) return;
@@ -227,13 +223,6 @@ Future<bool> _showPhoneStep(BuildContext context) async {
     builder: (_) => const _PhoneOnboardingDialog(),
   );
   return result == true;
-}
-
-(String, String) _splitName(BuildContext context) {
-  final full = (context.read<AuthProvider>().user?.fullName ?? '').trim();
-  final i = full.lastIndexOf(' ');
-  if (i <= 0) return (full, '');
-  return (full.substring(0, i), full.substring(i + 1));
 }
 
 int _ageYears(DateTime birthday) {
@@ -275,11 +264,13 @@ class _GenderOnboardingDialogState extends State<_GenderOnboardingDialog> {
         showToast(context, 'Please specify your gender', isError: true);
         return;
       }
+      if (other.length > 20) {
+        showToast(context, 'Please keep this under 20 characters', isError: true);
+        return;
+      }
       gender = other;
     }
     final res = await ApiService.updateProfile(
-      firstName: _splitName(context).$1,
-      lastName: _splitName(context).$2,
       gender: gender,
     );
     if (!mounted) return;
@@ -329,6 +320,7 @@ class _GenderOnboardingDialogState extends State<_GenderOnboardingDialog> {
               const SizedBox(height: 8),
               TextField(
                 controller: _otherCtrl,
+                maxLength: 20,
                 decoration: const InputDecoration(
                   labelText: 'Please specify',
                   hintText: 'e.g., Non-binary',

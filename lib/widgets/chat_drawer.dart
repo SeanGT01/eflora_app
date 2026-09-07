@@ -17,6 +17,7 @@ import '../utils/responsive.dart';
 import 'customer_default_avatar.dart';
 import 'common.dart';
 import 'chat_order_card.dart';
+import '../screens/store/store_page.dart';
 
 // ═══════════════════════════════════════════════════════════════════════
 // FLOATING CHAT BUTTON — AssistiveTouch-style dockable FAB
@@ -280,10 +281,12 @@ class ChatDrawer extends StatefulWidget {
   State<ChatDrawer> createState() => ChatDrawerState();
 }
 
-class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
+class ChatDrawerState extends State<ChatDrawer>
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   // ═══ VIEW STATE ═══
   bool _showDetail = false;
   ChatConversation? _activeConversation;
+  double _lastBottomInset = 0.0;
 
   /// Kept separate from inbox rows so message/preview polls don't wipe it.
   ChatOrderContext? _orderContext;
@@ -291,6 +294,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   // ═══ INBOX ═══
   List<ChatConversation> _conversations = [];
   bool _inboxLoading = true;
+  List<Map<String, dynamic>> _deliverableStores = [];
+  bool _loadingDeliverableStores = false;
 
   // ═══ SEARCH ═══
   final _searchController = TextEditingController();
@@ -338,6 +343,7 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _chatProvider = context.read<ChatProvider>();
     _slideController = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 300));
@@ -357,7 +363,18 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
   }
 
   @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    final bottomInset = WidgetsBinding.instance.platformDispatcher.views.first.viewInsets.bottom;
+    if (bottomInset > _lastBottomInset && _showDetail) {
+      _scrollToBottom();
+    }
+    _lastBottomInset = bottomInset;
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _chatProvider.setLiveMode(false);
     _slideController.dispose();
     _searchController.dispose();
@@ -426,12 +443,30 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
       final total = merged.fold<int>(0, (sum, c) => sum + c.unreadCount);
       _chatProvider.syncUnreadTotal(total);
       _chatProvider.refreshUnread();
+      _loadDeliverableStores();
       if (!_showDetail) {
         await _refreshInboxPresence();
         _startInboxPresencePoll();
       }
     } finally {
       _loadingInbox = false;
+    }
+  }
+
+  Future<void> _loadDeliverableStores() async {
+    final role = context.read<AuthProvider>().user?.role;
+    if (role != 'customer' || _loadingDeliverableStores) return;
+    _loadingDeliverableStores = true;
+    try {
+      final stores = await ChatService.getDeliverableStores();
+      if (!mounted) return;
+      setState(() {
+        _deliverableStores = stores;
+      });
+    } catch (_) {
+      // Quiet fail fallback
+    } finally {
+      _loadingDeliverableStores = false;
     }
   }
 
@@ -1035,6 +1070,15 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) {
+    final mediaQuery = MediaQuery.of(context);
+    final bottomInset = mediaQuery.viewInsets.bottom;
+    final screenHeight = mediaQuery.size.height;
+    final topPadding = mediaQuery.padding.top;
+    final maxAvailableHeight = screenHeight - topPadding - 16;
+    final targetHeight = bottomInset > 0
+        ? (maxAvailableHeight - bottomInset).clamp(240.0, screenHeight * 0.78)
+        : (screenHeight * 0.78);
+
     return Stack(
       children: [
         // Backdrop
@@ -1043,14 +1087,18 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
           child: Container(color: Colors.black.withOpacity(0.25)),
         ),
         // Drawer
-        Positioned(
+        AnimatedPositioned(
+          duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOutCubic,
           left: 0,
           right: 0,
-          bottom: 0,
+          bottom: bottomInset,
           child: SlideTransition(
             position: _slideAnimation,
-            child: Container(
-              height: MediaQuery.of(context).size.height * 0.78,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              curve: Curves.easeOutCubic,
+              height: targetHeight,
               decoration: const BoxDecoration(
                 color: AppColors.warmWhite,
                 borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
@@ -1230,6 +1278,25 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                               color: AppColors.charcoal),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis),
+                      if (store['can_deliver_to_customer'] == true) ...[
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            const Icon(Icons.check_circle_rounded,
+                                size: 12, color: Color(0xFF2E7D32)),
+                            const SizedBox(width: 3),
+                            Expanded(
+                              child: Text('Delivers to your address',
+                                  style: GoogleFonts.dmSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w600,
+                                      color: const Color(0xFF2E7D32)),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                            ),
+                          ],
+                        ),
+                      ],
                       if (address != null)
                         Text(address,
                             style: GoogleFonts.dmSans(
@@ -1259,34 +1326,242 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
     );
   }
 
+  Widget _buildDeliverableStoresRow() {
+    if (_deliverableStores.isEmpty) return const SizedBox.shrink();
+    return Container(
+      decoration: BoxDecoration(
+        color: AppColors.warmWhite,
+        border: Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
+      ),
+      padding: const EdgeInsets.symmetric(vertical: 10),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              children: [
+                Icon(Icons.local_shipping_outlined, size: 15, color: AppColors.deepRose),
+                const SizedBox(width: 6),
+                Text(
+                  'Delivers to your address',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.charcoal,
+                    letterSpacing: 0.2,
+                  ),
+                ),
+                const Spacer(),
+                Text(
+                  '${_deliverableStores.length} shops',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11,
+                    color: AppColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 82,
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              scrollDirection: Axis.horizontal,
+              itemCount: _deliverableStores.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, i) {
+                final store = _deliverableStores[i];
+                final name = store['name']?.toString() ?? 'Store';
+                final logo = store['logo_url'] as String?;
+                final storeId = store['id'] as int? ?? 0;
+                return InkWell(
+                  onTap: () {
+                    if (storeId > 0) _openWithStore(storeId);
+                  },
+                  borderRadius: BorderRadius.circular(12),
+                  child: Container(
+                    width: 76,
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            _buildAvatar(logo, name, 46, customerDefault: false),
+                            Positioned(
+                              bottom: -2,
+                              right: -2,
+                              child: Container(
+                                width: 16,
+                                height: 16,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF2E7D32),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(color: Colors.white, width: 1.5),
+                                ),
+                                child: const Icon(Icons.check, size: 10, color: Colors.white),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 5),
+                        Text(
+                          name,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.charcoal,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildConversationList() {
     if (_inboxLoading) {
       return const Center(
           child: CircularProgressIndicator(
               color: AppColors.deepRose, strokeWidth: 2.5));
     }
+    final role = context.read<AuthProvider>().user?.role;
+    final isCustomer = role == 'customer';
+
     if (_conversations.isEmpty) {
-      final role = context.read<AuthProvider>().user?.role;
       final emptyHint = role == 'rider'
           ? 'Open an assigned order to message the customer'
-          : 'Search a store above to start chatting';
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+          : 'Tap any store below that delivers to your address or search above to chat';
+
+      return RefreshIndicator(
+        onRefresh: _loadInbox,
+        color: AppColors.deepRose,
+        child: ListView(
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: EdgeInsets.zero,
           children: [
-            Icon(Icons.chat_bubble_outline_rounded,
-                size: 48, color: AppColors.muted.withOpacity(0.3)),
-            const SizedBox(height: 14),
-            Text('No conversations yet',
-                style: GoogleFonts.dmSans(
-                    fontSize: 14,
-                    color: AppColors.muted,
-                    fontWeight: FontWeight.w500)),
-            const SizedBox(height: 6),
-            Text(emptyHint,
-                style: GoogleFonts.dmSans(
-                    fontSize: 12, color: AppColors.muted.withOpacity(0.7)),
-                textAlign: TextAlign.center),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.chat_bubble_outline_rounded,
+                      size: 44, color: AppColors.muted.withValues(alpha: 0.35)),
+                  const SizedBox(height: 10),
+                  Text('No conversations yet',
+                      style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          color: AppColors.muted,
+                          fontWeight: FontWeight.w600)),
+                  const SizedBox(height: 4),
+                  Text(emptyHint,
+                      style: GoogleFonts.dmSans(
+                          fontSize: 12, color: AppColors.muted.withValues(alpha: 0.8)),
+                      textAlign: TextAlign.center),
+                ],
+              ),
+            ),
+            if (isCustomer && _deliverableStores.isNotEmpty) ...[
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  children: [
+                    Icon(Icons.local_shipping_outlined, size: 16, color: AppColors.deepRose),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Shops that can deliver to you',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.charcoal,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              ..._deliverableStores.map((store) {
+                final name = store['name']?.toString() ?? 'Store';
+                final logo = store['logo_url'] as String?;
+                final address = store['address']?.toString();
+                final storeId = store['id'] as int? ?? 0;
+                return InkWell(
+                  onTap: () {
+                    if (storeId > 0) _openWithStore(storeId);
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                    child: Row(
+                      children: [
+                        _buildAvatar(logo, name, 42, customerDefault: false),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(name,
+                                  style: GoogleFonts.dmSans(
+                                      fontSize: 13.5,
+                                      fontWeight: FontWeight.w600,
+                                      color: AppColors.charcoal),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis),
+                              if (address != null && address.isNotEmpty)
+                                Text(address,
+                                    style: GoogleFonts.dmSans(
+                                        fontSize: 11.5, color: AppColors.muted),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis),
+                              const SizedBox(height: 3),
+                              Row(
+                                children: [
+                                  const Icon(Icons.check_circle, size: 13, color: Color(0xFF2E7D32)),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Delivers to your address',
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w500,
+                                      color: const Color(0xFF2E7D32),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: AppColors.deepRose,
+                            borderRadius: BorderRadius.circular(16),
+                          ),
+                          child: Text(
+                            'Message',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              }),
+            ],
           ],
         ),
       );
@@ -1297,11 +1572,15 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
       child: ListView.separated(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4),
-        itemCount: _conversations.length,
-        separatorBuilder: (_, __) => Divider(
+        itemCount: _conversations.length + (isCustomer && _deliverableStores.isNotEmpty ? 1 : 0),
+        separatorBuilder: (_, i) => Divider(
             height: 1, thickness: 0.5, indent: 70, color: AppColors.border),
         itemBuilder: (context, i) {
-          final convo = _conversations[i];
+          if (isCustomer && _deliverableStores.isNotEmpty && i == 0) {
+            return _buildDeliverableStoresRow();
+          }
+          final convoIdx = (isCustomer && _deliverableStores.isNotEmpty) ? i - 1 : i;
+          final convo = _conversations[convoIdx];
           final other = convo.otherUser;
           final isSeller = other?.role == 'seller';
           final displayName = isSeller
@@ -1461,42 +1740,77 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                   icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
                   onPressed: _backToInbox,
                   splashRadius: 18),
-              _buildAvatar(
-                displayAvatar,
-                displayName,
-                34,
-                customerDefault: !isSeller,
-                showOnline: false,
+              InkWell(
+                onTap: isSeller && convo.storeId > 0
+                    ? () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => StorePage(storeId: convo.storeId),
+                          ),
+                        );
+                      }
+                    : null,
+                borderRadius: BorderRadius.circular(20),
+                child: _buildAvatar(
+                  displayAvatar,
+                  displayName,
+                  34,
+                  customerDefault: !isSeller,
+                  showOnline: false,
+                ),
               ),
               const SizedBox(width: 10),
               Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(displayName,
-                        style: GoogleFonts.dmSans(
-                            fontSize: 14.5,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.charcoal),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis),
-                    Row(
-                      children: [
-                        Container(
-                            width: 7,
-                            height: 7,
-                            decoration: BoxDecoration(
-                                shape: BoxShape.circle,
-                                color: _otherOnline
-                                    ? const Color(0xFF31a24c)
-                                    : Colors.grey[400])),
-                        const SizedBox(width: 4),
-                        Text(_otherOnline ? 'Online' : 'Offline',
-                            style: GoogleFonts.dmSans(
-                                fontSize: 11, color: AppColors.muted)),
-                      ],
-                    ),
-                  ],
+                child: InkWell(
+                  onTap: isSeller && convo.storeId > 0
+                      ? () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder: (_) => StorePage(storeId: convo.storeId),
+                            ),
+                          );
+                        }
+                      : null,
+                  borderRadius: BorderRadius.circular(6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(displayName,
+                                style: GoogleFonts.dmSans(
+                                    fontSize: 14.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.charcoal),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis),
+                          ),
+                          if (isSeller && convo.storeId > 0) ...[
+                            const SizedBox(width: 4),
+                            Icon(Icons.chevron_right_rounded,
+                                size: 16, color: AppColors.muted),
+                          ],
+                        ],
+                      ),
+                      Row(
+                        children: [
+                          Container(
+                              width: 7,
+                              height: 7,
+                              decoration: BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: _otherOnline
+                                      ? const Color(0xFF31a24c)
+                                      : Colors.grey[400])),
+                          const SizedBox(width: 4),
+                          Text(_otherOnline ? 'Online' : 'Offline',
+                              style: GoogleFonts.dmSans(
+                                  fontSize: 11, color: AppColors.muted)),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
               IconButton(
@@ -1530,6 +1844,8 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
                     )
                   : ListView.builder(
                       controller: _scrollController,
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       itemCount: _groupedMessages.length,
@@ -2132,16 +2448,20 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
             ),
           ),
         // Input bar
-        Container(
-          padding: EdgeInsets.only(
-              left: 8,
-              right: 8,
-              top: 7,
-              bottom: MediaQuery.of(context).padding.bottom + 7),
-          decoration: BoxDecoration(
-              color: AppColors.warmWhite,
-              border:
-                  Border(top: BorderSide(color: AppColors.border, width: 0.5))),
+        Builder(builder: (context) {
+          final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+          return Container(
+            padding: EdgeInsets.only(
+                left: 8,
+                right: 8,
+                top: 7,
+                bottom: isKeyboardOpen
+                    ? 7
+                    : (MediaQuery.of(context).padding.bottom + 7)),
+            decoration: BoxDecoration(
+                color: AppColors.warmWhite,
+                border:
+                    Border(top: BorderSide(color: AppColors.border, width: 0.5))),
           child: Row(
             children: [
               IconButton(
@@ -2204,10 +2524,11 @@ class ChatDrawerState extends State<ChatDrawer> with TickerProviderStateMixin {
               ),
             ],
           ),
-        ),
-      ],
-    );
-  }
+        );
+      }),
+    ],
+  );
+}
 
   // ═══════════════════════════════════════════════════════════════════════
   // HELPERS

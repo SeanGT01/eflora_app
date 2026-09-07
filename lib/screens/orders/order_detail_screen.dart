@@ -14,6 +14,7 @@ import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/chat_drawer.dart';
 import '../../widgets/cancel_order_reason_sheet.dart';
+import '../../widgets/order_review_dialog.dart';
 import '../product/product_detail_screen.dart';
 import '../../widgets/live_delivery_map.dart';
 
@@ -774,23 +775,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     );
   }
 
-  void _openRatingSheet(BuildContext context) {
-    final order = _order;
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) => _RatingSheet(
-        order: order,
-        existingRatings: Map.from(_existingRatings),
-        storeRatedAlready: _storeRated,
-        onSubmitted: () {
-          _loadExistingRatings();
-          Navigator.pop(ctx);
-          showToast(context, 'Thank you for your rating!');
-        },
-      ),
+  Future<void> _openRatingSheet(BuildContext context) async {
+    final updated = await showOrderReviewModal(
+      context,
+      order: _order,
+      initialExistingRatings: _ratingsLoaded ? _existingRatings : null,
+      initialStoreRated: _ratingsLoaded ? _storeRated : null,
     );
+    if (!mounted) return;
+    if (updated == true) {
+      await _loadExistingRatings();
+    }
   }
 
   Future<void> _markOrderAsCompleted() async {

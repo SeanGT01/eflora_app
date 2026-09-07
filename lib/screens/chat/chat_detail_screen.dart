@@ -15,6 +15,7 @@ import '../../theme/app_theme.dart';
 import '../../utils/datetime_ph.dart';
 import '../../widgets/customer_default_avatar.dart';
 import '../../widgets/common.dart';
+import '../store/store_page.dart';
 
 /// Instagram-style chat detail screen.
 class ChatDetailScreen extends StatefulWidget {
@@ -26,7 +27,7 @@ class ChatDetailScreen extends StatefulWidget {
   State<ChatDetailScreen> createState() => _ChatDetailScreenState();
 }
 
-class _ChatDetailScreenState extends State<ChatDetailScreen> {
+class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBindingObserver {
   final _controller = TextEditingController();
   final _scrollController = ScrollController();
   final _picker = ImagePicker();
@@ -38,6 +39,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   String? _typingName;
   bool _otherOnline = false;
   List<File> _pendingImages = [];
+  double _lastBottomInset = 0.0;
 
   Timer? _pollTimer;
   Timer? _typingDebounce;
@@ -58,7 +60,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         final batch = <ChatMessage>[m];
         while (i + 1 < _messages.length && batch.length < 5) {
           final next = _messages[i + 1];
-          if (next.messageType == 'image' && next.imageUrl != null && (next.text == null || next.text!.isEmpty) && next.senderId == m.senderId) {
+          if (next.messageType == 'image' &&
+              next.imageUrl != null &&
+              (next.text == null || next.text!.isEmpty) &&
+              next.senderId == m.senderId) {
             batch.add(next);
             i++;
           } else {
@@ -77,6 +82,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadMessages(forceScroll: true);
     _markRead();
     _checkOnline();
@@ -84,7 +90,18 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    final bottomInset = WidgetsBinding.instance.platformDispatcher.views.first.viewInsets.bottom;
+    if (bottomInset > _lastBottomInset) {
+      _scrollToBottom();
+    }
+    _lastBottomInset = bottomInset;
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _pollTimer?.cancel();
     _typingDebounce?.cancel();
     _typingKeepAlive?.cancel();
@@ -312,36 +329,70 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         titleSpacing: 0,
         title: Row(
           children: [
-            _buildAvatar(avatarUrl, displayName, 34, customerDefault: !isSeller),
+            InkWell(
+              onTap: isSeller && widget.conversation.storeId > 0
+                  ? () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => StorePage(storeId: widget.conversation.storeId),
+                        ),
+                      );
+                    }
+                  : null,
+              borderRadius: BorderRadius.circular(20),
+              child: _buildAvatar(avatarUrl, displayName, 34, customerDefault: !isSeller),
+            ),
             const SizedBox(width: 10),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    displayName,
-                    style: GoogleFonts.dmSans(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.charcoal),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Row(
-                    children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: _otherOnline ? const Color(0xFF31a24c) : Colors.grey[400],
+              child: InkWell(
+                onTap: isSeller && widget.conversation.storeId > 0
+                    ? () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => StorePage(storeId: widget.conversation.storeId),
+                          ),
+                        );
+                      }
+                    : null,
+                borderRadius: BorderRadius.circular(6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            displayName,
+                            style: GoogleFonts.dmSans(fontSize: 15, fontWeight: FontWeight.w700, color: AppColors.charcoal),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        _otherOnline ? 'Online' : 'Offline',
-                        style: GoogleFonts.dmSans(fontSize: 11.5, color: AppColors.muted),
-                      ),
-                    ],
-                  ),
-                ],
+                        if (isSeller && widget.conversation.storeId > 0) ...[
+                          const SizedBox(width: 4),
+                          Icon(Icons.chevron_right_rounded, size: 16, color: AppColors.muted),
+                        ],
+                      ],
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: _otherOnline ? const Color(0xFF31a24c) : Colors.grey[400],
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          _otherOnline ? 'Online' : 'Offline',
+                          style: GoogleFonts.dmSans(fontSize: 11.5, color: AppColors.muted),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
             ),
           ],
@@ -369,6 +420,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       )
                     : ListView.builder(
                         controller: _scrollController,
+                        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         itemCount: _groupedMessages.length,
                         itemBuilder: (context, index) {
@@ -630,12 +682,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   }
 
   Widget _buildInputBar() {
+    final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
     return Container(
       padding: EdgeInsets.only(
         left: 10,
         right: 10,
         top: 8,
-        bottom: MediaQuery.of(context).padding.bottom + 8,
+        bottom: isKeyboardOpen ? 8 : (MediaQuery.of(context).padding.bottom + 8),
       ),
       decoration: BoxDecoration(
         color: AppColors.warmWhite,

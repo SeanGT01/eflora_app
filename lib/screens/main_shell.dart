@@ -4,9 +4,8 @@ import 'package:google_fonts/google_fonts.dart';
 import '../providers/auth_provider.dart';
 import '../providers/cart_provider.dart';
 import '../services/app_quality.dart';
+import '../navigation/floating_nav_metrics.dart';
 import '../theme/app_theme.dart';
-import '../utils/responsive.dart';
-import '../widgets/adaptive_blur.dart';
 import '../widgets/auth_required_sheet.dart';
 import '../widgets/chat_drawer.dart';
 import 'home/home_screen.dart';
@@ -19,8 +18,8 @@ class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
   /// Switch the tab from anywhere in the widget tree.
-  static void switchTab(BuildContext context, int index) {
-    context.findAncestorStateOfType<MainShellState>()?.switchToTab(index);
+  static void switchTab(BuildContext context, int index, {String? targetOrderStatus}) {
+    context.findAncestorStateOfType<MainShellState>()?.switchToTab(index, targetOrderStatus: targetOrderStatus);
   }
 
   /// Open chat (optionally with a store) from anywhere under MainShell.
@@ -37,8 +36,11 @@ class MainShellState extends State<MainShell> {
   bool _chatOpen = false;
   int? _chatOpenStoreId;
 
-  void switchToTab(int index) {
+  void switchToTab(int index, {String? targetOrderStatus}) {
     setState(() => _idx = index);
+    if (index == 3) {
+      OrdersScreen.reload(targetStatus: targetOrderStatus);
+    }
   }
 
   void openChatWithStore(int storeId) {
@@ -96,89 +98,109 @@ class MainShellState extends State<MainShell> {
                   key: ValueKey('tab_$_idx'),
                   child: _screens[_idx],
                 ),
-              // Chat drawer overlay
-              if (_chatOpen)
-                ChatDrawer(
-                  onClose: () => setState(() {
-                    _chatOpen = false;
-                    _chatOpenStoreId = null;
-                  }),
-                  openStoreId: _chatOpenStoreId,
-                ),
             ],
           ),
-          bottomNavigationBar: ClipRect(
-            child: AdaptiveBlur(
-              sigma: 16,
-              child: Container(
-                decoration: BoxDecoration(
-                  gradient:
-                      AppQuality.instance.useBlur ? AppColors.headerGlass : null,
-                  color: AppQuality.instance.useBlur
-                      ? null
-                      : const Color(0xF5FFFAFC),
-                  border: const Border(
-                    top: BorderSide(color: Color(0x8CFFFFFF), width: 1),
-                  ),
-                  boxShadow: const [
-                    BoxShadow(
-                      color: Color(0x0FB5445A),
-                      blurRadius: 28,
-                      offset: Offset(0, -8),
-                    ),
-                  ],
-                ),
-                child: SafeArea(
-                  top: false,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(0, 6, 0, 4),
-                    child: Row(
-                      children: [
-                        _NavItem(
-                          icon: Icons.home_outlined,
-                          activeIcon: Icons.home,
-                          label: 'Home',
-                          selected: _idx == 0,
-                          onTap: () => setState(() => _idx = 0),
-                        ),
-                        _NavItem(
-                          icon: Icons.search_outlined,
-                          activeIcon: Icons.search,
-                          label: 'Search',
-                          selected: _idx == 1,
-                          onTap: () => setState(() => _idx = 1),
-                        ),
-                        _CartNavItem(
-                          count: cartCount,
-                          selected: _idx == 2,
-                          onTap: () => setState(() => _idx = 2),
-                        ),
-                        _NavItem(
-                          icon: Icons.receipt_long_outlined,
-                          activeIcon: Icons.receipt_long,
-                          label: 'Orders',
-                          selected: _idx == 3,
-                          onTap: () => setState(() => _idx = 3),
-                        ),
-                        _NavItem(
-                          icon: Icons.person_outline,
-                          activeIcon: Icons.person,
-                          label: 'Account',
-                          selected: _idx == 4,
-                          onTap: () => setState(() => _idx = 4),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+        ),
+        _FloatingNavBar(
+          selectedIndex: _idx,
+          cartCount: cartCount,
+          onSelect: (i) => switchToTab(i),
+        ),
+        // Keep the drawer above the floating navbar while it is open.
+        if (_chatOpen)
+          Material(
+            type: MaterialType.transparency,
+            child: ChatDrawer(
+              onClose: () => setState(() {
+                _chatOpen = false;
+                _chatOpenStoreId = null;
+              }),
+              openStoreId: _chatOpenStoreId,
             ),
           ),
-        ),
         // Floating chat button — same role as website `#chat-fab`.
         // Hidden on Cart (checkout bar) and while a modal route is on top.
-        if (showChatFab) FloatingChatButton(onTap: openChat),
+        if (showChatFab)
+          FloatingChatButton(
+            onTap: openChat,
+            bottomNavClearance: kFloatingNavBottomGap + kFloatingNavBarHeight + 8,
+          ),
       ],
+    );
+  }
+}
+
+class _FloatingNavBar extends StatelessWidget {
+  const _FloatingNavBar({
+    required this.selectedIndex,
+    required this.cartCount,
+    required this.onSelect,
+  });
+
+  final int selectedIndex;
+  final int cartCount;
+  final ValueChanged<int> onSelect;
+
+  static const _radius = 26.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final bottom = MediaQuery.viewPaddingOf(context).bottom + kFloatingNavBottomGap;
+    return Positioned(
+      left: kFloatingNavHorizontalInset,
+      right: kFloatingNavHorizontalInset,
+      bottom: bottom,
+      child: Material(
+        color: Colors.white,
+        elevation: 12,
+        shadowColor: const Color(0x40000000),
+        surfaceTintColor: Colors.transparent,
+        borderRadius: BorderRadius.circular(_radius),
+        clipBehavior: Clip.antiAlias,
+        child: SizedBox(
+          height: kFloatingNavBarHeight,
+          child: Row(
+            children: [
+              _NavItem(
+                icon: Icons.home_outlined,
+                activeIcon: Icons.home,
+                label: 'Home',
+                selected: selectedIndex == 0,
+                onTap: () => onSelect(0),
+              ),
+              _NavItem(
+                icon: Icons.search_outlined,
+                activeIcon: Icons.search,
+                label: 'Search',
+                selected: selectedIndex == 1,
+                onTap: () => onSelect(1),
+              ),
+              _NavItem(
+                icon: Icons.shopping_bag_outlined,
+                activeIcon: Icons.shopping_bag,
+                label: 'Cart',
+                selected: selectedIndex == 2,
+                badge: cartCount,
+                onTap: () => onSelect(2),
+              ),
+              _NavItem(
+                icon: Icons.receipt_long_outlined,
+                activeIcon: Icons.receipt_long,
+                label: 'Orders',
+                selected: selectedIndex == 3,
+                onTap: () => onSelect(3),
+              ),
+              _NavItem(
+                icon: Icons.person_outline,
+                activeIcon: Icons.person,
+                label: 'Account',
+                selected: selectedIndex == 4,
+                onTap: () => onSelect(4),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
@@ -189,121 +211,105 @@ class _NavItem extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
+  final int badge;
 
   const _NavItem({
-    required this.icon, required this.activeIcon,
-    required this.label, required this.selected, required this.onTap,
+    required this.icon,
+    required this.activeIcon,
+    required this.label,
+    required this.selected,
+    required this.onTap,
+    this.badge = 0,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedContainer(
-              duration: AppMotion.fast,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              decoration: BoxDecoration(
-                gradient: selected ? AppColors.brandGradient : null,
-                borderRadius: BorderRadius.circular(AppRadius.pill),
-              ),
-              child: AnimatedSwitcher(
-                duration: AppMotion.fast,
-                child: Icon(
-                  selected ? activeIcon : icon,
-                  key: ValueKey(selected),
-                  size: context.s(20),
-                  color: selected ? Colors.white : AppColors.muted,
-                ),
-              ),
-            ),
-            SizedBox(height: context.s(3)),
-            Text(
-              label,
-              style: GoogleFonts.dmSans(
-                fontSize: context.sp(9.5),
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-                color: selected ? AppColors.roseCta : AppColors.muted,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _CartNavItem extends StatelessWidget {
-  final int count;
-  final bool selected;
-  final VoidCallback onTap;
-
-  const _CartNavItem({required this.count, required this.selected, required this.onTap});
+  static const _inactive = Color(0xFF757575);
+  static const _pill = Color(0xFFF8D5DE);
 
   @override
   Widget build(BuildContext context) {
+    final color = selected ? AppColors.roseCta : _inactive;
+    // Match the reference navigation: every destination keeps its label under
+    // the icon, and the selected destination is a contained, horizontal pill.
+    // Equal slots also keep the Account item aligned with the pill's edge.
     return Expanded(
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            AnimatedContainer(
-              duration: AppMotion.fast,
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
-              decoration: BoxDecoration(
-                gradient: selected ? AppColors.brandGradient : null,
-                borderRadius: BorderRadius.circular(AppRadius.pill),
-              ),
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Icon(
-                    selected ? Icons.shopping_bag : Icons.shopping_bag_outlined,
-                    size: 20,
-                    color: selected ? Colors.white : AppColors.muted,
-                  ),
-                  if (count > 0)
-                    Positioned(
-                      top: -5, right: -6,
-                      child: Container(
-                        width: 14, height: 14,
-                        decoration: BoxDecoration(
-                          color: selected ? Colors.white : AppColors.roseCta,
-                          shape: BoxShape.circle,
-                        ),
-                        child: Center(
-                          child: Text(
-                            count > 9 ? '9+' : '$count',
-                            style: GoogleFonts.dmSans(
-                              fontSize: 7.5,
-                              fontWeight: FontWeight.w800,
-                              color: selected ? AppColors.roseCta : Colors.white,
+        // The whole flex item is tappable, but it must not paint a rectangular
+        // Material splash behind the capsule.
+        splashFactory: NoSplash.splashFactory,
+        splashColor: Colors.transparent,
+        highlightColor: Colors.transparent,
+        hoverColor: Colors.transparent,
+        focusColor: Colors.transparent,
+        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+        child: Center(
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOutCubic,
+            width: selected ? 62 : 52,
+            height: 48,
+            padding: const EdgeInsets.symmetric(vertical: 5),
+            decoration: BoxDecoration(
+              color: selected ? _pill : Colors.transparent,
+              borderRadius: BorderRadius.circular(26),
+            ),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      width: 24,
+                      height: 24,
+                      child: Icon(
+                        selected ? activeIcon : icon,
+                        size: 21,
+                        color: color,
+                      ),
+                    ),
+                    if (badge > 0)
+                      Positioned(
+                        top: -4,
+                        right: -4,
+                        child: Container(
+                          constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                          padding: const EdgeInsets.symmetric(horizontal: 3),
+                          decoration: const BoxDecoration(
+                            color: AppColors.roseCta,
+                            shape: BoxShape.circle,
+                          ),
+                          child: Center(
+                            child: Text(
+                              badge > 9 ? '9+' : '$badge',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 8,
+                                fontWeight: FontWeight.w800,
+                                color: Colors.white,
+                                height: 1,
+                              ),
                             ),
                           ),
                         ),
-                      ),
                     ),
-                ],
-              ),
+                  ],
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 9.5,
+                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                    color: color,
+                    height: 1,
+                  ),
+                ),
+              ],
             ),
-            const SizedBox(height: 3),
-            Text(
-              'Cart',
-              style: GoogleFonts.dmSans(
-                fontSize: 9.5,
-                fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-                color: selected ? AppColors.roseCta : AppColors.muted,
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );

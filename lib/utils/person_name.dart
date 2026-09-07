@@ -49,11 +49,10 @@ String? validatePersonName(String? raw, {required String field, int maxLen = kFi
 String? validateFullName(String? raw) {
   final text = (raw ?? '').trim().replaceAll(RegExp(r'\s+'), ' ');
   if (text.isEmpty) return 'Full name is required';
-  if (text.length > kFullNameMax) {
-    return 'Full name must be at most $kFullNameMax characters';
-  }
-  if (!_namePattern.hasMatch(text) || !text.contains(' ')) {
-    return 'Enter your first and last name using letters only';
-  }
-  return null;
+  final lastSpace = text.lastIndexOf(' ');
+  if (lastSpace <= 0) return 'Enter your first and last name';
+  final first = text.substring(0, lastSpace);
+  final last = text.substring(lastSpace + 1);
+  return validatePersonName(first, field: 'First name') ??
+      validatePersonName(last, field: 'Last name', maxLen: kLastNameMax);
 }

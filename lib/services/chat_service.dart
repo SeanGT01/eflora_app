@@ -356,24 +356,55 @@ class ChatService {
   }
 
   // ══════════════════════════════════════════════════════════════════════
-  // STORE SEARCH (for new-conversation flow)
+  // STORE SEARCH & DELIVERABLE STORES (for new-conversation flow)
   // ══════════════════════════════════════════════════════════════════════
+
+  /// Fetch stores that can deliver to the customer's address.
+  static Future<List<Map<String, dynamic>>> getDeliverableStores() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_base/api/v1/customer/stores?include_outside_location=1'),
+        headers: await _headers(),
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode == 200) {
+        final List<dynamic> raw = jsonDecode(res.body);
+        final list = List<Map<String, dynamic>>.from(
+          raw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)),
+        );
+        // Prioritize stores that can deliver to customer
+        final deliverable = list.where((s) => s['can_deliver_to_customer'] == true).toList();
+        if (deliverable.isNotEmpty) {
+          return deliverable;
+        }
+        return list;
+      }
+      return [];
+    } catch (e) {
+      print('❌ ChatService.getDeliverableStores error: $e');
+      return [];
+    }
+  }
 
   /// Fetch all stores for search / new conversation.
   static Future<List<Map<String, dynamic>>> searchStores(String query) async {
     try {
       final res = await http.get(
-        Uri.parse('$_base/api/v1/customer/stores'),
+        Uri.parse('$_base/api/v1/customer/stores?include_outside_location=1'),
         headers: await _headers(),
       ).timeout(const Duration(seconds: 10));
 
       if (res.statusCode == 200) {
         final List<dynamic> stores = jsonDecode(res.body);
-        if (query.isEmpty) return List<Map<String, dynamic>>.from(stores.take(20));
-        final q = query.toLowerCase();
-        return List<Map<String, dynamic>>.from(
-          stores.where((s) => (s['name'] ?? '').toString().toLowerCase().contains(q)).take(10),
+        final mapped = List<Map<String, dynamic>>.from(
+          stores.whereType<Map>().map((m) => Map<String, dynamic>.from(m)),
         );
+        if (query.isEmpty) return mapped.take(20).toList();
+        final q = query.toLowerCase();
+        return mapped
+            .where((s) => (s['name'] ?? '').toString().toLowerCase().contains(q))
+            .take(10)
+            .toList();
       }
       return [];
     } catch (e) {

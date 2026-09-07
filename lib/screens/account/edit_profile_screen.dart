@@ -1,4 +1,3 @@
-import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +11,7 @@ import '../../services/api_service.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/person_name.dart';
+import '../../widgets/birthday_picker.dart';
 import '../../widgets/customer_default_avatar.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
@@ -60,7 +60,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     _birthday = _parseBirthday(user?.birthday);
     _initialBirthday = _birthday;
     _birthdayCtrl = TextEditingController(
-      text: _birthday == null ? '' : _formatBirthdayDisplay(_birthday!),
+      text: _birthday == null ? '' : formatBirthdayDisplay(_birthday!),
     );
     _initialFirstName = _firstNameCtrl.text.trim();
     _initialLastName = _lastNameCtrl.text.trim();
@@ -109,23 +109,13 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       _lastNameCtrl.text = _initialLastName;
       _birthday = _initialBirthday;
       _birthdayCtrl.text =
-          _birthday == null ? '' : _formatBirthdayDisplay(_birthday!);
+          _birthday == null ? '' : formatBirthdayDisplay(_birthday!);
       _phoneCtrl.text = _initialPhone;
       _phoneOtpSent = false;
       _phoneOtpCtrl.clear();
       _selectedImage = null;
     });
     showToast(context, 'Changes discarded');
-  }
-
-  static DateTime get _minBirthday {
-    final now = DateTime.now();
-    return DateTime(now.year - 120, now.month, now.day);
-  }
-
-  static DateTime get _maxBirthday {
-    final now = DateTime.now();
-    return DateTime(now.year - 13, now.month, now.day);
   }
 
   DateTime? _parseBirthday(String? raw) {
@@ -136,14 +126,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       return null;
     }
   }
-
-  static const _monthAbbr = [
-    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
-  ];
-
-  String _formatBirthdayDisplay(DateTime d) =>
-      '${_monthAbbr[d.month - 1]} ${d.day.toString().padLeft(2, '0')}, ${d.year}';
 
   String? _formatBirthdayApi(DateTime? d) {
     if (d == null) return null;
@@ -162,99 +144,15 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     return age;
   }
 
-  DateTime _clampedBirthday(DateTime value) {
-    if (value.isAfter(_maxBirthday)) return _maxBirthday;
-    if (value.isBefore(_minBirthday)) return _minBirthday;
-    return DateTime(value.year, value.month, value.day);
-  }
-
   Future<void> _pickBirthday() async {
-    var current = _clampedBirthday(_birthday ?? _maxBirthday);
-    final picked = await showModalBottomSheet<DateTime>(
-      context: context,
-      backgroundColor: AppColors.warmWhite,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(22)),
-      ),
-      builder: (ctx) {
-        return SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 300,
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 0),
-                  child: Row(
-                    children: [
-                      CupertinoButton(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        onPressed: () => Navigator.pop(ctx),
-                        child: Text(
-                          'Cancel',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 16,
-                            color: AppColors.muted,
-                          ),
-                        ),
-                      ),
-                      Expanded(
-                        child: Text(
-                          'Birthday',
-                          textAlign: TextAlign.center,
-                          style: GoogleFonts.dmSans(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.charcoal,
-                          ),
-                        ),
-                      ),
-                      CupertinoButton(
-                        padding: const EdgeInsets.symmetric(horizontal: 12),
-                        onPressed: () => Navigator.pop(ctx, current),
-                        child: Text(
-                          'Done',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.deepRose,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  child: CupertinoTheme(
-                    data: const CupertinoThemeData(
-                      brightness: Brightness.light,
-                      primaryColor: AppColors.deepRose,
-                      textTheme: CupertinoTextThemeData(
-                        dateTimePickerTextStyle: TextStyle(
-                          fontSize: 21,
-                          color: AppColors.charcoal,
-                        ),
-                      ),
-                    ),
-                    child: CupertinoDatePicker(
-                      mode: CupertinoDatePickerMode.date,
-                      initialDateTime: current,
-                      minimumDate: _minBirthday,
-                      maximumDate: _maxBirthday,
-                      onDateTimeChanged: (value) => current = value,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        );
-      },
+    final picked = await showBirthdayWheelPicker(
+      context,
+      selected: _birthday,
     );
     if (picked == null) return;
     setState(() {
       _birthday = DateTime(picked.year, picked.month, picked.day);
-      _birthdayCtrl.text = _formatBirthdayDisplay(_birthday!);
+      _birthdayCtrl.text = formatBirthdayDisplay(_birthday!);
     });
   }
 
@@ -662,24 +560,32 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               gradient: AppColors.brandGradient,
                               boxShadow: AppShadows.petal,
                             ),
-                            child: ClipOval(
-                              child: _selectedImage != null
-                                  ? Image.file(_selectedImage!, fit: BoxFit.cover)
-                                  : Consumer<AuthProvider>(
-                                      builder: (_, auth, __) {
-                                        final url = auth.user?.avatarUrl;
-                                        if (url == null) {
-                                          return _defaultProfileAvatar();
-                                        }
-                                        return CachedNetworkImage(
+                            child: _selectedImage != null
+                                ? ClipOval(
+                                    child: Image.file(_selectedImage!, fit: BoxFit.cover),
+                                  )
+                                : Consumer<AuthProvider>(
+                                    builder: (_, auth, __) {
+                                      final url = auth.user?.avatarUrl;
+                                      if (url == null || url.isEmpty) {
+                                        return const CustomerDefaultAvatar(
+                                          size: 106,
+                                          showRing: false,
+                                        );
+                                      }
+                                      return ClipOval(
+                                        child: CachedNetworkImage(
                                           imageUrl: url,
                                           fit: BoxFit.cover,
                                           errorWidget: (_, __, ___) =>
-                                              _defaultProfileAvatar(),
-                                        );
-                                      },
-                                    ),
-                            ),
+                                              const CustomerDefaultAvatar(
+                                                size: 106,
+                                                showRing: false,
+                                              ),
+                                        ),
+                                      );
+                                    },
+                                  ),
                           ),
                           if (_uploadingAvatar)
                             Positioned.fill(
@@ -856,9 +762,6 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     );
   }
 
-  Widget _defaultProfileAvatar() {
-    return const CustomerDefaultAvatar(size: 106);
-  }
 }
 
 class _PhotoSourceTile extends StatelessWidget {

@@ -131,7 +131,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
     }
 
     final error = await auth.sendOtp(
-      fullName: _nameCtrl.text.trim(),
+      fullName: _nameCtrl.text.trim().replaceAll(RegExp(r'\s+'), ' '),
       identifier: identifier,
       password: _passwordCtrl.text,
       agreeTerms: true,

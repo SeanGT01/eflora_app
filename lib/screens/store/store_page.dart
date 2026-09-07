@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:provider/provider.dart';
+import 'package:share_plus/share_plus.dart';
 import '../../models/product.dart';
 import '../../models/store.dart';
 import '../../models/category.dart';
@@ -13,6 +15,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/product_card.dart';
 import '../../widgets/auth_required_sheet.dart';
+import '../../widgets/common.dart';
 import '../../widgets/quick_add_variant_sheet.dart';
 import '../product/product_detail_screen.dart';
 import '../cart/cart_screen.dart';
@@ -163,6 +166,23 @@ class _StorePageState extends State<StorePage>
     );
   }
 
+  Future<void> _shareStore() async {
+    final store = _store;
+    if (store == null) return;
+    final address = store.formattedAddress ?? store.address;
+    final details = address == null || address.trim().isEmpty
+        ? ''
+        : '\n${address.trim()}';
+    final text = 'Check out ${store.name} on E-FLORA.$details';
+    try {
+      await Share.share(text, subject: store.name);
+    } on MissingPluginException {
+      await Clipboard.setData(ClipboardData(text: text));
+      if (!mounted) return;
+      showToast(context, 'Store details copied to clipboard.');
+    }
+  }
+
   void _openCategoryProducts(StoreCategory category) {
     Navigator.push(
       context,
@@ -205,7 +225,10 @@ class _StorePageState extends State<StorePage>
                 ),
               ),
               actions: [
-                _GlassCircleAction(icon: Icons.share_outlined, onTap: () {}),
+                _GlassCircleAction(
+                  icon: Icons.share_outlined,
+                  onTap: _shareStore,
+                ),
                 const SizedBox(width: 8),
                 _CartBadge(),
                 const SizedBox(width: 12),

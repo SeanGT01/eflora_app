@@ -10,6 +10,7 @@ import 'checkout_step1.dart';
 import 'checkout_step2.dart';
 import 'checkout_step3.dart';
 import 'checkout_success.dart';
+import '../main_shell.dart';
 
 class CheckoutModal extends StatefulWidget {
   final List<Address>? addresses;
@@ -161,6 +162,7 @@ class _CheckoutModalState extends State<CheckoutModal> {
           orders: provider.createdOrders ?? [],
           grandTotal: provider.validationResponse?.grandTotal ?? 0.0,
           onClose: _handleCheckoutComplete,
+          onViewOrders: () => _handleViewOrders(provider),
         );
 
       default:
@@ -183,6 +185,25 @@ class _CheckoutModalState extends State<CheckoutModal> {
     // Close modal AND call onComplete callback (checkout was successful)
     Navigator.pop(context);
     widget.onClose?.call();
+  }
+
+  void _handleViewOrders(CheckoutProvider provider) {
+    // Newly created GCash orders (pending_verification) and COD orders belong in 'to_ship'.
+    // Only unpaid pending orders go to 'pending' (To Pay).
+    String targetTab = 'to_ship';
+    final created = provider.createdOrders;
+    if (created != null && created.isNotEmpty) {
+      final first = created.first;
+      final payMethod = first.paymentMethod.toLowerCase().trim();
+      final payStatus = first.paymentStatus.toLowerCase().trim();
+      if (first.status == 'pending' && payMethod != 'cod' && payStatus != 'pending_verification' && payStatus != 'verified') {
+        targetTab = 'pending';
+      }
+    }
+
+    Navigator.pop(context);
+    widget.onClose?.call();
+    MainShell.switchTab(context, 3, targetOrderStatus: targetTab);
   }
 }
 

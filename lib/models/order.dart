@@ -162,6 +162,11 @@ class Order {
   final String? cancellationReason;
   final String? cancellationReasonCode;
 
+  final int? storeId;
+  final String? storeLogo;
+  final bool allRated;
+  final bool storeRated;
+
   const Order({
     required this.id, required this.status, required this.subtotalAmount, required this.totalAmount,
     required this.deliveryFee,
@@ -173,6 +178,10 @@ class Order {
     this.pendingAt, this.acceptedAt, this.preparingAt, this.donePreparingAt,
     this.confirmedAt, this.deliveredAt,
     this.cancellationReason, this.cancellationReasonCode,
+    this.storeId,
+    this.storeLogo,
+    this.allRated = false,
+    this.storeRated = false,
   });
 
   factory Order.fromJson(Map<String, dynamic> j) {
@@ -207,10 +216,18 @@ class Order {
       deliveredAt: j['delivered_at'] != null ? DateTime.tryParse(j['delivered_at']) : null,
       cancellationReason: j['cancellation_reason']?.toString(),
       cancellationReasonCode: j['cancellation_reason_code']?.toString(),
+      storeId: j['store_id'] != null ? _safeInt(j['store_id']) : null,
+      storeLogo: j['store_logo'] as String?,
+      allRated: j['all_rated'] == true,
+      storeRated: j['store_rated'] == true,
     );
   }
 
-  Order copyWith({String? status}) {
+  Order copyWith({
+    String? status,
+    bool? allRated,
+    bool? storeRated,
+  }) {
     return Order(
       id: id,
       status: status ?? this.status,
@@ -239,6 +256,10 @@ class Order {
       deliveredAt: deliveredAt,
       cancellationReason: cancellationReason,
       cancellationReasonCode: cancellationReasonCode,
+      storeId: storeId,
+      storeLogo: storeLogo,
+      allRated: allRated ?? this.allRated,
+      storeRated: storeRated ?? this.storeRated,
     );
   }
 

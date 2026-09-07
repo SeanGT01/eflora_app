@@ -17,6 +17,7 @@ import '../main_shell.dart';
 import '../../widgets/auth_required_sheet.dart';
 import '../../widgets/quick_add_variant_sheet.dart';
 import '../../utils/responsive.dart';
+import '../../navigation/floating_nav_metrics.dart';
 
 class SearchScreen extends StatefulWidget {
   final String? initialCategorySlug;
@@ -169,7 +170,7 @@ class _SearchScreenState extends State<SearchScreen> {
                                       context.pageGutter,
                                       0,
                                       context.pageGutter,
-                                      context.s(24),
+                                      floatingNavScrollClearance(context),
                                     ),
                                     gridDelegate:
                                         SliverGridDelegateWithFixedCrossAxisCount(
@@ -304,7 +305,7 @@ class _SearchScreenState extends State<SearchScreen> {
             .toList();
         
         return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+          padding: EdgeInsets.fromLTRB(20, 8, 20, floatingNavScrollClearance(context)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

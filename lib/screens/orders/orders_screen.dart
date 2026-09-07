@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
@@ -13,11 +14,27 @@ import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/cancel_order_reason_sheet.dart';
+import '../../widgets/order_review_dialog.dart';
+import '../../navigation/floating_nav_metrics.dart';
 import 'order_detail_screen.dart';
 import '../checkout/checkout_modal.dart';
 
 class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
+
+  /// Global notifier to trigger an immediate orders refresh and optional status tab switch.
+  /// Holds (targetStatus, reloadToken) so that every call notifies listeners even if targetStatus is unchanged.
+  static final ValueNotifier<({String? status, int token})> reloadNotifier =
+      ValueNotifier<({String? status, int token})>((status: null, token: 0));
+
+  /// Trigger a reload of orders, optionally switching to a target status tab (e.g. 'to_ship' or '').
+  static void reload({String? targetStatus}) {
+    reloadNotifier.value = (
+      status: targetStatus,
+      token: reloadNotifier.value.token + 1,
+    );
+  }
+
   @override
   State<OrdersScreen> createState() => _OrdersScreenState();
 }
@@ -31,6 +48,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _hasLoadedForUser = false;
   String? _lastUserId;
   final _statusScroll = ScrollController();
+  Timer? _pollTimer;
 
   final _statusTabs = [
     {'id': '', 'label': 'All'},
@@ -67,10 +85,48 @@ class _OrdersScreenState extends State<OrdersScreen> {
   @override
   void initState() {
     super.initState();
+    OrdersScreen.reloadNotifier.addListener(_onReloadNotified);
+    _startPolling();
+  }
+
+  void _onReloadNotified() {
+    if (!mounted) return;
+    final info = OrdersScreen.reloadNotifier.value;
+    if (info.token > 0) {
+      final targetStatus = info.status;
+      if (targetStatus != null && targetStatus.isNotEmpty) {
+        _statusFilter = targetStatus;
+        final tabIndex = _statusTabs.indexWhere((t) => t['id'] == targetStatus);
+        if (tabIndex != -1 && _statusScroll.hasClients) {
+          _statusScroll.animateTo(
+            (tabIndex * 85.0).clamp(0.0, _statusScroll.position.maxScrollExtent),
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOut,
+          );
+        }
+      }
+      // When explicitly navigated/reloaded (such as tapping Orders in navbar),
+      // allow review popup check again.
+      _hasCheckedAutoPopup = false;
+      _loadOrders(silent: false, forceCheckPopup: true);
+    }
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    // Poll every 8 seconds in the background so status transitions (e.g. pending -> to_ship -> on_delivery)
+    // and new orders move across status panes automatically without manual refresh.
+    _pollTimer = Timer.periodic(const Duration(seconds: 8), (_) {
+      if (mounted && context.read<AuthProvider>().isLoggedIn) {
+        _loadOrders(silent: true);
+      }
+    });
   }
 
   @override
   void dispose() {
+    OrdersScreen.reloadNotifier.removeListener(_onReloadNotified);
+    _pollTimer?.cancel();
     _statusScroll.dispose();
     super.dispose();
   }
@@ -105,7 +161,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
     }
   }
 
-  Future<void> _loadOrders({bool silent = false}) async {
+  bool _hasCheckedAutoPopup = false;
+  bool _isAutoPopupOpen = false;
+
+  Future<void> _loadOrders({bool silent = false, bool forceCheckPopup = false}) async {
     if (!context.read<AuthProvider>().isLoggedIn) {
       if (_loading || _orders.isNotEmpty || _cartItems.isNotEmpty) {
         setState(() {
@@ -132,8 +191,64 @@ class _OrdersScreenState extends State<OrdersScreen> {
         _orders = _filtered(allOrders);
         _loading = false;
       });
+      if ((!_hasCheckedAutoPopup || forceCheckPopup) && !silent) {
+        _hasCheckedAutoPopup = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _checkAutoReviewPrompt(allOrders);
+        });
+      }
     } else {
       setState(() => _loading = false);
+    }
+  }
+
+  Future<void> _checkAutoReviewPrompt(List<Order> orders) async {
+    if (!mounted || _isAutoPopupOpen) return;
+    _isAutoPopupOpen = true;
+
+    try {
+      // Keep looping until there are no more unrated completed/delivered orders,
+      // OR until the user explicitly closes/skips without submitting a rating.
+      var pendingOrders = orders;
+      while (mounted) {
+        // Filter candidates fresh each iteration (list is updated after each rating).
+        final candidates = pendingOrders.where((o) {
+          final s = o.status;
+          return (s == 'delivered' || s == 'completed') && !o.allRated;
+        }).toList();
+
+        if (candidates.isEmpty) break;
+
+        // Sort ascending by createdAt so earliest unrated order is prompted first.
+        candidates.sort((a, b) {
+          final da = a.createdAt?.millisecondsSinceEpoch ?? 0;
+          final db = b.createdAt?.millisecondsSinceEpoch ?? 0;
+          return da.compareTo(db);
+        });
+
+        final targetOrder = candidates.first;
+        final updated = await showOrderReviewModal(context, order: targetOrder);
+        if (!mounted) break;
+
+        // If user closed/skipped the modal without submitting any rating, stop the
+        // loop entirely — don't re-prompt the same or next order in this session.
+        if (updated != true) break;
+
+        // A rating was submitted — re-fetch so the next iteration reflects fresh data.
+        final freshOrders = await _fetchAllOrderPages();
+        if (!mounted) break;
+        if (freshOrders != null) {
+          setState(() {
+            _allOrders = freshOrders;
+            _orders = _filtered(freshOrders);
+          });
+          pendingOrders = freshOrders;
+        } else {
+          break;
+        }
+      }
+    } finally {
+      _isAutoPopupOpen = false;
     }
   }
 
@@ -245,7 +360,12 @@ class _OrdersScreenState extends State<OrdersScreen> {
                             color: AppColors.roseCta,
                             onRefresh: _loadOrders,
                             child: ListView.builder(
-                              padding: const EdgeInsets.all(16),
+                              padding: EdgeInsets.fromLTRB(
+                                16,
+                                16,
+                                16,
+                                floatingNavScrollClearance(context),
+                              ),
                               itemCount: (_statusFilter == 'pending' ||
                                           _statusFilter == ''
                                       ? _cartItems.length
@@ -803,8 +923,7 @@ class _OrderTileState extends State<_OrderTile> {
                         // Rate button
                         if ((order.status == 'delivered' ||
                                 order.status == 'completed') &&
-                            _ratingsLoaded &&
-                            !_allRated)
+                            (!order.allRated || (_ratingsLoaded && !_allRated)))
                           GestureDetector(
                             onTap: _openOrderForRating,
                             child: Container(
@@ -939,16 +1058,15 @@ class _OrderTileState extends State<_OrderTile> {
   }
 
   Future<void> _openOrderForRating() async {
-    final changed = await Navigator.push<bool>(
+    final updated = await showOrderReviewModal(
       context,
-      MaterialPageRoute(
-        builder: (_) => OrderDetailScreen(order: widget.order),
-      ),
+      order: widget.order,
+      initialExistingRatings: _ratingsLoaded ? _existingRatings : null,
+      initialStoreRated: _ratingsLoaded ? _storeRated : null,
     );
     if (!mounted) return;
-    if (changed == true) {
-      await _notifyCompleted();
-    } else {
+    if (updated == true) {
+      await _loadExistingRatings();
       await widget.onOrderUpdated?.call();
     }
   }
@@ -1085,17 +1203,17 @@ class _ItemRatingStars extends StatelessWidget {
 
 /// Rose bloom over the pink/lavender wash, matching the web's empty thumbnails.
 class _ImagePlaceholder extends StatelessWidget {
-  const _ImagePlaceholder({this.iconSize = 26});
+  const _ImagePlaceholder();
 
-  final double iconSize;
+  static const double _iconSize = 26;
 
   @override
   Widget build(BuildContext context) {
-    return DecoratedBox(
-      decoration: const BoxDecoration(gradient: AppColors.imageWash),
+    return const DecoratedBox(
+      decoration: BoxDecoration(gradient: AppColors.imageWash),
       child: Center(
         child: Icon(Icons.local_florist,
-            size: iconSize, color: const Color(0x33B5445A)),
+            size: _iconSize, color: Color(0x33B5445A)),
       ),
     );
   }
@@ -1229,10 +1347,8 @@ class _CartItemTile extends StatelessWidget {
                 selectedItems: cartItems,
                 onComplete: () {
                   // Refresh orders and cart after successful checkout
-                  // Pop the orders screen to trigger a reload
-                  Navigator.of(context).popUntil(
-                    (route) => route.isFirst,
-                  );
+                  context.read<CartProvider>().load();
+                  OrdersScreen.reload(targetStatus: 'to_ship');
                 },
               );
             },

@@ -11,6 +11,7 @@ import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/category_provider.dart';
 import '../../services/api_service.dart';
+import '../../navigation/floating_nav_metrics.dart';
 import '../../services/app_quality.dart';
 import '../../services/image_preloader.dart';
 import '../../theme/app_background.dart';
@@ -679,8 +680,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
               ),
               SliverToBoxAdapter(
                 child: SizedBox(
-                  // Clear bottom nav only — avoid a large empty scroll region.
-                  height: MediaQuery.paddingOf(context).bottom + context.s(72),
+                  height: floatingNavScrollClearance(context, extra: 4),
                 ),
               ),
             ],
