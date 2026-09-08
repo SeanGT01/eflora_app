@@ -546,10 +546,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       return;
     }
     
+    final addonIds = _selectedAddonOptionIds;
+    for (final optId in addonIds) {
+      final opt = _findAddonOption(optId);
+      if (opt != null && (opt.isOos || opt.stockQuantity <= 0)) {
+        showToast(context, '"${opt.name}" is out of stock', isError: true);
+        return;
+      }
+    }
+
     setState(() => _addingToCart = true);
     
     String? error;
-    final addonIds = _selectedAddonOptionIds;
     if (_selectedVariant != null) {
       // Add variant to cart
       debugPrint('🛒 Adding VARIANT to cart: ${_selectedVariant!.name} x$_qty');
@@ -564,7 +572,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       debugPrint('🛒 Adding MAIN PRODUCT to cart: ${_product!.name} x$_qty');
       error = await context.read<CartProvider>().addItem(
         _product!.id, 
-        qty: _qty,
+        qty: _qty, 
         addonOptionIds: addonIds,
       );
     } else if (_product!.hasVariants) {
@@ -613,6 +621,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     if (_product!.hasVariants && _selectedVariant == null && !_selectedIsMainProduct) {
       showToast(context, 'Please select an option first', isError: true);
       return;
+    }
+
+    for (final optId in _selectedAddonOptionIds) {
+      final opt = _findAddonOption(optId);
+      if (opt != null && (opt.isOos || opt.stockQuantity <= 0)) {
+        showToast(context, '"${opt.name}" is out of stock', isError: true);
+        return;
+      }
     }
 
     final stockResult = await CheckoutService.validateStock(
@@ -685,6 +701,21 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       }
     }
     return ids;
+  }
+
+  ProductAddonOption? _findAddonOption(int id) {
+    final p = _product;
+    if (p != null) {
+      for (final g in p.addonGroups) {
+        for (final o in g.options) {
+          if (o.id == id) return o;
+        }
+      }
+    }
+    for (final o in _ymalAddons) {
+      if (o.id == id) return o;
+    }
+    return null;
   }
 
   double get _structuredAddonsUnitTotal {
@@ -874,69 +905,67 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   
                   // Price + stock
                   Row(
+                    crossAxisAlignment: CrossAxisAlignment.center,
                     children: [
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
+                      Expanded(
+                        child: Wrap(
+                          crossAxisAlignment: WrapCrossAlignment.center,
+                          spacing: 8,
+                          runSpacing: 4,
+                          children: [
+                            Text(
+                              '₱${_currentPrice.toStringAsFixed(2)}',
+                              style: GoogleFonts.cormorantGaramond(
+                                fontSize: 34,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.deepRose,
+                                height: 1,
+                              ),
+                            ),
+                            if (_hasSalePrice) ...[
                               Text(
-                                '₱${_currentPrice.toStringAsFixed(2)}',
+                                '₱${_currentOriginalPrice.toStringAsFixed(2)}',
                                 style: GoogleFonts.cormorantGaramond(
-                                  fontSize: 36,
-                                  fontWeight: FontWeight.w600,
-                                  color: AppColors.deepRose,
-                                  height: 1,
+                                  fontSize: 19,
+                                  color: AppColors.muted,
+                                  decoration: TextDecoration.lineThrough,
                                 ),
                               ),
-                              if (_hasSalePrice) ...[
-                                const SizedBox(width: 8),
-                                Text(
-                                  '₱${_currentOriginalPrice.toStringAsFixed(2)}',
-                                  style: GoogleFonts.cormorantGaramond(
-                                    fontSize: 20,
-                                    color: AppColors.muted,
-                                    decoration: TextDecoration.lineThrough,
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: AppColors.roseCta.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                                  border: Border.all(
+                                    color: const Color(0xFFE6AAC3).withValues(alpha: 0.35),
                                   ),
                                 ),
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: AppColors.roseCta.withValues(alpha: 0.12),
-                                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                                    border: Border.all(
-                                      color: const Color(0xFFE6AAC3).withValues(alpha: 0.35),
-                                    ),
-                                  ),
-                                  child: Text(
-                                    '${_currentDiscountPct}% OFF',
-                                    style: GoogleFonts.dmSans(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      letterSpacing: 0.8,
-                                      color: AppColors.deepRose,
-                                    ),
+                                child: Text(
+                                  '$_currentDiscountPct% OFF',
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w700,
+                                    letterSpacing: 0.8,
+                                    color: AppColors.deepRose,
                                   ),
                                 ),
-                              ],
+                              ),
                             ],
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                      const Spacer(),
+                      const SizedBox(width: 8),
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
                         decoration: BoxDecoration(
                           color: inStock
-                              ? AppColors.sage.withOpacity(0.12)
-                              : const Color(0xFFc0392b).withOpacity(0.1),
+                              ? AppColors.sage.withValues(alpha: 0.12)
+                              : const Color(0xFFc0392b).withValues(alpha: 0.1),
                           borderRadius: BorderRadius.circular(50),
                           border: Border.all(
                             color: inStock
-                                ? AppColors.sage.withOpacity(0.3)
-                                : const Color(0xFFc0392b).withOpacity(0.25),
+                                ? AppColors.sage.withValues(alpha: 0.3)
+                                : const Color(0xFFc0392b).withValues(alpha: 0.25),
                           ),
                         ),
                         child: Text(
@@ -1549,7 +1578,10 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   void _toggleYmalAddon(ProductAddonOption opt) {
-    if (opt.isOos) return;
+    if (opt.isOos || opt.stockQuantity <= 0) {
+      showToast(context, '"${opt.name}" is out of stock', isError: true);
+      return;
+    }
     setState(() {
       if (_ymalAddonQty.containsKey(opt.id)) {
         _ymalAddonQty.remove(opt.id);
@@ -1560,9 +1592,18 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   }
 
   void _changeYmalAddonQty(ProductAddonOption opt, int delta) {
+    if (opt.isOos || opt.stockQuantity <= 0) {
+      showToast(context, '"${opt.name}" is out of stock', isError: true);
+      setState(() => _ymalAddonQty.remove(opt.id));
+      return;
+    }
     final current = _ymalAddonQty[opt.id];
     if (current == null) return;
     final next = current + delta;
+    if (delta > 0 && next > opt.stockQuantity && opt.stockQuantity > 0) {
+      showToast(context, 'Only ${opt.stockQuantity} available for "${opt.name}"', isError: true);
+      return;
+    }
     setState(() {
       if (next < 1) {
         _ymalAddonQty.remove(opt.id);
@@ -1653,7 +1694,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         child: Column(
           children: [
             GestureDetector(
-              onTap: oos ? null : () => _toggleYmalAddon(opt),
+              onTap: () => _toggleYmalAddon(opt),
               child: AnimatedContainer(
                 duration: AppMotion.fast,
                 width: 118,
@@ -2359,6 +2400,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           enabled: !opt.isOos,
                           onSelect: () =>
                               Navigator.pop(ctx, _AddonPickResult(opt.id)),
+                          onDisabledTap: () =>
+                              showToast(context, '"${opt.name}" is out of stock', isError: true),
                         );
                       }),
                     ],
@@ -2382,6 +2425,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     required bool selected,
     required bool enabled,
     required VoidCallback onSelect,
+    VoidCallback? onDisabledTap,
   }) {
     final url = imageUrl;
     final hasImage = url != null && url.isNotEmpty;
@@ -2405,7 +2449,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
               Expanded(
                 child: InkWell(
                   borderRadius: BorderRadius.circular(8),
-                  onTap: enabled ? onSelect : null,
+                  onTap: enabled ? onSelect : onDisabledTap,
                   child: Padding(
                     padding: const EdgeInsets.symmetric(vertical: 2),
                     child: Text(

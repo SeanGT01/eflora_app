@@ -122,16 +122,21 @@ class GlassCard extends StatelessWidget {
           width: 1,
         ),
       ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(innerRadius),
-        clipBehavior: Clip.antiAlias,
-        child: useBlur
-            ? BackdropFilter(
+      child: useBlur
+          ? ClipRRect(
+              borderRadius: BorderRadius.circular(innerRadius),
+              clipBehavior: Clip.antiAlias,
+              child: BackdropFilter(
                 filter: ImageFilter.blur(sigmaX: blur, sigmaY: blur),
                 child: inner,
-              )
-            : inner,
-      ),
+              ),
+            )
+          : (innerRadius > 0
+              ? ClipRRect(
+                  borderRadius: BorderRadius.circular(innerRadius),
+                  child: inner,
+                )
+              : inner),
     );
   }
 }

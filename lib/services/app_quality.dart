@@ -123,9 +123,11 @@ class AppQuality {
         // healthy phones because of cached apps, which incorrectly forced lite.
         final totalGb = _totalMemMb != null ? _totalMemMb! / 1024.0 : null;
         if (totalGb != null) {
-          _isLite = totalGb < 3.0; // ~3 GB class and below
+          // Phones advertising 3-4GB typically report ~2.8-3.7GB totalMem to the OS.
+          // Classify <= 4.0GB class phones as lite to avoid heavy GPU backdrop filters.
+          _isLite = totalGb < 4.2;
         } else if (_memoryClassMb != null) {
-          _isLite = _memoryClassMb! <= 128;
+          _isLite = _memoryClassMb! <= 256;
         } else {
           _isLite = false;
         }

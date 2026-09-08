@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../providers/cart_provider.dart';
 import '../../providers/wishlist_provider.dart';
+import '../../providers/notification_provider.dart';
 import '../../services/api_service.dart';
 import '../../navigation/floating_nav_metrics.dart';
 import '../../theme/app_background.dart';
@@ -150,6 +151,7 @@ class _LoggedInView extends StatelessWidget {
       context.read<AuthProvider>().logout();
       context.read<CartProvider>().reset();
       context.read<WishlistProvider>().reset();
+      context.read<NotificationProvider>().reset();
     }
   }
 
@@ -161,11 +163,17 @@ class _LoggedInView extends StatelessWidget {
   Widget build(BuildContext context) {
     final liveUser = context.watch<AuthProvider>().user ?? user;
     final cartCount = context.watch<CartProvider>().itemCount;
+    final notifCount = context.watch<NotificationProvider>().unreadCount;
     final bottomPad = floatingNavScrollClearance(context);
 
     return RefreshIndicator(
       color: _kHeader,
-      onRefresh: () => context.read<AuthProvider>().refreshUser(),
+      onRefresh: () async {
+        await Future.wait([
+          context.read<AuthProvider>().refreshUser(),
+          context.read<NotificationProvider>().load(silent: true),
+        ]);
+      },
       child: CustomScrollView(
         physics: const AlwaysScrollableScrollPhysics(
           parent: ClampingScrollPhysics(),
@@ -196,6 +204,7 @@ class _LoggedInView extends StatelessWidget {
               delegate: SliverChildListDelegate([
                 _ShortcutGrid(
                   cartCount: cartCount,
+                  notificationCount: notifCount,
                   onOrders: () => _open(context, const OrdersScreen()),
                   onWishlist: () => _open(context, const WishlistScreen()),
                   onCart: () => _open(context, const CartScreen()),
@@ -480,6 +489,7 @@ class _EditBar extends StatelessWidget {
 class _ShortcutGrid extends StatelessWidget {
   const _ShortcutGrid({
     required this.cartCount,
+    this.notificationCount = 0,
     required this.onOrders,
     required this.onWishlist,
     required this.onCart,
@@ -489,6 +499,7 @@ class _ShortcutGrid extends StatelessWidget {
   });
 
   final int cartCount;
+  final int notificationCount;
   final VoidCallback onOrders;
   final VoidCallback onWishlist;
   final VoidCallback onCart;
@@ -504,7 +515,7 @@ class _ShortcutGrid extends StatelessWidget {
       _GridItem(icon: Icons.shopping_bag_outlined, label: 'My Cart', onTap: onCart, badge: cartCount),
       _GridItem(icon: Icons.location_on_outlined, label: 'My Addresses', onTap: onAddresses),
       _GridItem(icon: Icons.lock_outline, label: 'Change Password', onTap: onPassword),
-      _GridItem(icon: Icons.notifications_none, label: 'Notifications', onTap: onNotifications),
+      _GridItem(icon: Icons.notifications_none, label: 'Notifications', onTap: onNotifications, badge: notificationCount),
     ];
 
     return LayoutBuilder(

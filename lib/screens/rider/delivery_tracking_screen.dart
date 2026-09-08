@@ -703,15 +703,25 @@ class _DeliveryTrackingMapView extends StatefulWidget {
 class _DeliveryTrackingMapViewState extends State<_DeliveryTrackingMapView> {
   late final LatLng _initialCenter;
   late final double _initialZoom;
-  String _tileUrl = MapboxConfig.rasterTileUrl('');
-  bool _isMapbox = false;
+  late final NetworkTileProvider _tileProvider;
+  String _tileUrl = MapboxConfig.rasterTileUrl(MapboxConfig.cachedToken);
+  bool _isMapbox = MapboxConfig.cachedToken.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
     _initialCenter = widget.mapCenter;
     _initialZoom = 14;
-    _loadTiles();
+    _tileProvider = MapboxConfig.createTileProvider();
+    if (!_isMapbox) {
+      _loadTiles();
+    }
+  }
+
+  @override
+  void dispose() {
+    _tileProvider.dispose();
+    super.dispose();
   }
 
   Future<void> _loadTiles() async {
@@ -739,8 +749,12 @@ class _DeliveryTrackingMapViewState extends State<_DeliveryTrackingMapView> {
       children: [
         TileLayer(
           urlTemplate: _tileUrl,
+          fallbackUrl: MapboxConfig.osmFallbackUrl,
           userAgentPackageName: 'com.seanlazala.eflora',
           maxZoom: _isMapbox ? 22 : 19,
+          keepBuffer: 1,
+          panBuffer: 0,
+          tileProvider: _tileProvider,
           errorTileCallback: (tile, error, stackTrace) {},
         ),
         if (widget.routePoints.isNotEmpty)

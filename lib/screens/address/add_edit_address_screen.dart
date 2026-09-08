@@ -1305,8 +1305,11 @@ class _PinnedMapBoxState extends State<_PinnedMapBox> {
             children: [
               TileLayer(
                 urlTemplate: tileUrl,
+                fallbackUrl: MapboxConfig.osmFallbackUrl,
                 userAgentPackageName: 'com.seanlazala.eflora',
                 maxZoom: _isMapbox ? 22 : 19,
+                keepBuffer: 1,
+                panBuffer: 0,
                 errorTileCallback: (tile, error, stackTrace) {},
               ),
               if (widget.latitude != null && widget.longitude != null)
@@ -1924,8 +1927,11 @@ class _ExpandedAddressMapPageState extends State<_ExpandedAddressMapPage> {
               children: [
                 TileLayer(
                   urlTemplate: tileUrl,
+                  fallbackUrl: MapboxConfig.osmFallbackUrl,
                   userAgentPackageName: 'com.seanlazala.eflora',
                   maxZoom: _isMapbox ? 22 : 19,
+                  keepBuffer: 1,
+                  panBuffer: 0,
                   errorTileCallback: (tile, error, stackTrace) {},
                 ),
                 MarkerLayer(

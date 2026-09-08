@@ -9,6 +9,7 @@ import 'providers/category_provider.dart';
 import 'providers/rider_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/wishlist_provider.dart';
+import 'providers/notification_provider.dart';
 import 'screens/main_shell.dart';
 import 'screens/rider/rider_shell.dart';
 import 'services/app_quality.dart';
@@ -60,6 +61,7 @@ class EFlowersApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => categoryProvider),
         ChangeNotifierProvider(create: (_) => RiderProvider()),
         ChangeNotifierProvider(create: (_) => ChatProvider()),
+        ChangeNotifierProvider(create: (_) => NotificationProvider()),
       ],
       child: MaterialApp(
         title: 'E-FLORA',
@@ -97,31 +99,48 @@ class _AppRootState extends State<_AppRoot> {
 
   Future<void> _init() async {
     final auth = context.read<AuthProvider>();
+    final catProvider = context.read<CategoryProvider>();
+    final cartProv = context.read<CartProvider>();
+    final chatProv = context.read<ChatProvider>();
+    final notifProv = context.read<NotificationProvider>();
+
     await auth.tryAutoLogin();
 
     // Active-session Online presence while the app is in the foreground.
     PresenceService.instance.attach(auth);
-    
-    // Setup Address Service interceptors with JWT token (if logged in)
-    await setupAddressServiceInterceptors();
-    
-    // Load main categories (independent of auth status)
-    await context.read<CategoryProvider>().loadMainCategories();
-    
+
+    final isCustomer = auth.user?.role == 'customer' || auth.user?.role == null;
+
+    // Parallelize independent startup tasks to eliminate splash screen hang
+    await Future.wait([
+      setupAddressServiceInterceptors(),
+      catProvider.loadMainCategories(),
+      if (auth.isLoggedIn && isCustomer) ...[
+        cartProv.load(),
+        notifProv.load(silent: true),
+      ] else if (auth.isLoggedIn) ...[
+        Future.sync(() => cartProv.reset()),
+        Future.sync(() => notifProv.reset()),
+      ],
+    ]);
+
     if (auth.isLoggedIn) {
-      // Cart API is customer-only — skip for riders/sellers/admins.
-      if (auth.user?.role == 'customer' || auth.user?.role == null) {
-        await context.read<CartProvider>().load();
-      } else {
-        context.read<CartProvider>().reset();
+      chatProv.startPolling();
+      if (isCustomer) {
+        notifProv.startPolling();
       }
-      context.read<ChatProvider>().startPolling();
     }
+    PushService.instance.onNotificationReceived = () {
+      if (mounted) {
+        context.read<NotificationProvider>().load(silent: true);
+      }
+    };
     if (mounted) setState(() => _initialized = true);
   }
 
   @override
   void dispose() {
+    PushService.instance.onNotificationReceived = null;
     PresenceService.instance.detach();
     super.dispose();
   }
@@ -185,11 +204,19 @@ class _AppRootState extends State<_AppRoot> {
 Widget _buildHomeForRole(BuildContext context) {
   final auth = context.watch<AuthProvider>();
   final chat = context.read<ChatProvider>();
+  final notif = context.read<NotificationProvider>();
 
   if (auth.isLoggedIn) {
     chat.startPolling();
+    final isCustomer = auth.user?.role == 'customer' || auth.user?.role == null;
+    if (isCustomer) {
+      notif.startPolling();
+    } else {
+      notif.reset();
+    }
   } else {
     chat.reset();
+    notif.reset();
   }
 
   if (auth.isLoggedIn && auth.user?.role == 'rider') {

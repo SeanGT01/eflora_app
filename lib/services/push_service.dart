@@ -124,12 +124,14 @@ class PushService {
   }
 
   VoidCallback? onRiderOrdersChanged;
+  VoidCallback? onNotificationReceived;
 
   Future<void> _onMessage(RemoteMessage message) async {
     final type = message.data['type'] ?? '';
     if (type == 'rider_order_ready') {
       onRiderOrdersChanged?.call();
     }
+    onNotificationReceived?.call();
     if (message.notification != null ||
         (message.data['title'] ?? '').toString().isNotEmpty) {
       await _showForeground(message);

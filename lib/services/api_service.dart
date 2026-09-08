@@ -1226,6 +1226,31 @@ class ApiService {
     }
   }
 
+  static Future<ApiResult> deleteNotification(int notifId) async {
+    try {
+      final res = await http.delete(
+        Uri.parse('$_api/customer/notifications/$notifId'),
+        headers: await _headers(auth: true),
+      ).timeout(const Duration(seconds: 10));
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
+  static Future<ApiResult> deleteNotifications({List<int>? ids, bool all = false}) async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_api/customer/notifications/delete'),
+        headers: await _headers(auth: true),
+        body: jsonEncode({'ids': ids, 'all': all}),
+      ).timeout(const Duration(seconds: 10));
+      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+    } catch (e) {
+      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    }
+  }
+
   // ══════════════════════════════════════════════════════════════════════════
   // 🔍 DEBUG METHODS
   // ══════════════════════════════════════════════════════════════════════════

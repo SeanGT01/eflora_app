@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' show ImageFilter, lerpDouble;
 
 import 'package:flutter/material.dart';
@@ -16,8 +17,8 @@ import '../../services/app_quality.dart';
 import '../../services/image_preloader.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/adaptive_blur.dart';
 import '../../widgets/glass.dart';
+import '../../widgets/horizontal_fading_edge.dart';
 import '../../widgets/product_card.dart';
 import '../../widgets/auth_required_sheet.dart';
 import '../../widgets/quick_add_variant_sheet.dart';
@@ -224,15 +225,11 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _heroSlideController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 700),
-    )
-      ..addListener(_onHeroSlideTick)
-      ..addStatusListener(_onHeroSlideStatus);
+    )..addStatusListener(_onHeroSlideStatus);
     _heroProgressController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 5000),
-    )
-      ..addStatusListener(_onHeroProgressStatus)
-      ..addListener(_onHeroProgressTick);
+    )..addStatusListener(_onHeroProgressStatus);
 
     _heroSlides = [
       _LandingHeroSlide(
@@ -346,14 +343,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     }
   }
 
-  void _onHeroProgressTick() {
-    if (mounted) setState(() {});
-  }
-
-  void _onHeroSlideTick() {
-    if (mounted) setState(() {});
-  }
-
   void _onHeroSlideStatus(AnimationStatus status) {
     if (status != AnimationStatus.completed || !mounted) return;
     setState(() {
@@ -414,11 +403,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   void dispose() {
     _heroSlideController
       ..removeStatusListener(_onHeroSlideStatus)
-      ..removeListener(_onHeroSlideTick)
       ..dispose();
     _heroProgressController
       ..removeStatusListener(_onHeroProgressStatus)
-      ..removeListener(_onHeroProgressTick)
       ..dispose();
     _bodyScrollController.dispose();
     _storesScrollController.dispose();
@@ -451,7 +438,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         category: row.$1,
         includeOutsideLocation: includeOutside,
         page: 1,
-        perPage: 48,
+        perPage: 8,
       );
     }));
     if (!mounted) return;
@@ -560,8 +547,6 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   void _navigateToLogin() => pushLoginScreen(context);
 
-  void _navigateToRegister() => pushRegisterScreen(context);
-
   Future<bool> _showBrowseLimitationsModal() async {
     bool dontShowAgain = false;
 
@@ -648,6 +633,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           onRefresh: _loadData,
           child: CustomScrollView(
             controller: _bodyScrollController,
+            cacheExtent: 250,
             slivers: [
               _buildAppBar(),
               SliverToBoxAdapter(
@@ -699,28 +685,22 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       snap: true,
       elevation: 0,
       scrolledUnderElevation: 0,
-      flexibleSpace: ClipRect(
-        child: AdaptiveBlur(
-          sigma: 20,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              gradient:
-                  AppQuality.instance.useBlur ? AppColors.headerGlass : null,
-              color:
-                  AppQuality.instance.useBlur ? null : const Color(0xF5FFFAFC),
-              border: const Border(
-                bottom: BorderSide(color: Color(0x8CFFFFFF), width: 1),
-              ),
-              boxShadow: const [
-                BoxShadow(
-                  color: Color(0x0FB5445A),
-                  blurRadius: 28,
-                  offset: Offset(0, 8),
-                ),
-              ],
+      flexibleSpace: const ClipRect(
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Color(0xF5FFFAFC),
+            border: Border(
+              bottom: BorderSide(color: Color(0x8CFFFFFF), width: 1),
             ),
-            child: const SizedBox.expand(),
+            boxShadow: [
+              BoxShadow(
+                color: Color(0x0FB5445A),
+                blurRadius: 16,
+                offset: Offset(0, 4),
+              ),
+            ],
           ),
+          child: SizedBox.expand(),
         ),
       ),
       titleSpacing: _kHomeGutter - 4,
@@ -805,14 +785,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             border: Border.all(color: AppColors.glassBorder, width: 1),
             boxShadow: const [
               BoxShadow(
-                color: Color(0x2E2A231E),
-                blurRadius: 64,
-                offset: Offset(0, 16),
+                color: Color(0x1F2A231E),
+                blurRadius: 20,
+                offset: Offset(0, 8),
               ),
               BoxShadow(
-                color: Color(0x1F502846),
-                blurRadius: 24,
-                offset: Offset(0, 8),
+                color: Color(0x14502846),
+                blurRadius: 12,
+                offset: Offset(0, 4),
               ),
             ],
           ),
@@ -820,26 +800,34 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             borderRadius: BorderRadius.circular(24),
             child: SizedBox(
               height: heroHeight,
-              child: Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Positioned.fill(
-                    child: _buildHeroInterior(isWide: isWide),
-                  ),
-                  Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: LinearProgressIndicator(
-                      value: _heroProgressController.value,
-                      minHeight: 3,
-                      backgroundColor: Colors.white.withValues(alpha: 0.15),
-                      valueColor: AlwaysStoppedAnimation<Color>(
-                        Colors.white.withValues(alpha: 0.7),
+              child: AnimatedBuilder(
+                animation: Listenable.merge([
+                  _heroProgressController,
+                  _heroSlideController,
+                ]),
+                builder: (context, _) {
+                  return Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      Positioned.fill(
+                        child: _buildHeroInterior(isWide: isWide),
                       ),
-                    ),
-                  ),
-                ],
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        child: LinearProgressIndicator(
+                          value: _heroProgressController.value,
+                          minHeight: 3,
+                          backgroundColor: Colors.white.withValues(alpha: 0.15),
+                          valueColor: AlwaysStoppedAnimation<Color>(
+                            Colors.white.withValues(alpha: 0.7),
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                },
               ),
             ),
           ),
@@ -895,7 +883,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           Padding(
             padding: const EdgeInsets.fromLTRB(10, 8, 10, 14),
             child: Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
                   flex: 38,
@@ -963,10 +951,12 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     bool compact = false,
   }) {
     if (from == to) {
-      return _buildHeroTextBlock(
-        _heroSlides[from],
-        isWide: isWide,
-        compact: compact,
+      return SizedBox.expand(
+        child: _buildHeroTextBlock(
+          _heroSlides[from],
+          isWide: isWide,
+          compact: compact,
+        ),
       );
     }
     return Stack(
@@ -1302,30 +1292,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                 final iconSize = (56 * scale).clamp(52.0, 64.0);
                 final fontSize = (14.5 * scale).clamp(13.0, 16.5);
                 final barHeight = iconSize + 6 + (fontSize * 1.35) + 2;
-                return SizedBox(
-                  height: barHeight,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    padding: EdgeInsets.zero,
-                    itemCount: categories.length,
-                    separatorBuilder: (_, __) =>
-                        SizedBox(width: (10 * scale).clamp(8.0, 14.0)),
-                    itemBuilder: (_, i) {
-                      final cat = categories[i];
-                      return _CategoryTile(
-                        label: cat.name,
-                        slug: cat.slug,
-                        index: i,
-                        selected: _selectedCategorySlug == cat.slug,
-                        scale: scale,
-                        onTap: () {
-                          setState(() => _selectedCategorySlug = cat.slug);
-                          final categoryParam =
-                              cat.slug == 'all' ? null : cat.slug;
-                          _loadProducts(category: categoryParam);
-                        },
-                      );
-                    },
+                return HorizontalFadingEdge(
+                  fadeWidth: (20 * scale).clamp(16.0, 26.0),
+                  child: SizedBox(
+                    height: barHeight,
+                    child: ListView.separated(
+                      scrollDirection: Axis.horizontal,
+                      padding: EdgeInsets.zero,
+                      itemCount: categories.length,
+                      separatorBuilder: (_, __) =>
+                          SizedBox(width: (10 * scale).clamp(8.0, 14.0)),
+                      itemBuilder: (_, i) {
+                        final cat = categories[i];
+                        return _CategoryTile(
+                          label: cat.name,
+                          slug: cat.slug,
+                          index: i,
+                          selected: _selectedCategorySlug == cat.slug,
+                          scale: scale,
+                          onTap: () {
+                            setState(() => _selectedCategorySlug = cat.slug);
+                            final categoryParam =
+                                cat.slug == 'all' ? null : cat.slug;
+                            _loadProducts(category: categoryParam);
+                          },
+                        );
+                      },
+                    ),
                   ),
                 );
               },
@@ -1407,14 +1400,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (_loadingProducts)
-            GridView.builder(
-              shrinkWrap: true,
-              physics: const NeverScrollableScrollPhysics(),
-              padding: EdgeInsets.zero,
-              gridDelegate: gridDelegate,
-              itemCount: 6,
-              itemBuilder: (_, __) => const _GlassProductShimmer(),
-            )
+            _buildShimmerGridRows(gridDelegate)
           else if (_featuredRows.isEmpty)
             _buildEmptyState(
               'No products found',
@@ -1483,31 +1469,135 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ],
         ),
         SizedBox(height: context.s(8)),
-        GridView.builder(
-          shrinkWrap: true,
-          physics: const NeverScrollableScrollPhysics(),
-          padding: EdgeInsets.zero,
-          gridDelegate: gridDelegate,
-          itemCount: row.products.length,
-          itemBuilder: (_, i) {
-            final product = row.products[i];
-            return ProductCard(
-              product: product,
-              onTap: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => ProductDetailScreen(productId: product.id),
+        _buildProductGridRows(row.products, gridDelegate),
+      ],
+    );
+  }
+
+  Widget _buildProductGridRows(
+    List<Product> products,
+    SliverGridDelegateWithFixedCrossAxisCount gridDelegate,
+  ) {
+    final count = math.min(products.length, 6);
+    final crossAxisCount = gridDelegate.crossAxisCount;
+    final crossSpacing = gridDelegate.crossAxisSpacing;
+    final mainSpacing = gridDelegate.mainAxisSpacing;
+    final aspectRatio = gridDelegate.childAspectRatio;
+
+    final numRows = (count / crossAxisCount).ceil();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var rowIndex = 0; rowIndex < numRows; rowIndex++) ...[
+          if (rowIndex > 0) SizedBox(height: mainSpacing),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var colIndex = 0; colIndex < crossAxisCount; colIndex++) ...[
+                if (colIndex > 0) SizedBox(width: crossSpacing),
+                Expanded(
+                  child: () {
+                    final itemIndex = rowIndex * crossAxisCount + colIndex;
+                    if (itemIndex >= count) {
+                      return const SizedBox.shrink();
+                    }
+                    final product = products[itemIndex];
+                    return AspectRatio(
+                      aspectRatio: aspectRatio,
+                      child: ProductCard(
+                        product: product,
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) =>
+                                ProductDetailScreen(productId: product.id),
+                          ),
+                        ),
+                        onAddToCart: () => _addToCart(product),
+                      ),
+                    );
+                  }(),
                 ),
-              ),
-              onAddToCart: () => _addToCart(product),
-            );
-          },
-        ),
+              ],
+            ],
+          ),
+        ],
+      ],
+    );
+  }
+
+  Widget _buildShimmerGridRows(
+    SliverGridDelegateWithFixedCrossAxisCount gridDelegate,
+  ) {
+    const count = 6;
+    final crossAxisCount = gridDelegate.crossAxisCount;
+    final crossSpacing = gridDelegate.crossAxisSpacing;
+    final mainSpacing = gridDelegate.mainAxisSpacing;
+    final aspectRatio = gridDelegate.childAspectRatio;
+
+    final numRows = (count / crossAxisCount).ceil();
+
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (var rowIndex = 0; rowIndex < numRows; rowIndex++) ...[
+          if (rowIndex > 0) SizedBox(height: mainSpacing),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var colIndex = 0; colIndex < crossAxisCount; colIndex++) ...[
+                if (colIndex > 0) SizedBox(width: crossSpacing),
+                Expanded(
+                  child: AspectRatio(
+                    aspectRatio: aspectRatio,
+                    child: const _GlassProductShimmer(),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ],
       ],
     );
   }
 
   Widget _buildStoresSection() {
+    if (_loadingStores) {
+      final gutter = context.pageGutter;
+      return Padding(
+        padding: EdgeInsets.fromLTRB(gutter, context.s(12), gutter, 0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const GlassSectionTitle(eyebrow: 'Local Shops', title: 'Our Stores'),
+            SizedBox(height: context.s(8)),
+            HorizontalFadingEdge(
+              fadeWidth: context.s(22).clamp(16.0, 26.0),
+              child: SizedBox(
+                height: context.s(112).clamp(100.0, 124.0),
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  itemCount: 4,
+                  separatorBuilder: (_, __) => SizedBox(width: context.s(12)),
+                  itemBuilder: (_, __) => const GlassCard(
+                    width: 140,
+                    padding: EdgeInsets.all(12),
+                    blur: 0,
+                    child: Center(
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: AppColors.roseCta,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
     if (_stores.isEmpty) return const SizedBox();
 
     final gutter = context.pageGutter;
@@ -1518,16 +1608,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         children: [
           const GlassSectionTitle(eyebrow: 'Local Shops', title: 'Our Stores'),
           SizedBox(height: context.s(8)),
-          SizedBox(
-            height: context.s(112).clamp(100.0, 124.0),
-            child: ListView.separated(
-              controller: _storesScrollController,
-              scrollDirection: Axis.horizontal,
-              itemCount: _stores.length,
-              separatorBuilder: (_, __) => SizedBox(width: context.s(12)),
-              itemBuilder: (_, i) {
-                return _StoreChip(store: _stores[i]);
-              },
+          HorizontalFadingEdge(
+            fadeWidth: context.s(22).clamp(16.0, 26.0),
+            child: SizedBox(
+              height: context.s(112).clamp(100.0, 124.0),
+              child: ListView.separated(
+                controller: _storesScrollController,
+                scrollDirection: Axis.horizontal,
+                itemCount: _stores.length,
+                separatorBuilder: (_, __) => SizedBox(width: context.s(12)),
+                itemBuilder: (_, i) {
+                  return _StoreChip(store: _stores[i]);
+                },
+              ),
             ),
           ),
         ],
@@ -1626,6 +1719,7 @@ class _StoreChip extends StatelessWidget {
     return GlassCard(
       width: 140,
       padding: const EdgeInsets.all(12),
+      blur: 0,
       onTap: () => Navigator.push(
         context,
         MaterialPageRoute(

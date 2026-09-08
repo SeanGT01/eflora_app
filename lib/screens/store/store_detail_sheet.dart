@@ -770,12 +770,15 @@ class _StoreDeliveryMapPreviewState extends State<_StoreDeliveryMapPreview> {
     _tokenFuture = MapboxConfig.publicToken();
   }
 
-  void _openExpandedMap(BuildContext context) {
+  void _openExpandedMap(BuildContext context, [String? token]) {
     showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (_) => _StoreDeliveryMapSheet(store: widget.store),
+      builder: (_) => _StoreDeliveryMapSheet(
+        store: widget.store,
+        mapboxToken: token,
+      ),
     );
   }
 
@@ -788,7 +791,7 @@ class _StoreDeliveryMapPreviewState extends State<_StoreDeliveryMapPreview> {
         final token = snap.data ?? '';
         if (token.isEmpty) {
           return GestureDetector(
-            onTap: () => _openExpandedMap(context),
+            onTap: () => _openExpandedMap(context, token),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(AppRadius.lg),
               child: SizedBox(
@@ -815,7 +818,7 @@ class _StoreDeliveryMapPreviewState extends State<_StoreDeliveryMapPreview> {
         }
 
         return GestureDetector(
-          onTap: () => _openExpandedMap(context),
+          onTap: () => _openExpandedMap(context, token),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(AppRadius.lg),
             child: SizedBox(
@@ -956,25 +959,46 @@ String _storeStaticMapUrl(
 }
 
 class _StoreDeliveryMapSheet extends StatefulWidget {
-  const _StoreDeliveryMapSheet({required this.store});
+  const _StoreDeliveryMapSheet({
+    required this.store,
+    this.mapboxToken,
+  });
 
   final Store store;
+  final String? mapboxToken;
 
   @override
   State<_StoreDeliveryMapSheet> createState() => _StoreDeliveryMapSheetState();
 }
 
 class _StoreDeliveryMapSheetState extends State<_StoreDeliveryMapSheet> {
-  /// Delay FlutterMap until the sheet animation finishes — mounting during
-  /// the slide cancels in-flight tiles ("Connection closed while receiving data").
   bool _mapReadyToMount = false;
+  Animation<double>? _routeAnimation;
 
   @override
-  void initState() {
-    super.initState();
-    Future<void>.delayed(const Duration(milliseconds: 320), () {
-      if (mounted) setState(() => _mapReadyToMount = true);
-    });
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_routeAnimation == null) {
+      final animation = ModalRoute.of(context)?.animation;
+      if (animation != null) {
+        _routeAnimation = animation;
+        if (animation.isCompleted) {
+          _mapReadyToMount = true;
+        } else {
+          void listener(AnimationStatus status) {
+            if (status == AnimationStatus.completed) {
+              animation.removeStatusListener(listener);
+              if (mounted) setState(() => _mapReadyToMount = true);
+            }
+          }
+          animation.addStatusListener(listener);
+        }
+      } else {
+        Future<void>.delayed(const Duration(milliseconds: 320), () {
+          if (mounted) setState(() => _mapReadyToMount = true);
+        });
+      }
+    }
   }
 
   @override
@@ -1032,6 +1056,7 @@ class _StoreDeliveryMapSheetState extends State<_StoreDeliveryMapSheet> {
                         store: store,
                         interactive: true,
                         compact: false,
+                        mapboxToken: widget.mapboxToken,
                       )
                     : const ColoredBox(
                         color: Color(0xFFF0EBE6),
@@ -1170,11 +1195,13 @@ class _StoreDeliveryMapBody extends StatefulWidget {
     required this.store,
     required this.interactive,
     required this.compact,
+    this.mapboxToken,
   });
 
   final Store store;
   final bool interactive;
   final bool compact;
+  final String? mapboxToken;
 
   @override
   State<_StoreDeliveryMapBody> createState() => _StoreDeliveryMapBodyState();
@@ -1183,13 +1210,49 @@ class _StoreDeliveryMapBody extends StatefulWidget {
 class _StoreDeliveryMapBodyState extends State<_StoreDeliveryMapBody> {
   late final MapController _mapController;
   late final _DeferredCloseNetworkTileProvider _tileProvider;
-  bool _didFit = false;
+  late List<Polygon> _cachedPolygons;
+  late List<LatLng> _cachedPoints;
+  CameraFit? _initialCameraFit;
+  String _tileUrl = '';
+  bool _isMapbox = false;
 
   @override
   void initState() {
     super.initState();
     _mapController = MapController();
     _tileProvider = _DeferredCloseNetworkTileProvider();
+    _initPolygonsAndPoints();
+
+    final token = widget.mapboxToken ?? MapboxConfig.cachedToken;
+    _isMapbox = token.isNotEmpty;
+    _tileUrl = MapboxConfig.rasterTileUrl(token);
+    if (!_isMapbox) {
+      _loadTiles();
+    }
+  }
+
+  void _initPolygonsAndPoints() {
+    _cachedPolygons = _deliveryPolygons(widget.store);
+    _cachedPoints = _computePoints(widget.store, _cachedPolygons);
+    if (_cachedPoints.length > 1) {
+      try {
+        final bounds = LatLngBounds.fromPoints(_cachedPoints);
+        _initialCameraFit = CameraFit.bounds(
+          bounds: bounds,
+          padding: EdgeInsets.all(widget.compact ? 28 : 56),
+          maxZoom: 14,
+        );
+      } catch (_) {}
+    }
+  }
+
+  Future<void> _loadTiles() async {
+    final token = await MapboxConfig.publicToken();
+    if (!mounted) return;
+    setState(() {
+      _isMapbox = token.isNotEmpty;
+      _tileUrl = MapboxConfig.rasterTileUrl(token);
+    });
   }
 
   @override
@@ -1203,24 +1266,36 @@ class _StoreDeliveryMapBodyState extends State<_StoreDeliveryMapBody> {
             widget.store.customerMapLocation?.latitude ||
         oldWidget.store.customerMapLocation?.longitude !=
             widget.store.customerMapLocation?.longitude) {
-      _didFit = false;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _fitBounds();
-      });
+      _initPolygonsAndPoints();
+      if (_initialCameraFit != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted && _cachedPoints.isNotEmpty) {
+            try {
+              final bounds = LatLngBounds.fromPoints(_cachedPoints);
+              _mapController.fitCamera(
+                CameraFit.bounds(
+                  bounds: bounds,
+                  padding: EdgeInsets.all(widget.compact ? 28 : 56),
+                  maxZoom: 14,
+                ),
+              );
+            } catch (_) {}
+          }
+        });
+      }
     }
   }
 
   @override
   void dispose() {
     _mapController.dispose();
-    // TileLayer also disposes the provider — keep close idempotent there.
     super.dispose();
   }
 
   LatLng get _storePoint =>
       LatLng(widget.store.latitude!, widget.store.longitude!);
 
-  LatLng _offsetByKm(LatLng origin, double kmNorth, double kmEast) {
+  static LatLng _offsetByKm(LatLng origin, double kmNorth, double kmEast) {
     const earthKm = 6371.0;
     final lat = origin.latitude + (kmNorth / earthKm) * (180 / math.pi);
     final lng = origin.longitude +
@@ -1230,58 +1305,36 @@ class _StoreDeliveryMapBodyState extends State<_StoreDeliveryMapBody> {
     return LatLng(lat, lng);
   }
 
-  List<LatLng> get _points {
-    final points = <LatLng>[_storePoint];
-    final customer = widget.store.customerMapLocation;
+  static List<LatLng> _computePoints(Store store, List<Polygon> polygons) {
+    if (store.latitude == null || store.longitude == null) return const [];
+    final storePt = LatLng(store.latitude!, store.longitude!);
+    final points = <LatLng>[storePt];
+    final customer = store.customerMapLocation;
     if (customer != null) {
       points.add(LatLng(customer.latitude, customer.longitude));
     }
-    for (final polygon in _deliveryPolygons(widget.store)) {
+    for (final polygon in polygons) {
       points.addAll(polygon.points);
     }
-    final isRadius = widget.store.deliveryMethod == 'radius' ||
-        (widget.store.deliveryMethod == null &&
-            (widget.store.deliveryRadiusKm ?? 0) > 0);
-    final radiusKm = widget.store.deliveryRadiusKm ?? 0;
+    final isRadius = store.deliveryMethod == 'radius' ||
+        (store.deliveryMethod == null &&
+            (store.deliveryRadiusKm ?? 0) > 0);
+    final radiusKm = store.deliveryRadiusKm ?? 0;
     if (isRadius && radiusKm > 0) {
       points.addAll([
-        _offsetByKm(_storePoint, radiusKm, 0),
-        _offsetByKm(_storePoint, -radiusKm, 0),
-        _offsetByKm(_storePoint, 0, radiusKm),
-        _offsetByKm(_storePoint, 0, -radiusKm),
+        _offsetByKm(storePt, radiusKm, 0),
+        _offsetByKm(storePt, -radiusKm, 0),
+        _offsetByKm(storePt, 0, radiusKm),
+        _offsetByKm(storePt, 0, -radiusKm),
       ]);
     }
     return points;
-  }
-
-  void _fitBounds() {
-    if (_didFit) return;
-    final points = _points;
-    if (points.isEmpty) return;
-    try {
-      if (points.length == 1) {
-        _mapController.move(points.first, widget.compact ? 13.2 : 14);
-      } else {
-        final bounds = LatLngBounds.fromPoints(points);
-        _mapController.fitCamera(
-          CameraFit.bounds(
-            bounds: bounds,
-            padding: EdgeInsets.all(widget.compact ? 28 : 56),
-            maxZoom: 14,
-          ),
-        );
-      }
-      _didFit = true;
-    } catch (_) {
-      // Map may not be ready yet.
-    }
   }
 
   @override
   Widget build(BuildContext context) {
     final store = widget.store;
     final customer = store.customerMapLocation;
-    final polygons = _deliveryPolygons(store);
     final isRadius = store.deliveryMethod == 'radius' ||
         (store.deliveryMethod == null && (store.deliveryRadiusKm ?? 0) > 0);
 
@@ -1293,33 +1346,33 @@ class _StoreDeliveryMapBodyState extends State<_StoreDeliveryMapBody> {
         return FlutterMap(
           mapController: _mapController,
           options: MapOptions(
-            initialCenter: _storePoint,
-            initialZoom: 13,
+            initialCenter: _cachedPoints.length == 1 ? _cachedPoints.first : _storePoint,
+            initialZoom: widget.compact ? 13.2 : 13.0,
+            initialCameraFit: _initialCameraFit,
             backgroundColor: const Color(0xFFF0EBE6),
             interactionOptions: InteractionOptions(
               flags: widget.interactive
                   ? InteractiveFlag.all
                   : InteractiveFlag.none,
             ),
-            onMapReady: () {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
-                if (mounted) _fitBounds();
-              });
-            },
           ),
           children: [
             TileLayer(
-              urlTemplate:
-                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+              urlTemplate: _tileUrl,
+              fallbackUrl: MapboxConfig.osmFallbackUrl,
               userAgentPackageName: 'com.seanlazala.eflora',
-              maxZoom: 19,
-              keepBuffer: 2,
-              panBuffer: 1,
+              maxZoom: _isMapbox ? 22 : 19,
+              keepBuffer: 1,
+              panBuffer: 0,
               tileProvider: _tileProvider,
               // Cancelled downloads on close/zoom are normal — don't dump stacks.
               errorTileCallback: (tile, error, stackTrace) {},
             ),
-            if (polygons.isNotEmpty) PolygonLayer(polygons: polygons),
+            if (_cachedPolygons.isNotEmpty)
+              PolygonLayer(
+                polygons: _cachedPolygons,
+                polygonCulling: true,
+              ),
             if (isRadius && (store.deliveryRadiusKm ?? 0) > 0)
               CircleLayer(
                 circles: [

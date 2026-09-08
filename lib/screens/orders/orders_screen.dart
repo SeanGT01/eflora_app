@@ -60,8 +60,27 @@ class _OrdersScreenState extends State<OrdersScreen> {
     {'id': 'cancelled', 'label': 'Cancelled'},
   ];
 
+  List<StoreCartGroup> get _cartGroups {
+    final groups = <int, StoreCartGroup>{};
+    for (final item in _cartItems) {
+      final sid = item.storeId ?? 0;
+      if (!groups.containsKey(sid)) {
+        final finalStoreName = (item.storeName?.isNotEmpty ?? false)
+            ? item.storeName!
+            : 'Store';
+        groups[sid] = StoreCartGroup(
+          storeId: sid,
+          storeName: finalStoreName,
+          items: [],
+        );
+      }
+      groups[sid]!.items.add(item);
+    }
+    return groups.values.toList();
+  }
+
   int _countFor(String id) {
-    final cartN = _cartItems.length;
+    final cartN = _cartGroups.length;
     if (id.isEmpty) return cartN + _allOrders.length;
     if (id == 'pending') {
       return cartN +
@@ -359,47 +378,53 @@ class _OrdersScreenState extends State<OrdersScreen> {
                         : RefreshIndicator(
                             color: AppColors.roseCta,
                             onRefresh: _loadOrders,
-                            child: ListView.builder(
-                              padding: EdgeInsets.fromLTRB(
-                                16,
-                                16,
-                                16,
-                                floatingNavScrollClearance(context),
-                              ),
-                              itemCount: (_statusFilter == 'pending' ||
-                                          _statusFilter == ''
-                                      ? _cartItems.length
-                                      : 0) +
-                                  _orders.length,
-                              itemBuilder: (_, i) {
-                                // Show cart items first ONLY if we're viewing "To Pay" or "All" tab
+                            child: Builder(
+                              builder: (context) {
                                 final showCartItems =
                                     _statusFilter == 'pending' ||
                                         _statusFilter == '';
-                                if (showCartItems && i < _cartItems.length) {
-                                  return _CartItemTile(item: _cartItems[i]);
-                                }
-                                final orderIndex =
-                                    showCartItems ? i - _cartItems.length : i;
-                                final order = _orders[orderIndex];
-                                return GestureDetector(
-                                  onTap: () async {
-                                    final changed = await Navigator.push(
-                                      context,
-                                      MaterialPageRoute(
-                                          builder: (_) =>
-                                              OrderDetailScreen(order: order)),
-                                    );
-                                    if (changed == true && mounted) {
-                                      await _onOrderCompleted();
-                                    }
-                                  },
-                                  child: _OrderTile(
-                                    order: order,
-                                    onOrderUpdated: _loadOrders,
-                                    onOrderCompleted: _onOrderCompleted,
-                                    onOrderCancelled: _onOrderCancelled,
+                                final cartGroups = showCartItems
+                                    ? _cartGroups
+                                    : const <StoreCartGroup>[];
+
+                                return ListView.builder(
+                                  padding: EdgeInsets.fromLTRB(
+                                    16,
+                                    16,
+                                    16,
+                                    floatingNavScrollClearance(context),
                                   ),
+                                  itemCount: cartGroups.length + _orders.length,
+                                  itemBuilder: (_, i) {
+                                    if (i < cartGroups.length) {
+                                      final group = cartGroups[i];
+                                      return _StoreToPayCard(
+                                        key: ValueKey('cart_group_${group.storeId}'),
+                                        group: group,
+                                      );
+                                    }
+                                    final orderIndex = i - cartGroups.length;
+                                    final order = _orders[orderIndex];
+                                    return GestureDetector(
+                                      onTap: () async {
+                                        final changed = await Navigator.push(
+                                          context,
+                                          MaterialPageRoute(
+                                              builder: (_) =>
+                                                  OrderDetailScreen(order: order)),
+                                        );
+                                        if (changed == true && mounted) {
+                                          await _onOrderCompleted();
+                                        }
+                                      },
+                                      child: _OrderTile(
+                                        order: order,
+                                        onOrderUpdated: _loadOrders,
+                                        onOrderCompleted: _onOrderCompleted,
+                                        onOrderCancelled: _onOrderCancelled,
+                                      ),
+                                    );
+                                  },
                                 );
                               },
                             ),
@@ -415,7 +440,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool get _isListEmpty {
     final showCart =
         _statusFilter == 'pending' || _statusFilter.isEmpty;
-    if (showCart) return _orders.isEmpty && _cartItems.isEmpty;
+    if (showCart) return _orders.isEmpty && _cartGroups.isEmpty;
     return _orders.isEmpty;
   }
 
@@ -1219,139 +1244,311 @@ class _ImagePlaceholder extends StatelessWidget {
   }
 }
 
-class _CartItemTile extends StatelessWidget {
-  final CartItem item;
-  const _CartItemTile({required this.item});
+class _StoreToPayCard extends StatefulWidget {
+  final StoreCartGroup group;
+  const _StoreToPayCard({super.key, required this.group});
+
+  @override
+  State<_StoreToPayCard> createState() => _StoreToPayCardState();
+}
+
+class _StoreToPayCardState extends State<_StoreToPayCard> {
+  bool _expanded = false;
+
+  void _openCheckout() {
+    showCheckoutModal(
+      context,
+      selectedItems: widget.group.items,
+      onComplete: () {
+        context.read<CartProvider>().load();
+        OrdersScreen.reload(targetStatus: 'to_ship');
+      },
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final group = widget.group;
+    final hasMultipleItems = group.items.length > 1;
+
     return GlassCard(
       margin: const EdgeInsets.only(bottom: 14),
-      padding: const EdgeInsets.all(16),
+      padding: EdgeInsets.zero,
       radius: AppRadius.xl,
       tinted: true,
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  'My Basket',
-                  style: Theme.of(context).textTheme.headlineSmall,
-                ),
-              ),
-              const _StatusPill(
-                label: 'To Pay',
-                background: Color(0x73FFD2B4),
-                foreground: Color(0xFFA06030),
-                borderColor: Color(0x66E8A078),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          if (item.storeName != null)
-            Row(children: [
-              const Icon(Icons.storefront_outlined,
-                  size: 12, color: AppColors.labelPink),
-              const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  item.storeName!.toUpperCase(),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.dmSans(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.labelPink,
-                    letterSpacing: 1.4,
-                  ),
-                ),
-              ),
-            ]),
-          const Divider(height: 20),
-          // Item details
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${item.name} × ${item.quantity}',
-                      style: GoogleFonts.dmSans(
-                          fontSize: 12.5, color: AppColors.charcoal),
-                    ),
-                    if (item.addons.isNotEmpty) ...[
+          // Header with store name and status pill (matches _OrderTile)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        group.storeName.toUpperCase(),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.labelPink,
+                          letterSpacing: 1.4,
+                        ),
+                      ),
                       const SizedBox(height: 4),
-                      ...item.addons.map(
-                        (a) => Text(
-                          '+ ${a.name}${a.quantity > 1 ? ' ×${a.quantity}' : ''}'
-                          '  ₱${(a.price * a.quantity).toStringAsFixed(2)}',
-                          style: GoogleFonts.dmSans(
-                            fontSize: 11,
-                            color: AppColors.muted,
-                          ),
+                      Text(
+                        'Pending payment • ${group.items.length} ${group.items.length == 1 ? 'item' : 'items'}',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11.5,
+                          color: AppColors.muted,
                         ),
                       ),
                     ],
-                  ],
+                  ),
+                ),
+                const SizedBox(width: 10),
+                const _StatusPill(
+                  label: 'TO PAY',
+                  background: Color(0x73FFD2B4),
+                  foreground: Color(0xFFA06030),
+                  borderColor: Color(0x66E8A078),
+                ),
+              ],
+            ),
+          ),
+          const Divider(height: 1, indent: 16, endIndent: 16),
+
+          // First product card (matches _TikTokProductCard in _OrderTile)
+          if (group.items.isNotEmpty)
+            _CartProductRow(item: group.items.first),
+
+          // Expandable additional items (matches _OrderTile)
+          if (hasMultipleItems) ...[
+            if (!_expanded) ...[
+              GestureDetector(
+                onTap: () => setState(() => _expanded = true),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      const SizedBox(width: 16),
+                      Text(
+                        'View more ${group.items.length - 1} item${group.items.length > 2 ? 's' : ''}',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.dustyRose,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.expand_more,
+                        color: AppColors.dustyRose,
+                        size: 18,
+                      ),
+                    ],
+                  ),
                 ),
               ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
+            ] else ...[
+              const Divider(height: 1, indent: 16, endIndent: 16),
+              ...group.items.skip(1).map((item) => _CartProductRow(item: item)),
+              GestureDetector(
+                onTap: () => setState(() => _expanded = false),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: [
+                      const SizedBox(width: 16),
+                      Text(
+                        'View less',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.dustyRose,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      const Icon(
+                        Icons.expand_less,
+                        color: AppColors.dustyRose,
+                        size: 18,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ],
+
+          // Footer with subtotal and Pay Now action button (matches _OrderTile)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 14),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                const SizedBox(width: 1),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      'Total: ₱${group.subtotal.toStringAsFixed(2)}',
+                      style: GoogleFonts.cormorantGaramond(
+                        fontSize: 19,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.deepRose,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    GestureDetector(
+                      onTap: _openCheckout,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 18, vertical: 7.5),
+                        decoration: BoxDecoration(
+                          gradient: AppColors.brandGradient,
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                          boxShadow: AppShadows.roseButton,
+                        ),
+                        child: Text(
+                          'Pay Now',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w700,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _CartProductRow extends StatelessWidget {
+  final CartItem item;
+  const _CartProductRow({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final imgUrl = item.imageUrl;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Product image (62x62 matching _TikTokProductCard)
+          Container(
+            width: 62,
+            height: 62,
+            decoration: BoxDecoration(
+              gradient: AppColors.imageWash,
+              borderRadius: BorderRadius.circular(AppRadius.md),
+              border: Border.all(color: AppColors.glassBorder),
+            ),
+            child: imgUrl != null && imgUrl.isNotEmpty
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(AppRadius.md),
+                    child: CachedNetworkImage(
+                      imageUrl: imgUrl,
+                      fit: BoxFit.cover,
+                      placeholder: (_, __) => const _ImagePlaceholder(),
+                      errorWidget: (_, __, ___) => const _ImagePlaceholder(),
+                    ),
+                  )
+                : const _ImagePlaceholder(),
+          ),
+          const SizedBox(width: 12),
+
+          // Product details
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: Text(
+                        item.name,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.charcoal,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                if (item.variant != null && item.variant!.name.isNotEmpty) ...[
+                  const SizedBox(height: 2),
                   Text(
-                    '₱${item.subtotal.toStringAsFixed(2)}',
+                    'Variant: ${item.variant!.name}',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: GoogleFonts.dmSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w500,
+                      color: AppColors.deepRose,
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 4),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(
+                      'Qty: ${item.quantity}',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11,
+                        color: AppColors.muted,
+                      ),
+                    ),
+                    Text(
+                      '₱${item.subtotal.toStringAsFixed(2)}',
+                      style: GoogleFonts.dmSans(
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,
-                        color: AppColors.charcoal),
-                  ),
-                  if (item.originalPrice != null)
-                    Text(
-                      'Was ₱${(item.originalPrice! * item.quantity).toStringAsFixed(2)}',
+                        color: AppColors.charcoal,
+                      ),
+                    ),
+                  ],
+                ),
+                if (item.addons.isNotEmpty) ...[
+                  const SizedBox(height: 3),
+                  ...item.addons.take(2).map(
+                    (a) => Text(
+                      '+ ${a.name}${a.quantity > 1 ? ' ×${a.quantity}' : ''}'
+                      '  ₱${(a.price * a.quantity).toStringAsFixed(2)}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                       style: GoogleFonts.dmSans(
                         fontSize: 10,
                         color: AppColors.muted,
-                        decoration: TextDecoration.lineThrough,
                       ),
                     ),
+                  ),
                 ],
-              ),
-            ],
-          ),
-          const Divider(height: 20),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text('Subtotal', style: Theme.of(context).textTheme.titleSmall),
-              Text(
-                '₱${item.subtotal.toStringAsFixed(2)}',
-                style: GoogleFonts.cormorantGaramond(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.deepRose),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          GradientButton(
-            label: 'Go to Checkout',
-            height: 48,
-            onPressed: () {
-              // Open checkout modal with cart item
-              final cartItems = [item];
-              showCheckoutModal(
-                context,
-                selectedItems: cartItems,
-                onComplete: () {
-                  // Refresh orders and cart after successful checkout
-                  context.read<CartProvider>().load();
-                  OrdersScreen.reload(targetStatus: 'to_ship');
-                },
-              );
-            },
+              ],
+            ),
           ),
         ],
       ),

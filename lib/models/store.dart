@@ -140,10 +140,10 @@ class Store {
   String get deliveryCoverageSummary {
     if (usesCustomZoneDelivery) return 'Custom delivery zone';
     if (usesMunicipalityDelivery) {
-      final n = selectedMunicipalities.length;
-      return n > 0
-          ? '$n Municipality/City coverage'
-          : 'Municipality/City coverage';
+      if (selectedMunicipalities.isNotEmpty) {
+        return selectedMunicipalities.join(', ');
+      }
+      return 'Municipality/City coverage';
     }
     if (deliveryRadiusKm == null) return 'Store location and delivery coverage';
     return '${deliveryRadiusKm!.toStringAsFixed(0)} km delivery radius';

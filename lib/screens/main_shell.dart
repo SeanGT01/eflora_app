@@ -157,8 +157,9 @@ class _FloatingNavBar extends StatelessWidget {
         surfaceTintColor: Colors.transparent,
         borderRadius: BorderRadius.circular(_radius),
         clipBehavior: Clip.antiAlias,
-        child: SizedBox(
+        child: Container(
           height: kFloatingNavBarHeight,
+          padding: const EdgeInsets.all(3),
           child: Row(
             children: [
               _NavItem(
@@ -167,6 +168,7 @@ class _FloatingNavBar extends StatelessWidget {
                 label: 'Home',
                 selected: selectedIndex == 0,
                 onTap: () => onSelect(0),
+                isFirst: true,
               ),
               _NavItem(
                 icon: Icons.search_outlined,
@@ -196,6 +198,7 @@ class _FloatingNavBar extends StatelessWidget {
                 label: 'Account',
                 selected: selectedIndex == 4,
                 onTap: () => onSelect(4),
+                isLast: true,
               ),
             ],
           ),
@@ -212,6 +215,8 @@ class _NavItem extends StatelessWidget {
   final bool selected;
   final VoidCallback onTap;
   final int badge;
+  final bool isFirst;
+  final bool isLast;
 
   const _NavItem({
     required this.icon,
@@ -220,6 +225,8 @@ class _NavItem extends StatelessWidget {
     required this.selected,
     required this.onTap,
     this.badge = 0,
+    this.isFirst = false,
+    this.isLast = false,
   });
 
   static const _inactive = Color(0xFF757575);
@@ -228,89 +235,104 @@ class _NavItem extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = selected ? AppColors.roseCta : _inactive;
-    // Match the reference navigation: every destination keeps its label under
-    // the icon, and the selected destination is a contained, horizontal pill.
-    // Equal slots also keep the Account item aligned with the pill's edge.
     return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        // The whole flex item is tappable, but it must not paint a rectangular
-        // Material splash behind the capsule.
-        splashFactory: NoSplash.splashFactory,
-        splashColor: Colors.transparent,
-        highlightColor: Colors.transparent,
-        hoverColor: Colors.transparent,
-        focusColor: Colors.transparent,
-        overlayColor: const WidgetStatePropertyAll(Colors.transparent),
-        child: Center(
-          child: AnimatedContainer(
-            duration: const Duration(milliseconds: 180),
-            curve: Curves.easeOutCubic,
-            width: selected ? 62 : 52,
-            height: 48,
-            padding: const EdgeInsets.symmetric(vertical: 5),
-            decoration: BoxDecoration(
-              color: selected ? _pill : Colors.transparent,
-              borderRadius: BorderRadius.circular(26),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final slotW = constraints.maxWidth;
+          final pillW = selected
+              ? (isFirst || isLast ? slotW - 3 : slotW - 6).clamp(44.0, 72.0)
+              : 0.0;
+          return InkWell(
+            onTap: onTap,
+            splashFactory: NoSplash.splashFactory,
+            splashColor: Colors.transparent,
+            highlightColor: Colors.transparent,
+            hoverColor: Colors.transparent,
+            focusColor: Colors.transparent,
+            overlayColor: const WidgetStatePropertyAll(Colors.transparent),
+            child: Stack(
+              alignment: Alignment.center,
               children: [
-                Stack(
-                  clipBehavior: Clip.none,
-                  children: [
-                    AnimatedContainer(
-                      duration: const Duration(milliseconds: 180),
-                      width: 24,
-                      height: 24,
-                      child: Icon(
-                        selected ? activeIcon : icon,
-                        size: 21,
-                        color: color,
+                Align(
+                  alignment: isFirst
+                      ? Alignment.centerLeft
+                      : isLast
+                          ? Alignment.centerRight
+                          : Alignment.center,
+                  child: AnimatedOpacity(
+                    duration: const Duration(milliseconds: 150),
+                    curve: Curves.easeOut,
+                    opacity: selected ? 1.0 : 0.0,
+                    child: Container(
+                      width: pillW,
+                      height: double.infinity,
+                      decoration: BoxDecoration(
+                        color: _pill,
+                        borderRadius: BorderRadius.circular(23),
                       ),
                     ),
-                    if (badge > 0)
-                      Positioned(
-                        top: -4,
-                        right: -4,
-                        child: Container(
-                          constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
-                          padding: const EdgeInsets.symmetric(horizontal: 3),
-                          decoration: const BoxDecoration(
-                            color: AppColors.roseCta,
-                            shape: BoxShape.circle,
+                  ),
+                ),
+                Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: Icon(
+                            selected ? activeIcon : icon,
+                            size: 20,
+                            color: color,
                           ),
-                          child: Center(
-                            child: Text(
-                              badge > 9 ? '9+' : '$badge',
-                              style: GoogleFonts.dmSans(
-                                fontSize: 8,
-                                fontWeight: FontWeight.w800,
-                                color: Colors.white,
-                                height: 1,
+                        ),
+                        if (badge > 0)
+                          Positioned(
+                            top: -4,
+                            right: -4,
+                            child: Container(
+                              constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+                              padding: const EdgeInsets.symmetric(horizontal: 3),
+                              decoration: const BoxDecoration(
+                                color: AppColors.roseCta,
+                                shape: BoxShape.circle,
+                              ),
+                              child: Center(
+                                child: Text(
+                                  badge > 9 ? '9+' : '$badge',
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white,
+                                    height: 1,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 9.5,
+                        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                        color: color,
+                        height: 1.1,
+                      ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 3),
-                Text(
-                  label,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.dmSans(
-                    fontSize: 9.5,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: color,
-                    height: 1,
-                  ),
-                ),
               ],
             ),
-          ),
-        ),
+          );
+        },
       ),
     );
   }

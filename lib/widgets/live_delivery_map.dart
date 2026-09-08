@@ -620,13 +620,23 @@ class _MapCanvas extends StatefulWidget {
 }
 
 class _MapCanvasState extends State<_MapCanvas> {
-  String _tileUrl = MapboxConfig.rasterTileUrl('');
-  bool _isMapbox = false;
+  late final NetworkTileProvider _tileProvider;
+  String _tileUrl = MapboxConfig.rasterTileUrl(MapboxConfig.cachedToken);
+  bool _isMapbox = MapboxConfig.cachedToken.isNotEmpty;
 
   @override
   void initState() {
     super.initState();
-    _loadTiles();
+    _tileProvider = MapboxConfig.createTileProvider();
+    if (!_isMapbox) {
+      _loadTiles();
+    }
+  }
+
+  @override
+  void dispose() {
+    _tileProvider.dispose();
+    super.dispose();
   }
 
   Future<void> _loadTiles() async {
@@ -653,8 +663,12 @@ class _MapCanvasState extends State<_MapCanvas> {
       children: [
         TileLayer(
           urlTemplate: _tileUrl,
+          fallbackUrl: MapboxConfig.osmFallbackUrl,
           userAgentPackageName: 'com.seanlazala.eflora',
           maxZoom: _isMapbox ? 22 : 19,
+          keepBuffer: 1,
+          panBuffer: 0,
+          tileProvider: _tileProvider,
           errorTileCallback: (tile, error, stackTrace) {},
         ),
         if (widget.route.isNotEmpty)

@@ -131,7 +131,7 @@ class AppShadows {
 
   /// Standard glass card: soft plum drop shadow + inset-style top highlight.
   static const List<BoxShadow> glass = [
-    BoxShadow(color: Color(0x0F502846), blurRadius: 24, offset: Offset(0, 8)),
+    BoxShadow(color: Color(0x0F502846), blurRadius: 12, offset: Offset(0, 4)),
   ];
 
   static const List<BoxShadow> glassRaised = [

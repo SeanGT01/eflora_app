@@ -269,7 +269,16 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
   }
 
   void _toggleAddon(int id, int stock) {
-    if (_adding || stock <= 0) return;
+    if (_adding) return;
+    if (stock <= 0) {
+      final a = [..._productAddons, ..._ymalAddons].cast<_AddonRow?>().firstWhere(
+        (row) => row?.id == id,
+        orElse: () => null,
+      );
+      final name = a?.name ?? 'This add-on';
+      showToast(context, '"$name" is out of stock', isError: true);
+      return;
+    }
     setState(() {
       if ((_addonQty[id] ?? 0) > 0) {
         _addonQty.remove(id);
@@ -281,6 +290,16 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
 
   void _changeAddonQty(int id, int delta, int stock) {
     if (_adding) return;
+    if (stock <= 0) {
+      final a = [..._productAddons, ..._ymalAddons].cast<_AddonRow?>().firstWhere(
+        (row) => row?.id == id,
+        orElse: () => null,
+      );
+      final name = a?.name ?? 'This add-on';
+      showToast(context, '"$name" is out of stock', isError: true);
+      setState(() => _addonQty.remove(id));
+      return;
+    }
     setState(() {
       final next = ((_addonQty[id] ?? 0) + delta).clamp(0, stock);
       if (next <= 0) {
@@ -319,6 +338,23 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
         isError: true,
       );
       return;
+    }
+
+    for (final e in _addonQty.entries) {
+      final a = [..._productAddons, ..._ymalAddons].cast<_AddonRow?>().firstWhere(
+        (row) => row?.id == e.key,
+        orElse: () => null,
+      );
+      if (a != null) {
+        if (a.stock <= 0) {
+          showToast(context, '"${a.name}" is out of stock', isError: true);
+          return;
+        }
+        if (e.value > a.stock) {
+          showToast(context, 'Only ${a.stock} available for "${a.name}"', isError: true);
+          return;
+        }
+      }
     }
 
     setState(() => _adding = true);
@@ -749,7 +785,7 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             InkWell(
-              onTap: ok ? () => _toggleAddon(a.id, a.stock) : null,
+              onTap: () => _toggleAddon(a.id, a.stock),
               borderRadius: BorderRadius.circular(12),
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(3, 4, 3, 2),

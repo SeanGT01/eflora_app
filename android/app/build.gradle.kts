@@ -80,3 +80,8 @@ flutter {
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }
+
+tasks.matching { it.name.startsWith("compileFlutterBuild") }.configureEach {
+    doNotTrackState("OneDrive placeholder attributes prevent Gradle output snapshotting")
+}
+

@@ -8,7 +8,7 @@ import '../../widgets/glass.dart';
 class HelpEfloraScreen extends StatelessWidget {
   const HelpEfloraScreen({super.key});
 
-  static const _supportEmail = 'support@eflora.ph';
+  static const _supportEmail = 'efloralaguna@gmail.com';
   static const _site = 'https://eflora-system-production.up.railway.app';
 
   Future<void> _mail() async {

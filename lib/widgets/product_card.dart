@@ -24,6 +24,7 @@ class ProductCard extends StatelessWidget {
       onTap: onTap,
       padding: EdgeInsets.zero,
       radius: AppRadius.lg,
+      blur: 0,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -184,7 +185,7 @@ class ProductCard extends StatelessWidget {
     }
 
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    final cachePx = (220 * dpr).round().clamp(480, 1200);
+    final cachePx = (180 * dpr).round().clamp(280, 600);
 
     return DecoratedBox(
       decoration: const BoxDecoration(gradient: AppColors.imageWash),
