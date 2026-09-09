@@ -125,6 +125,7 @@ class _ChatListScreenState extends State<ChatListScreen> {
   }
 
   Future<void> _deleteConvo(ChatConversation convo) async {
+    if (convo.otherUser?.role == 'admin') return;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -161,6 +162,7 @@ class _ConversationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final other = conversation.otherUser;
+    final isAdmin = other?.role == 'admin';
     final isSeller = other?.role == 'seller';
     final isRider = other?.role == 'rider' || conversation.isRiderThread;
     final storeName = conversation.storeName ?? (conversation.orderContext?.storeName);
@@ -181,7 +183,7 @@ class _ConversationTile extends StatelessWidget {
 
     return Dismissible(
       key: ValueKey(conversation.id),
-      direction: DismissDirection.endToStart,
+      direction: isAdmin ? DismissDirection.none : DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 24),
@@ -189,6 +191,7 @@ class _ConversationTile extends StatelessWidget {
         child: const Icon(Icons.delete_outline, color: Colors.white, size: 24),
       ),
       confirmDismiss: (_) async {
+        if (isAdmin) return false;
         onDelete();
         return false;
       },

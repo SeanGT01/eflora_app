@@ -81,6 +81,49 @@ class ChatService {
     }
   }
 
+  /// Open or create support conversation with an admin account.
+  static Future<ChatConversation?> getOrCreateSupportConversation() async {
+    try {
+      final res = await http.post(
+        Uri.parse('$_api/conversations/support'),
+        headers: await _headers(),
+      ).timeout(const Duration(seconds: 15));
+
+      final data = jsonDecode(res.body);
+      if (data is Map && data['conversation'] is Map) {
+        return ChatConversation.fromJson(
+            Map<String, dynamic>.from(data['conversation'] as Map));
+      }
+      return null;
+    } catch (e) {
+      print('❌ ChatService.getOrCreateSupportConversation error: $e');
+      return null;
+    }
+  }
+
+  /// Fetch active FAQs for Quick Answers.
+  static Future<List<SupportFaq>> getSupportFaqs() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$_api/support-faqs'),
+        headers: await _headers(),
+      ).timeout(const Duration(seconds: 10));
+
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body) as Map<String, dynamic>;
+        final list = data['faqs'] as List? ?? [];
+        return list
+            .whereType<Map>()
+            .map((j) => SupportFaq.fromJson(Map<String, dynamic>.from(j)))
+            .toList();
+      }
+      return [];
+    } catch (e) {
+      print('❌ ChatService.getSupportFaqs error: $e');
+      return [];
+    }
+  }
+
   /// Get a single conversation by ID (includes rider order_context when applicable).
   static Future<ChatConversation?> getConversation(int convoId, {int? orderId}) async {
     try {

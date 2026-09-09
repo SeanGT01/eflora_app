@@ -167,14 +167,40 @@ class ChatProvider extends ChangeNotifier {
     _locallyReadIds.remove(conversationId);
   }
 
+  /// Ensure a conversation is present in the local state list.
+  void upsertConversation(ChatConversation convo) {
+    final idx = _conversations.indexWhere((c) => c.id == convo.id);
+    if (idx == -1) {
+      _conversations.insert(0, convo);
+    } else {
+      _conversations[idx] = convo;
+    }
+    notifyListeners();
+  }
+
   /// Update inbox preview when a message is sent/received.
   void touchConversationPreview({
     required int conversationId,
     required String previewText,
     int? senderId,
+    ChatConversation? conversation,
   }) {
     final idx = _conversations.indexWhere((c) => c.id == conversationId);
-    if (idx == -1) return;
+    if (idx == -1) {
+      if (conversation != null) {
+        _conversations.insert(
+          0,
+          conversation.copyWith(
+            lastMessageText: previewText,
+            lastMessageAt: DateTime.now().toUtc().toIso8601String(),
+            lastSenderId: senderId,
+            unreadCount: 0,
+          ),
+        );
+        notifyListeners();
+      }
+      return;
+    }
     final updated = _conversations[idx].copyWith(
       lastMessageText: previewText,
       lastMessageAt: DateTime.now().toUtc().toIso8601String(),
@@ -197,6 +223,13 @@ class ChatProvider extends ChangeNotifier {
 
   /// Delete a conversation.
   Future<bool> deleteConversation(int convoId) async {
+    final convo = _conversations.cast<ChatConversation?>().firstWhere(
+      (c) => c?.id == convoId,
+      orElse: () => null,
+    );
+    if (convo?.otherUser?.role == 'admin') {
+      return false;
+    }
     final ok = await ChatService.deleteConversation(convoId);
     if (ok) {
       _conversations.removeWhere((c) => c.id == convoId);

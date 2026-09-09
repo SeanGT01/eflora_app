@@ -2256,9 +2256,11 @@ class ChatDrawerState extends State<ChatDrawer>
     final unread = convo.unreadCount;
     final hasUnread = unread > 0;
 
+    final isAdmin = other?.role == 'admin';
+
     return Dismissible(
       key: ValueKey(convo.id),
-      direction: DismissDirection.endToStart,
+      direction: isAdmin ? DismissDirection.none : DismissDirection.endToStart,
       background: Container(
         alignment: Alignment.centerRight,
         padding: const EdgeInsets.only(right: 24),
@@ -2266,6 +2268,7 @@ class ChatDrawerState extends State<ChatDrawer>
         child: const Icon(Icons.delete_outline, color: Colors.white, size: 22),
       ),
       confirmDismiss: (_) async {
+        if (isAdmin) return false;
         final confirmed = await showDialog<bool>(
           context: context,
           builder: (ctx) => AlertDialog(
@@ -2291,6 +2294,7 @@ class ChatDrawerState extends State<ChatDrawer>
         return confirmed ?? false;
       },
       onDismissed: (_) async {
+        if (isAdmin) return;
         final id = convo.id;
         setState(() {
           _conversations.removeWhere((c) => c.id == id);

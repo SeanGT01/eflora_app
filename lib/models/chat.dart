@@ -388,3 +388,25 @@ class ChatMessage {
     replyToMessageType: replyToMessageType,
   );
 }
+
+/// Model for editable support FAQs used in Quick Answers.
+class SupportFaq {
+  final int id;
+  final String question;
+  final String answer;
+  final bool isActive;
+
+  const SupportFaq({
+    required this.id,
+    required this.question,
+    required this.answer,
+    this.isActive = true,
+  });
+
+  factory SupportFaq.fromJson(Map<String, dynamic> j) => SupportFaq(
+    id: j['id'] ?? 0,
+    question: j['question']?.toString() ?? '',
+    answer: j['answer']?.toString() ?? '',
+    isActive: j['is_active'] != false,
+  );
+}
