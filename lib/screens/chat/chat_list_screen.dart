@@ -162,9 +162,17 @@ class _ConversationTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final other = conversation.otherUser;
     final isSeller = other?.role == 'seller';
-    final displayName = isSeller
-        ? (conversation.storeName ?? other?.fullName ?? 'Unknown')
-        : (other?.fullName ?? 'Unknown');
+    final isRider = other?.role == 'rider' || conversation.isRiderThread;
+    final storeName = conversation.storeName ?? (conversation.orderContext?.storeName);
+    final displayName = isRider
+        ? (storeName != null && storeName.isNotEmpty
+            ? '$storeName Rider'
+            : (other?.fullName != null && other!.fullName.isNotEmpty
+                ? '${other.fullName} (Rider)'
+                : 'Rider'))
+        : (isSeller
+            ? (conversation.storeName ?? other?.fullName ?? 'Unknown')
+            : (other?.fullName ?? 'Unknown'));
     final avatarUrl = isSeller
         ? (conversation.storeLogo ?? other?.avatarUrl)
         : other?.avatarUrl;

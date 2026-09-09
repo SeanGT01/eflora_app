@@ -19,6 +19,19 @@ import 'common.dart';
 import 'chat_order_card.dart';
 import '../screens/store/store_page.dart';
 
+/// Lightweight Q&A message representation for Quick Answers.
+class _QaMessage {
+  final bool isUser;
+  final String text;
+  final DateTime timestamp;
+
+  _QaMessage({
+    required this.isUser,
+    required this.text,
+    DateTime? timestamp,
+  }) : timestamp = timestamp ?? DateTime.now();
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // FLOATING CHAT BUTTON — AssistiveTouch-style dockable FAB
 // Drag right to morph into a sleek edge tab; tap the tab to expand again.
@@ -334,6 +347,14 @@ class ChatDrawerState extends State<ChatDrawer>
   int? _suggestForConvoId;
   bool _orderSuggestDismissed = false;
 
+  // ═══ QUICK ANSWERS & SUPPORT ═══
+  bool _quickAnswersMode = false;
+  List<SupportFaq> _supportFaqs = [];
+  bool _loadingFaqs = false;
+  final List<_QaMessage> _qaMessages = [];
+  final ScrollController _qaScrollController = ScrollController();
+  bool _openingSupport = false;
+
   int get _myId => context.read<AuthProvider>().user?.id ?? 0;
 
   // ═══ ANIMATION ═══
@@ -380,6 +401,7 @@ class ChatDrawerState extends State<ChatDrawer>
     _searchController.dispose();
     _msgController.dispose();
     _scrollController.dispose();
+    _qaScrollController.dispose();
     _pollTimer?.cancel();
     _typingDebounce?.cancel();
     _typingKeepAlive?.cancel();
@@ -436,6 +458,14 @@ class ChatDrawerState extends State<ChatDrawer>
         }
         return c;
       }).toList();
+
+      // If active conversation is open (e.g. rider thread opened from order details),
+      // ensure it is retained at the top of the inbox list even if server sync is still pending.
+      if (_activeConversation != null &&
+          !merged.any((c) => c.id == _activeConversation!.id)) {
+        merged.insert(0, _activeConversation!);
+      }
+
       setState(() {
         _conversations = merged;
         _inboxLoading = false;
@@ -546,11 +576,23 @@ class ChatDrawerState extends State<ChatDrawer>
           );
         }
       });
+    } else if (_activeConversation != null &&
+        _activeConversation!.id == conversationId) {
+      setState(() {
+        final updated = _activeConversation!.copyWith(
+          lastMessageText: preview,
+          lastMessageAt: DateTime.now().toUtc().toIso8601String(),
+          lastSenderId: senderId,
+        );
+        _conversations.insert(0, updated);
+        _activeConversation = updated;
+      });
     }
     _chatProvider.touchConversationPreview(
       conversationId: conversationId,
       previewText: preview,
       senderId: senderId,
+      conversation: _activeConversation,
     );
   }
 
@@ -587,8 +629,17 @@ class ChatDrawerState extends State<ChatDrawer>
     if (convo.id != _suggestForConvoId) {
       _suggestOrderId = null;
     }
+    final existingIdx = _conversations.indexWhere((c) => c.id == convo.id);
+    if (existingIdx == -1) {
+      _conversations.insert(0, convo);
+    } else {
+      _conversations[existingIdx] = convo;
+    }
+    _chatProvider.upsertConversation(convo);
+
     setState(() {
       _showDetail = true;
+      _quickAnswersMode = false;
       _activeConversation = convo;
       _orderContext = convo.orderContext;
       _messages = [];
@@ -765,6 +816,7 @@ class ChatDrawerState extends State<ChatDrawer>
     _stopPoll();
     setState(() {
       _showDetail = false;
+      _quickAnswersMode = false;
       _activeConversation = null;
       _orderContext = null;
       _messages = [];
@@ -1112,7 +1164,9 @@ class ChatDrawerState extends State<ChatDrawer>
               child: ClipRRect(
                 borderRadius:
                     const BorderRadius.vertical(top: Radius.circular(20)),
-                child: _showDetail ? _buildDetailView() : _buildInboxView(),
+                child: _quickAnswersMode
+                    ? _buildQuickAnswersView()
+                    : (_showDetail ? _buildDetailView() : _buildInboxView()),
               ),
             ),
           ),
@@ -1431,6 +1485,894 @@ class ChatDrawerState extends State<ChatDrawer>
     );
   }
 
+  // ═══════════════════════════════════════════════════════════════════════
+  // SUPPORT & QUICK ANSWERS HELPERS
+  // ═══════════════════════════════════════════════════════════════════════
+
+  Widget _buildAdminAvatar(double size, {bool showOnline = false}) {
+    final iconSize = (size * 0.46).clamp(14.0, 24.0);
+    final avatar = Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [Color(0xFF7A2F44), Color(0xFFC24E68)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.shield_rounded,
+          color: Colors.white,
+          size: iconSize,
+        ),
+      ),
+    );
+
+    if (!showOnline) return avatar;
+
+    final dot = (size * 0.28).clamp(10.0, 14.0);
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          avatar,
+          Positioned(
+            right: 0,
+            bottom: 0,
+            child: Container(
+              width: dot,
+              height: dot,
+              decoration: BoxDecoration(
+                color: const Color(0xFF31A24C),
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.white, width: 2),
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x4031A24C),
+                    blurRadius: 2,
+                    spreadRadius: 1,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBotAvatar(double size) {
+    final iconSize = (size * 0.46).clamp(14.0, 24.0);
+    return Container(
+      width: size,
+      height: size,
+      decoration: const BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: LinearGradient(
+          colors: [Color(0xFF6A8F78), Color(0xFF88B094)],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.smart_toy_rounded,
+          color: Colors.white,
+          size: iconSize,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openSupportConversation() async {
+    if (_openingSupport) return;
+    setState(() => _openingSupport = true);
+
+    final existing = _conversations.cast<ChatConversation?>().firstWhere(
+      (c) => c?.otherUser?.role == 'admin',
+      orElse: () => null,
+    );
+    if (existing != null) {
+      setState(() => _openingSupport = false);
+      _openConversation(existing);
+      return;
+    }
+
+    try {
+      final convo = await ChatService.getOrCreateSupportConversation();
+      if (!mounted) return;
+      if (convo != null) {
+        _openConversation(convo);
+      } else {
+        showToast(context, 'Could not open support chat.', isError: true);
+      }
+    } catch (e) {
+      if (mounted) {
+        showToast(context, 'Error opening support: $e', isError: true);
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _openingSupport = false);
+      }
+    }
+  }
+
+  Future<void> _openQuickAnswers() async {
+    _stopPoll();
+    _stopInboxPresencePoll();
+    _chatProvider.setLiveMode(false);
+    setState(() {
+      _quickAnswersMode = true;
+      _showDetail = false;
+      _activeConversation = null;
+      if (_qaMessages.isEmpty) {
+        _qaMessages.add(_QaMessage(
+          isUser: false,
+          text: 'Hi! Select a question below to get an instant answer.',
+        ));
+      }
+    });
+
+    if (_supportFaqs.isEmpty) {
+      setState(() => _loadingFaqs = true);
+      try {
+        final faqs = await ChatService.getSupportFaqs();
+        if (mounted) {
+          setState(() {
+            _supportFaqs = faqs;
+            _loadingFaqs = false;
+          });
+        }
+      } catch (_) {
+        if (mounted) {
+          setState(() => _loadingFaqs = false);
+        }
+      }
+    }
+  }
+
+  void _selectFaq(SupportFaq faq) {
+    setState(() {
+      _qaMessages.add(_QaMessage(
+        isUser: true,
+        text: faq.question,
+      ));
+      _qaMessages.add(_QaMessage(
+        isUser: false,
+        text: faq.answer.isNotEmpty ? faq.answer : 'No answer available.',
+      ));
+    });
+    _scrollQaToBottom();
+  }
+
+  void _scrollQaToBottom() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_qaScrollController.hasClients) {
+        _qaScrollController.animateTo(
+          _qaScrollController.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  Widget _buildQuickAnswersView() {
+    return Column(
+      children: [
+        // Header
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+          decoration: BoxDecoration(
+            color: AppColors.warmWhite,
+            border:
+                Border(bottom: BorderSide(color: AppColors.border, width: 0.5)),
+          ),
+          child: Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.arrow_back_ios_new_rounded, size: 18),
+                onPressed: _backToInbox,
+                splashRadius: 18,
+              ),
+              _buildBotAvatar(34),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Quick Answers',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.charcoal,
+                      ),
+                    ),
+                    Row(
+                      children: [
+                        Container(
+                          width: 7,
+                          height: 7,
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Color(0xFF31a24c),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          'Auto Help',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 11,
+                            color: AppColors.muted,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: Icon(Icons.close_rounded, size: 22, color: AppColors.muted),
+                onPressed: _dismiss,
+                splashRadius: 18,
+              ),
+            ],
+          ),
+        ),
+        // Content
+        Expanded(
+          child: _loadingFaqs && _supportFaqs.isEmpty
+              ? const Center(
+                  child: CircularProgressIndicator(
+                    color: AppColors.deepRose,
+                    strokeWidth: 2.5,
+                  ),
+                )
+              : ListView(
+                  controller: _qaScrollController,
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    // Bot Welcome Message
+                    Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        _buildBotAvatar(24),
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: const BorderRadius.only(
+                                topLeft: Radius.circular(16),
+                                topRight: Radius.circular(16),
+                                bottomLeft: Radius.circular(4),
+                                bottomRight: Radius.circular(16),
+                              ),
+                              border: Border.all(
+                                  color: Colors.white.withValues(alpha: 0.8)),
+                              boxShadow: const [
+                                BoxShadow(
+                                  color: Color(0x0D502846),
+                                  blurRadius: 8,
+                                  offset: Offset(0, 2),
+                                ),
+                              ],
+                            ),
+                            child: Text(
+                              'Hi! Select a question below to get an instant answer.',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 13.5,
+                                height: 1.4,
+                                color: AppColors.charcoal,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    // FAQ Questions Chips / Tiles
+                    if (_supportFaqs.isNotEmpty) ...[
+                      Row(
+                        children: [
+                          Icon(Icons.auto_awesome_rounded,
+                              size: 14, color: AppColors.deepRose),
+                          const SizedBox(width: 6),
+                          Text(
+                            'Frequently Asked Questions',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              color: AppColors.charcoal,
+                              letterSpacing: 0.2,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 6),
+                      ..._supportFaqs.map((faq) => Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Material(
+                              color: Colors.transparent,
+                              child: InkWell(
+                                onTap: () => _selectFaq(faq),
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.white,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: AppColors.border),
+                                    boxShadow: const [
+                                      BoxShadow(
+                                        color: Color(0x06502846),
+                                        blurRadius: 4,
+                                        offset: Offset(0, 1),
+                                      ),
+                                    ],
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.help_outline_rounded,
+                                          size: 16, color: AppColors.deepRose),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          faq.question,
+                                          style: GoogleFonts.dmSans(
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.w500,
+                                            color: AppColors.charcoal,
+                                          ),
+                                        ),
+                                      ),
+                                      const SizedBox(width: 6),
+                                      Icon(
+                                        Icons.arrow_forward_ios_rounded,
+                                        size: 11,
+                                        color: AppColors.muted.withValues(alpha: 0.6),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          )),
+                    ] else if (!_loadingFaqs) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 24),
+                        child: Center(
+                          child: Text(
+                            'No FAQs available right now.',
+                            style: GoogleFonts.dmSans(
+                              fontSize: 13,
+                              color: AppColors.muted,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    // QA Chat History (if user tapped questions)
+                    if (_qaMessages.length > 1) ...[
+                      const SizedBox(height: 18),
+                      Row(
+                        children: [
+                          Expanded(child: Divider(color: AppColors.border)),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 8),
+                            child: Text(
+                              'Conversation',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: AppColors.muted,
+                              ),
+                            ),
+                          ),
+                          Expanded(child: Divider(color: AppColors.border)),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      ..._qaMessages.skip(1).map((msg) {
+                        if (msg.isUser) {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 8, bottom: 4),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.end,
+                              children: [
+                                Flexible(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 14, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      gradient: const LinearGradient(
+                                        colors: [
+                                          Color(0xFFFFD2E1),
+                                          Color(0xFFF0C8E6)
+                                        ],
+                                        begin: Alignment.topLeft,
+                                        end: Alignment.bottomRight,
+                                      ),
+                                      borderRadius: const BorderRadius.only(
+                                        topLeft: Radius.circular(16),
+                                        topRight: Radius.circular(16),
+                                        bottomLeft: Radius.circular(16),
+                                        bottomRight: Radius.circular(4),
+                                      ),
+                                      border: Border.all(
+                                        color: Colors.white
+                                            .withValues(alpha: 0.55),
+                                      ),
+                                    ),
+                                    child: Text(
+                                      msg.text,
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 13.5,
+                                        fontWeight: FontWeight.w500,
+                                        color: AppColors.charcoal,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        } else {
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 4, bottom: 8),
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.end,
+                              children: [
+                                _buildBotAvatar(22),
+                                const SizedBox(width: 6),
+                                Flexible(
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 14, vertical: 10),
+                                    decoration: BoxDecoration(
+                                      color: Colors.white,
+                                      borderRadius: const BorderRadius.only(
+                                        topLeft: Radius.circular(16),
+                                        topRight: Radius.circular(16),
+                                        bottomLeft: Radius.circular(4),
+                                        bottomRight: Radius.circular(16),
+                                      ),
+                                      border: Border.all(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.8)),
+                                      boxShadow: const [
+                                        BoxShadow(
+                                          color: Color(0x0D502846),
+                                          blurRadius: 8,
+                                          offset: Offset(0, 2),
+                                        ),
+                                      ],
+                                    ),
+                                    child: Text(
+                                      msg.text,
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 13.5,
+                                        height: 1.4,
+                                        color: AppColors.charcoal,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+                      }),
+                    ],
+                    // Still Have Questions Card
+                    const SizedBox(height: 20),
+                    Container(
+                      padding: const EdgeInsets.all(14),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: AppColors.border),
+                        boxShadow: const [
+                          BoxShadow(
+                            color: Color(0x08502846),
+                            blurRadius: 8,
+                            offset: Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          _buildAdminAvatar(36),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  'Still have questions?',
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.charcoal,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  'Chat directly with our support team',
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 11,
+                                    color: AppColors.muted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          ElevatedButton(
+                            onPressed: _openingSupport
+                                ? null
+                                : _openSupportConversation,
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: AppColors.deepRose,
+                              foregroundColor: Colors.white,
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 8),
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(18)),
+                              elevation: 0,
+                            ),
+                            child: _openingSupport
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: Colors.white,
+                                    ),
+                                  )
+                                : Text(
+                                    'Contact Support',
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 24),
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildContactSupportTile(ChatConversation? supportConvo) {
+    final unread = supportConvo?.unreadCount ?? 0;
+    final hasUnread = unread > 0;
+    final preview = supportConvo?.lastMessageText ?? 'Chat with admin support';
+    final time = supportConvo?.lastMessageAt != null
+        ? _timeAgo(supportConvo!.lastMessageAt)
+        : '';
+    final adminId = supportConvo?.otherUser?.id;
+    final isOnline = adminId != null ? _isPartnerOnline(adminId) : false;
+
+    return InkWell(
+      onTap: _openSupportConversation,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            _buildAdminAvatar(44, showOnline: isOnline),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Contact Support',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          fontWeight:
+                              hasUnread ? FontWeight.w700 : FontWeight.w600,
+                          color: AppColors.charcoal,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFFBEBF0),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'Admin',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.deepRose,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    preview,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12.5,
+                      fontWeight:
+                          hasUnread ? FontWeight.w600 : FontWeight.w400,
+                      color: hasUnread ? AppColors.charcoal : AppColors.muted,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                if (time.isNotEmpty)
+                  Text(
+                    time,
+                    style: GoogleFonts.dmSans(
+                      fontSize: 11,
+                      color: AppColors.muted,
+                    ),
+                  ),
+                if (hasUnread) ...[
+                  const SizedBox(height: 4),
+                  Container(
+                    constraints: const BoxConstraints(minWidth: 18),
+                    height: 18,
+                    padding: const EdgeInsets.symmetric(horizontal: 5),
+                    decoration: BoxDecoration(
+                      color: AppColors.deepRose,
+                      borderRadius: BorderRadius.circular(9),
+                    ),
+                    child: Center(
+                      child: Text(
+                        unread > 99 ? '99+' : '$unread',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildQuickAnswersTile() {
+    return InkWell(
+      onTap: _openQuickAnswers,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        child: Row(
+          children: [
+            _buildBotAvatar(44),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Text(
+                        'Quick Answers',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: AppColors.charcoal,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(width: 6),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 1.5),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFE8F5E9),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          'FAQ Bot',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            color: const Color(0xFF2E7D32),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Tap to browse common questions',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w400,
+                      color: AppColors.muted,
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ],
+              ),
+            ),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: AppColors.muted,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildNormalConvoTile(ChatConversation convo) {
+    final other = convo.otherUser;
+    final isSeller = other?.role == 'seller';
+    final isRider = other?.role == 'rider' || convo.isRiderThread;
+    final storeName = convo.storeName ?? (convo.orderContext?.storeName);
+    final displayName = isRider
+        ? (storeName != null && storeName.isNotEmpty
+            ? '$storeName Rider'
+            : (other?.fullName != null && other!.fullName.isNotEmpty
+                ? '${other.fullName} (Rider)'
+                : 'Rider'))
+        : (isSeller
+            ? (convo.storeName ?? other?.fullName ?? 'Unknown')
+            : (other?.fullName ?? 'Unknown'));
+    final displayAvatar =
+        isSeller ? (convo.storeLogo ?? other?.avatarUrl) : other?.avatarUrl;
+    final unread = convo.unreadCount;
+    final hasUnread = unread > 0;
+
+    return Dismissible(
+      key: ValueKey(convo.id),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 24),
+        color: Colors.red[400],
+        child: const Icon(Icons.delete_outline, color: Colors.white, size: 22),
+      ),
+      confirmDismiss: (_) async {
+        final confirmed = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text('Delete Conversation',
+                style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
+            content: Text('Delete your conversation with $displayName?',
+                style: GoogleFonts.dmSans()),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(false),
+                child: Text('Cancel',
+                    style: GoogleFonts.dmSans(color: AppColors.muted)),
+              ),
+              TextButton(
+                onPressed: () => Navigator.of(ctx).pop(true),
+                child: Text('Delete',
+                    style: GoogleFonts.dmSans(
+                        color: Colors.red, fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        );
+        return confirmed ?? false;
+      },
+      onDismissed: (_) async {
+        final id = convo.id;
+        setState(() {
+          _conversations.removeWhere((c) => c.id == id);
+        });
+        await _chatProvider.deleteConversation(id);
+      },
+      child: InkWell(
+        onTap: () => _openConversation(convo),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          child: Row(
+            children: [
+              _buildAvatar(
+                displayAvatar,
+                displayName,
+                44,
+                customerDefault: !isSeller,
+                showOnline: _isPartnerOnline(other?.id),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      displayName,
+                      style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          fontWeight:
+                              hasUnread ? FontWeight.w700 : FontWeight.w600,
+                          color: AppColors.charcoal),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      convo.lastMessageText ?? 'No messages yet',
+                      style: GoogleFonts.dmSans(
+                          fontSize: 12.5,
+                          fontWeight:
+                              hasUnread ? FontWeight.w600 : FontWeight.w400,
+                          color:
+                              hasUnread ? AppColors.charcoal : AppColors.muted),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(_timeAgo(convo.lastMessageAt),
+                      style: GoogleFonts.dmSans(
+                          fontSize: 11, color: AppColors.muted)),
+                  if (hasUnread) ...[
+                    const SizedBox(height: 4),
+                    Container(
+                      constraints: const BoxConstraints(minWidth: 18),
+                      height: 18,
+                      padding: const EdgeInsets.symmetric(horizontal: 5),
+                      decoration: BoxDecoration(
+                          color: AppColors.deepRose,
+                          borderRadius: BorderRadius.circular(9)),
+                      child: Center(
+                        child: Text(unread > 99 ? '99+' : '$unread',
+                            style: GoogleFonts.dmSans(
+                                fontSize: 10,
+                                fontWeight: FontWeight.w700,
+                                color: Colors.white)),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildConversationList() {
     if (_inboxLoading) {
       return const Center(
@@ -1439,8 +2381,19 @@ class ChatDrawerState extends State<ChatDrawer>
     }
     final role = context.read<AuthProvider>().user?.role;
     final isCustomer = role == 'customer';
+    final isAdmin = role == 'admin';
 
-    if (_conversations.isEmpty) {
+    final supportConvo = _conversations.cast<ChatConversation?>().firstWhere(
+      (c) => c?.otherUser?.role == 'admin',
+      orElse: () => null,
+    );
+    final normalConvos =
+        _conversations.where((c) => c.otherUser?.role != 'admin').toList();
+
+    final showPinnedSupport = !isAdmin;
+    final showDeliverableRail = isCustomer && _deliverableStores.isNotEmpty;
+
+    if (normalConvos.isEmpty) {
       final emptyHint = role == 'rider'
           ? 'Open an assigned order to message the customer'
           : 'Tap any store below that delivers to your address or search above to chat';
@@ -1450,8 +2403,23 @@ class ChatDrawerState extends State<ChatDrawer>
         color: AppColors.deepRose,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: EdgeInsets.zero,
+          padding: const EdgeInsets.symmetric(vertical: 4),
           children: [
+            if (showDeliverableRail) _buildDeliverableStoresRow(),
+            if (showPinnedSupport) ...[
+              _buildContactSupportTile(supportConvo),
+              Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  indent: 70,
+                  color: AppColors.border),
+              _buildQuickAnswersTile(),
+              Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  indent: 70,
+                  color: AppColors.border),
+            ],
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
               child: Column(
@@ -1473,239 +2441,49 @@ class ChatDrawerState extends State<ChatDrawer>
                 ],
               ),
             ),
-            if (isCustomer && _deliverableStores.isNotEmpty) ...[
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Row(
-                  children: [
-                    Icon(Icons.local_shipping_outlined, size: 16, color: AppColors.deepRose),
-                    const SizedBox(width: 6),
-                    Text(
-                      'Shops that can deliver to you',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 13,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.charcoal,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              ..._deliverableStores.map((store) {
-                final name = store['name']?.toString() ?? 'Store';
-                final logo = store['logo_url'] as String?;
-                final address = store['address']?.toString();
-                final storeId = store['id'] as int? ?? 0;
-                return InkWell(
-                  onTap: () {
-                    if (storeId > 0) _openWithStore(storeId);
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-                    child: Row(
-                      children: [
-                        _buildAvatar(logo, name, 42, customerDefault: false),
-                        const SizedBox(width: 12),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(name,
-                                  style: GoogleFonts.dmSans(
-                                      fontSize: 13.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.charcoal),
-                                  maxLines: 1,
-                                  overflow: TextOverflow.ellipsis),
-                              if (address != null && address.isNotEmpty)
-                                Text(address,
-                                    style: GoogleFonts.dmSans(
-                                        fontSize: 11.5, color: AppColors.muted),
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis),
-                              const SizedBox(height: 3),
-                              Row(
-                                children: [
-                                  const Icon(Icons.check_circle, size: 13, color: Color(0xFF2E7D32)),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    'Delivers to your address',
-                                    style: GoogleFonts.dmSans(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.w500,
-                                      color: const Color(0xFF2E7D32),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          decoration: BoxDecoration(
-                            color: AppColors.deepRose,
-                            borderRadius: BorderRadius.circular(16),
-                          ),
-                          child: Text(
-                            'Message',
-                            style: GoogleFonts.dmSans(
-                              fontSize: 11,
-                              fontWeight: FontWeight.w600,
-                              color: Colors.white,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                );
-              }),
-            ],
           ],
         ),
       );
     }
+
     return RefreshIndicator(
       onRefresh: _loadInbox,
       color: AppColors.deepRose,
-      child: ListView.separated(
+      child: ListView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.symmetric(vertical: 4),
-        itemCount: _conversations.length + (isCustomer && _deliverableStores.isNotEmpty ? 1 : 0),
-        separatorBuilder: (_, i) => Divider(
-            height: 1, thickness: 0.5, indent: 70, color: AppColors.border),
-        itemBuilder: (context, i) {
-          if (isCustomer && _deliverableStores.isNotEmpty && i == 0) {
-            return _buildDeliverableStoresRow();
-          }
-          final convoIdx = (isCustomer && _deliverableStores.isNotEmpty) ? i - 1 : i;
-          final convo = _conversations[convoIdx];
-          final other = convo.otherUser;
-          final isSeller = other?.role == 'seller';
-          final displayName = isSeller
-              ? (convo.storeName ?? other?.fullName ?? 'Unknown')
-              : (other?.fullName ?? 'Unknown');
-          final displayAvatar = isSeller
-              ? (convo.storeLogo ?? other?.avatarUrl)
-              : other?.avatarUrl;
-          final unread = convo.unreadCount;
-          final hasUnread = unread > 0;
-
-          return Dismissible(
-            key: ValueKey(convo.id),
-            direction: DismissDirection.endToStart,
-            background: Container(
-              alignment: Alignment.centerRight,
-              padding: const EdgeInsets.only(right: 24),
-              color: Colors.red[400],
-              child: const Icon(Icons.delete_outline,
-                  color: Colors.white, size: 22),
-            ),
-            confirmDismiss: (_) async {
-              final confirmed = await showDialog<bool>(
-                context: context,
-                builder: (ctx) => AlertDialog(
-                  title: Text('Delete Conversation',
-                      style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
-                  content: Text('Delete your conversation with $displayName?',
-                      style: GoogleFonts.dmSans()),
-                  actions: [
-                    TextButton(
-                        onPressed: () => Navigator.pop(ctx, false),
-                        child: const Text('Cancel')),
-                    TextButton(
-                        onPressed: () => Navigator.pop(ctx, true),
-                        child: Text('Delete',
-                            style: TextStyle(color: Colors.red[600]))),
-                  ],
-                ),
-              );
-              if (confirmed == true) {
-                await context.read<ChatProvider>().deleteConversation(convo.id);
-                _loadInbox();
-              }
-              return false;
-            },
-            child: InkWell(
-              onTap: () => _openConversation(convo),
-              child: Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Row(
-                  children: [
-                    _buildAvatar(
-                      displayAvatar,
-                      displayName,
-                      44,
-                      customerDefault: !isSeller,
-                      showOnline: _isPartnerOnline(other?.id),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            displayName,
-                            style: GoogleFonts.dmSans(
-                                fontSize: 14,
-                                fontWeight: hasUnread
-                                    ? FontWeight.w700
-                                    : FontWeight.w600,
-                                color: AppColors.charcoal),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            convo.lastMessageText ?? 'No messages yet',
-                            style: GoogleFonts.dmSans(
-                                fontSize: 12.5,
-                                fontWeight: hasUnread
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                                color: hasUnread
-                                    ? AppColors.charcoal
-                                    : AppColors.muted),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ],
-                      ),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(_timeAgo(convo.lastMessageAt),
-                            style: GoogleFonts.dmSans(
-                                fontSize: 11, color: AppColors.muted)),
-                        if (hasUnread) ...[
-                          const SizedBox(height: 4),
-                          Container(
-                            constraints: const BoxConstraints(minWidth: 18),
-                            height: 18,
-                            padding: const EdgeInsets.symmetric(horizontal: 5),
-                            decoration: BoxDecoration(
-                                color: AppColors.deepRose,
-                                borderRadius: BorderRadius.circular(9)),
-                            child: Center(
-                              child: Text(unread > 99 ? '99+' : '$unread',
-                                  style: GoogleFonts.dmSans(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white)),
-                            ),
-                          ),
-                        ],
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          );
-        },
+        children: [
+          if (showDeliverableRail) _buildDeliverableStoresRow(),
+          if (showPinnedSupport) ...[
+            _buildContactSupportTile(supportConvo),
+            Divider(
+                height: 1,
+                thickness: 0.5,
+                indent: 70,
+                color: AppColors.border),
+            _buildQuickAnswersTile(),
+            Divider(
+                height: 1,
+                thickness: 0.5,
+                indent: 70,
+                color: AppColors.border),
+          ],
+          ...List.generate(normalConvos.length, (idx) {
+            final convo = normalConvos[idx];
+            return Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildNormalConvoTile(convo),
+                if (idx < normalConvos.length - 1)
+                  Divider(
+                      height: 1,
+                      thickness: 0.5,
+                      indent: 70,
+                      color: AppColors.border),
+              ],
+            );
+          }),
+        ],
       ),
     );
   }
@@ -1717,10 +2495,20 @@ class ChatDrawerState extends State<ChatDrawer>
   Widget _buildDetailView() {
     final convo = _activeConversation!;
     final other = convo.otherUser;
+    final isAdmin = other?.role == 'admin';
     final isSeller = other?.role == 'seller';
-    final displayName = isSeller
-        ? (convo.storeName ?? other?.fullName ?? 'Unknown')
-        : (other?.fullName ?? 'Unknown');
+    final isRider = other?.role == 'rider' || convo.isRiderThread;
+    final displayName = isAdmin
+        ? 'Contact Support'
+        : (isRider
+            ? (other?.fullName != null && other!.fullName.isNotEmpty
+                ? other.fullName
+                : (convo.storeName != null && convo.storeName!.isNotEmpty
+                    ? '${convo.storeName} Rider'
+                    : 'Rider'))
+            : (isSeller
+                ? (convo.storeName ?? other?.fullName ?? 'Unknown')
+                : (other?.fullName ?? 'Unknown')));
     final displayAvatar =
         isSeller ? (convo.storeLogo ?? other?.avatarUrl) : other?.avatarUrl;
 
@@ -1751,13 +2539,15 @@ class ChatDrawerState extends State<ChatDrawer>
                       }
                     : null,
                 borderRadius: BorderRadius.circular(20),
-                child: _buildAvatar(
-                  displayAvatar,
-                  displayName,
-                  34,
-                  customerDefault: !isSeller,
-                  showOnline: false,
-                ),
+                child: isAdmin
+                    ? _buildAdminAvatar(34, showOnline: false)
+                    : _buildAvatar(
+                        displayAvatar,
+                        displayName,
+                        34,
+                        customerDefault: !isSeller,
+                        showOnline: false,
+                      ),
               ),
               const SizedBox(width: 10),
               Expanded(
@@ -1786,6 +2576,25 @@ class ChatDrawerState extends State<ChatDrawer>
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis),
                           ),
+                          if (isAdmin) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 6, vertical: 1.5),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFBEBF0),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Text(
+                                'Admin Support',
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 9.5,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.deepRose,
+                                ),
+                              ),
+                            ),
+                          ],
                           if (isSeller && convo.storeId > 0) ...[
                             const SizedBox(width: 4),
                             Icon(Icons.chevron_right_rounded,
@@ -1804,7 +2613,10 @@ class ChatDrawerState extends State<ChatDrawer>
                                       ? const Color(0xFF31a24c)
                                       : Colors.grey[400])),
                           const SizedBox(width: 4),
-                          Text(_otherOnline ? 'Online' : 'Offline',
+                          Text(
+                              _otherOnline
+                                  ? (isAdmin ? 'Support Online' : 'Online')
+                                  : 'Offline',
                               style: GoogleFonts.dmSans(
                                   fontSize: 11, color: AppColors.muted)),
                         ],
@@ -1950,12 +2762,15 @@ class ChatDrawerState extends State<ChatDrawer>
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
               if (!isSent) ...[
-                _buildAvatar(
-                  msg.senderAvatar,
-                  msg.senderName ?? '',
-                  22,
-                  customerDefault: msg.senderRole != 'seller' && msg.senderRole != 'admin',
-                ),
+                if (msg.senderRole == 'admin')
+                  _buildAdminAvatar(22)
+                else
+                  _buildAvatar(
+                    msg.senderAvatar,
+                    msg.senderName ?? '',
+                    22,
+                    customerDefault: msg.senderRole != 'seller',
+                  ),
                 const SizedBox(width: 5),
               ],
               // Sent: menu sits left of the bubble (toward center), matching web.
@@ -1964,7 +2779,14 @@ class ChatDrawerState extends State<ChatDrawer>
                 const SizedBox(width: 4),
               ],
               Flexible(
-                child: isOrderCard
+                child: GestureDetector(
+                  onLongPress: !msg.isDeleted
+                      ? () {
+                          HapticFeedback.mediumImpact();
+                          _showMessageActionModal(group.first);
+                        }
+                      : null,
+                  child: isOrderCard
                     ? Column(
                         crossAxisAlignment: isSent
                             ? CrossAxisAlignment.end
@@ -2123,6 +2945,7 @@ class ChatDrawerState extends State<ChatDrawer>
                   ),
                 ),
               ),
+            ),
               // Received: menu sits right of the bubble (toward center).
               if (!isSent && !msg.isDeleted) ...[
                 const SizedBox(width: 4),
@@ -2143,46 +2966,366 @@ class ChatDrawerState extends State<ChatDrawer>
   }
 
   Widget _buildMessageMenu(ChatMessage msg) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.lightImpact();
+          _showMessageActionModal(msg);
+        },
+        borderRadius: BorderRadius.circular(14),
+        splashColor: AppColors.roseCta.withOpacity(0.12),
+        highlightColor: AppColors.roseCta.withOpacity(0.06),
+        child: Container(
+          width: 28,
+          height: 28,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.black.withOpacity(0.035),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.black.withOpacity(0.05),
+              width: 0.8,
+            ),
+          ),
+          child: Icon(
+            Icons.more_vert_rounded,
+            size: 17,
+            color: AppColors.muted.withOpacity(0.85),
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showMessageActionModal(ChatMessage msg) {
     final isSent = msg.senderId == _myId;
-    return PopupMenuButton<String>(
-      onSelected: (action) {
-        if (action == 'copy')
-          _copyMessage(msg);
-        else if (action == 'reply')
-          _setReplyTo(msg);
-        else if (action == 'delete') _deleteMessage(msg);
+    final hasText = msg.text != null && msg.text!.trim().isNotEmpty;
+    final isImage = msg.messageType == 'image' && msg.imageUrl != null;
+    final senderName = isSent
+        ? 'You'
+        : (msg.senderName != null && msg.senderName!.isNotEmpty
+            ? msg.senderName!
+            : (_activeConversation?.storeName ??
+                _activeConversation?.otherUser?.fullName ??
+                'Message'));
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      barrierColor: Colors.black.withOpacity(0.38),
+      builder: (sheetCtx) {
+        return SafeArea(
+          child: Container(
+            margin: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(24),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.14),
+                  blurRadius: 24,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // ── Drag handle ──
+                Center(
+                  child: Container(
+                    margin: const EdgeInsets.only(top: 10, bottom: 12),
+                    width: 36,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: Colors.grey[300],
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+
+                // ── Message Preview Card ──
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 14),
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFAF7F8),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: const Color(0x1F6B4C3B),
+                      width: 0.8,
+                    ),
+                  ),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Container(
+                        width: 3.5,
+                        height: 36,
+                        margin: const EdgeInsets.only(right: 10, top: 1),
+                        decoration: BoxDecoration(
+                          color: isSent ? AppColors.roseCta : AppColors.sage,
+                          borderRadius: BorderRadius.circular(2),
+                        ),
+                      ),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Text(
+                                  senderName,
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w700,
+                                    color: isSent
+                                        ? AppColors.roseCta
+                                        : AppColors.charcoal,
+                                  ),
+                                ),
+                                Text(
+                                  _formatTime(msg.createdAt),
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 10.5,
+                                    color: AppColors.muted,
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 3),
+                            if (isImage)
+                              Row(
+                                children: [
+                                  Icon(Icons.image_outlined,
+                                      size: 13, color: AppColors.muted),
+                                  const SizedBox(width: 4),
+                                  Expanded(
+                                    child: Text(
+                                      hasText ? msg.text! : 'Photo',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 12,
+                                        color: AppColors.charcoal
+                                            .withOpacity(0.75),
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else if (msg.messageType == 'order_card')
+                              Row(
+                                children: [
+                                  Icon(Icons.receipt_long_rounded,
+                                      size: 13, color: AppColors.muted),
+                                  const SizedBox(width: 4),
+                                  Text(
+                                    'Order summary card',
+                                    style: GoogleFonts.dmSans(
+                                      fontSize: 12,
+                                      color: AppColors.charcoal
+                                          .withOpacity(0.75),
+                                    ),
+                                  ),
+                                ],
+                              )
+                            else
+                              Text(
+                                msg.text ?? '',
+                                maxLines: 2,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 12.5,
+                                  color: AppColors.charcoal.withOpacity(0.85),
+                                  height: 1.3,
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      if (isImage) ...[
+                        const SizedBox(width: 10),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(8),
+                          child: CachedNetworkImage(
+                            imageUrl: msg.imageUrl!,
+                            width: 38,
+                            height: 38,
+                            fit: BoxFit.cover,
+                            errorWidget: (_, __, ___) => Container(
+                              width: 38,
+                              height: 38,
+                              color: Colors.grey[200],
+                              child: const Icon(Icons.broken_image_rounded,
+                                  size: 16, color: Colors.grey),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 8),
+
+                // ── Action Options ──
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  child: Column(
+                    children: [
+                      // Reply
+                      _buildModalActionTile(
+                        icon: Icons.reply_rounded,
+                        iconColor: AppColors.roseCta,
+                        badgeColor: const Color(0xFFFDEEF2),
+                        title: 'Reply',
+                        subtitle: 'Quote this message in your response',
+                        onTap: () {
+                          Navigator.pop(sheetCtx);
+                          _setReplyTo(msg);
+                        },
+                      ),
+
+                      // Copy text (if text exists)
+                      if (hasText) ...[
+                        const SizedBox(height: 4),
+                        _buildModalActionTile(
+                          icon: Icons.copy_rounded,
+                          iconColor: const Color(0xFF4A4458),
+                          badgeColor: const Color(0xFFF0EFF4),
+                          title: 'Copy Text',
+                          subtitle: 'Copy content to clipboard',
+                          onTap: () {
+                            Navigator.pop(sheetCtx);
+                            _copyMessage(msg);
+                          },
+                        ),
+                      ],
+
+                      // View Photo (if image exists)
+                      if (isImage) ...[
+                        const SizedBox(height: 4),
+                        _buildModalActionTile(
+                          icon: Icons.fullscreen_rounded,
+                          iconColor: const Color(0xFF1976D2),
+                          badgeColor: const Color(0xFFE3F2FD),
+                          title: 'View Photo',
+                          subtitle: 'Open photo in full size',
+                          onTap: () {
+                            Navigator.pop(sheetCtx);
+                            _viewImage(msg.imageUrl!);
+                          },
+                        ),
+                      ],
+
+                      // Delete (only if sent by current user)
+                      if (isSent) ...[
+                        const SizedBox(height: 4),
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 3),
+                          child: Divider(
+                              height: 1, color: Colors.black.withOpacity(0.06)),
+                        ),
+                        _buildModalActionTile(
+                          icon: Icons.delete_outline_rounded,
+                          iconColor: const Color(0xFFE53935),
+                          badgeColor: const Color(0xFFFFEBEE),
+                          title: 'Delete Message',
+                          titleColor: const Color(0xFFE53935),
+                          subtitle: 'Remove message for everyone',
+                          subtitleColor: const Color(0xFFEF9A9A),
+                          onTap: () {
+                            Navigator.pop(sheetCtx);
+                            _deleteMessage(msg);
+                          },
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+
+                const SizedBox(height: 12),
+              ],
+            ),
+          ),
+        );
       },
-      itemBuilder: (ctx) => [
-        PopupMenuItem(
-            value: 'copy',
-            child: Row(children: [
-              const Icon(Icons.copy_rounded, size: 18),
-              const SizedBox(width: 8),
-              const Text('Copy')
-            ])),
-        PopupMenuItem(
-            value: 'reply',
-            child: Row(children: [
-              const Icon(Icons.reply_rounded, size: 18),
-              const SizedBox(width: 8),
-              const Text('Reply')
-            ])),
-        if (isSent)
-          PopupMenuItem(
-              value: 'delete',
-              child: Row(children: [
-                const Icon(Icons.delete_rounded, size: 18, color: Colors.red),
-                const SizedBox(width: 8),
-                const Text('Delete', style: TextStyle(color: Colors.red))
-              ])),
-      ],
-      offset: const Offset(0, -100),
-      child: Container(
-        width: 32,
-        height: 32,
-        alignment: Alignment.center,
-        child: Icon(Icons.more_vert_rounded,
-            size: 18, color: AppColors.muted.withOpacity(0.6)),
+    );
+  }
+
+  Widget _buildModalActionTile({
+    required IconData icon,
+    required Color iconColor,
+    required Color badgeColor,
+    required String title,
+    String? subtitle,
+    Color? titleColor,
+    Color? subtitleColor,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: () {
+          HapticFeedback.selectionClick();
+          onTap();
+        },
+        borderRadius: BorderRadius.circular(14),
+        splashColor: iconColor.withOpacity(0.08),
+        highlightColor: iconColor.withOpacity(0.04),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          child: Row(
+            children: [
+              Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: badgeColor,
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(icon, size: 20, color: iconColor),
+              ),
+              const SizedBox(width: 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w600,
+                        color: titleColor ?? AppColors.charcoal,
+                      ),
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 1.5),
+                      Text(
+                        subtitle,
+                        style: GoogleFonts.dmSans(
+                          fontSize: 11.5,
+                          color: subtitleColor ?? AppColors.muted,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              Icon(
+                Icons.chevron_right_rounded,
+                size: 18,
+                color: Colors.grey.withOpacity(0.4),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -2202,17 +3345,87 @@ class ChatDrawerState extends State<ChatDrawer>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('Delete message?',
-            style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
-        content:
-            Text('This action cannot be undone.', style: GoogleFonts.dmSans()),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
+        contentPadding: const EdgeInsets.fromLTRB(22, 22, 22, 14),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 52,
+              height: 52,
+              decoration: const BoxDecoration(
+                color: Color(0xFFFFEBEE),
+                shape: BoxShape.circle,
+              ),
+              child: const Icon(
+                Icons.delete_outline_rounded,
+                size: 26,
+                color: Color(0xFFE53935),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Text(
+              'Delete message?',
+              style: GoogleFonts.dmSans(
+                fontSize: 17,
+                fontWeight: FontWeight.w700,
+                color: AppColors.charcoal,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'This message will be removed for everyone. This action cannot be undone.',
+              textAlign: TextAlign.center,
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                color: AppColors.muted,
+                height: 1.35,
+              ),
+            ),
+          ],
+        ),
+        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
         actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, false),
-              child: const Text('Cancel')),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Delete', style: TextStyle(color: Colors.red[600]))),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: AppColors.charcoal,
+                    side: BorderSide(color: Colors.grey.withOpacity(0.3)),
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'Cancel',
+                    style: GoogleFonts.dmSans(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx, true),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFE53935),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    padding: const EdgeInsets.symmetric(vertical: 12),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: Text(
+                    'Delete',
+                    style: GoogleFonts.dmSans(fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -2230,7 +3443,9 @@ class ChatDrawerState extends State<ChatDrawer>
         showToast(context, 'Failed to delete message', isError: true);
       }
     } catch (e) {
-      showToast(context, 'Failed to delete message: $e', isError: true);
+      if (mounted) {
+        showToast(context, 'Failed to delete message: $e', isError: true);
+      }
     }
   }
 
