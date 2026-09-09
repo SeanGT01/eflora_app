@@ -94,6 +94,10 @@ class _LandingHeroSlide {
   final String subtitle;
   final String imageUrl;
   final LinearGradient gradient;
+  /// Per-slide extra scale applied to the image on top of the pose scale.
+  /// Use values > 1.0 when the PNG has extra transparent padding that makes
+  /// the visible content appear smaller than the other slide images.
+  final double imageScale;
 
   const _LandingHeroSlide({
     required this.eyebrow,
@@ -102,6 +106,7 @@ class _LandingHeroSlide {
     required this.subtitle,
     required this.imageUrl,
     required this.gradient,
+    this.imageScale = 1.0,
   });
 }
 
@@ -240,6 +245,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             'Roses, tulips, lilies & more — handpicked from local farms, delivered fresh to your door.',
         imageUrl: ApiService.assetUrl(
             '/static/images/category_images/fresh_flowers.png'),
+        // The fresh_flowers PNG has extra transparent padding, so we boost
+        // its intrinsic scale to match the visual size of the other slides.
+        imageScale: 1.35,
         gradient: _heroGradient(
           [
             Color(0xFFC24E68),
@@ -1080,7 +1088,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           ..setEntry(3, 2, 0.001)
           ..rotateY(p.rotY)
           ..translate(p.tx)
-          ..scale(p.scale, p.scale),
+          ..scale(p.scale * slide.imageScale, p.scale * slide.imageScale),
         child: CachedNetworkImage(
           imageUrl: slide.imageUrl,
           width: w,
