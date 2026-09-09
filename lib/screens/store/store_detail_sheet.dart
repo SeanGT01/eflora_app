@@ -33,6 +33,8 @@ class StoreDetailSheet extends StatelessWidget {
       initialChildSize: 0.7,
       minChildSize: 0.4,
       maxChildSize: 0.92,
+      snap: true,
+      snapSizes: const [0.4, 0.7, 0.92],
       builder: (context, scrollController) => Container(
         decoration: const BoxDecoration(
           color: AppColors.pageCream,
@@ -420,6 +422,7 @@ class StoreDetailSheet extends StatelessWidget {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      useSafeArea: true,
       builder: (_) => _ReviewsModal(store: store),
     );
   }
@@ -857,6 +860,7 @@ class _StoreDeliveryMapPreviewState extends State<_StoreDeliveryMapPreview> {
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      useSafeArea: true,
       builder: (_) => _StoreDeliveryMapSheet(
         store: widget.store,
         mapboxToken: token,
@@ -1148,25 +1152,15 @@ class _StoreDeliveryMapSheetState extends State<_StoreDeliveryMapSheet> {
               const Divider(height: 1, color: Color(0x296B4C3B)),
               Expanded(
                 child: _mapReadyToMount
-                    ? _StoreDeliveryMapBody(
-                        store: store,
-                        interactive: true,
-                        compact: false,
-                        mapboxToken: widget.mapboxToken,
-                      )
-                    : const ColoredBox(
-                        color: Color(0xFFF0EBE6),
-                        child: Center(
-                          child: SizedBox(
-                            width: 28,
-                            height: 28,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2.5,
-                              color: AppColors.deepRose,
-                            ),
-                          ),
+                    ? RepaintBoundary(
+                        child: _StoreDeliveryMapBody(
+                          store: store,
+                          interactive: true,
+                          compact: false,
+                          mapboxToken: widget.mapboxToken,
                         ),
-                      ),
+                      )
+                    : _StaticMapFallback(store: store),
               ),
               Container(
                 width: double.infinity,
@@ -1686,8 +1680,9 @@ class _ReviewsModal extends StatelessWidget {
     final avg = store.avgRating ?? 0.0;
     final count = store.reviewCount ?? reviews.length;
 
-    return Container(
-      constraints: BoxConstraints(maxHeight: maxH),
+    return RepaintBoundary(
+      child: Container(
+        constraints: BoxConstraints(maxHeight: maxH),
       decoration: const BoxDecoration(
         color: Color(0xFFFBF7F4),
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
@@ -1786,8 +1781,9 @@ class _ReviewsModal extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 
   Widget _overview({
     required double avg,

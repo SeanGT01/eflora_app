@@ -371,11 +371,16 @@ class _StorePageState extends State<StorePage>
     final url = store.effectiveLogoUrl;
     if (url != null && url.isNotEmpty) {
       final imageUrl = url.startsWith('http') ? url : ApiService.assetUrl(url);
+      final cacheSize = (size * 2.5).round();
       return CachedNetworkImage(
         imageUrl: imageUrl,
         fit: BoxFit.cover,
         width: size,
         height: size,
+        memCacheWidth: cacheSize,
+        memCacheHeight: cacheSize,
+        maxWidthDiskCache: cacheSize,
+        maxHeightDiskCache: cacheSize,
         errorWidget: (_, __, ___) => _logoFallback(store, size),
       );
     }
@@ -514,6 +519,7 @@ class _StorePageState extends State<StorePage>
       child: Padding(
         padding: const EdgeInsets.all(28),
         child: GlassCard(
+          blur: 0,
           padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -667,6 +673,7 @@ class _GlassCircleAction extends StatelessWidget {
     return GlassCard(
       radius: AppRadius.pill,
       padding: EdgeInsets.zero,
+      blur: 0,
       width: 40,
       height: 40,
       onTap: onTap,
@@ -696,47 +703,49 @@ class _ProductListTile extends StatelessWidget {
     final imageUrl = product.primaryImageUrl;
     final inStock = product.hasAnySellableStock;
 
-    return GlassCard(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(10),
-      onTap: onTap,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // Image
-          ClipRRect(
-            borderRadius: BorderRadius.circular(14),
-            child: SizedBox(
-              width: 100,
-              height: 100,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  const DecoratedBox(
-                    decoration: BoxDecoration(gradient: AppColors.imageWash),
-                  ),
-                  if (imageUrl != null && imageUrl.isNotEmpty)
-                    CachedNetworkImage(
-                      imageUrl: imageUrl,
-                      fit: BoxFit.cover,
-                      placeholder: (_, __) => const Center(
-                        child: SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(
-                              strokeWidth: 2, color: AppColors.roseCta),
+    return RepaintBoundary(
+      child: GlassCard(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(10),
+        blur: 0,
+        onTap: onTap,
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Image
+            ClipRRect(
+              borderRadius: BorderRadius.circular(14),
+              child: SizedBox(
+                width: 100,
+                height: 100,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    const DecoratedBox(
+                      decoration: BoxDecoration(gradient: AppColors.imageWash),
+                    ),
+                    if (imageUrl != null && imageUrl.isNotEmpty)
+                      CachedNetworkImage(
+                        imageUrl: imageUrl,
+                        fit: BoxFit.cover,
+                        memCacheWidth: 260,
+                        memCacheHeight: 260,
+                        maxWidthDiskCache: 260,
+                        maxHeightDiskCache: 260,
+                        placeholder: (_, __) => const DecoratedBox(
+                          decoration:
+                              BoxDecoration(gradient: AppColors.imageWash),
                         ),
-                      ),
-                      errorWidget: (_, __, ___) => const Center(
+                        errorWidget: (_, __, ___) => const Center(
+                          child: Icon(Icons.local_florist,
+                              size: 28, color: Color(0x8CB5445A)),
+                        ),
+                      )
+                    else
+                      const Center(
                         child: Icon(Icons.local_florist,
                             size: 28, color: Color(0x8CB5445A)),
                       ),
-                    )
-                  else
-                    const Center(
-                      child: Icon(Icons.local_florist,
-                          size: 28, color: Color(0x8CB5445A)),
-                    ),
                   if (!inStock)
                     Container(
                       color: AppColors.charcoal.withValues(alpha: 0.72),
@@ -897,8 +906,9 @@ class _ProductListTile extends StatelessWidget {
           ),
         ],
       ),
-    );
-  }
+    ),
+  );
+}
 }
 
 /// Muted stand-in for [GradientCircleButton] when the action is unavailable.
@@ -934,73 +944,76 @@ class _CategoryTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
-      margin: const EdgeInsets.only(bottom: 10),
-      padding: const EdgeInsets.all(14),
-      onTap: onTap,
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  category.name,
-                  style: GoogleFonts.cormorantGaramond(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.charcoal,
-                  ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 3),
-                Row(
-                  children: [
-                    if (category.mainCategoryName != null) ...[
-                      Text(
-                        category.mainCategoryName!.toUpperCase(),
-                        style: GoogleFonts.dmSans(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.labelPink,
-                          letterSpacing: 1,
-                        ),
-                      ),
-                      Text(
-                        '  ·  ',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.muted.withValues(alpha: 0.5),
-                        ),
-                      ),
-                    ],
-                    Text(
-                      '${category.productCount} product${category.productCount == 1 ? '' : 's'}',
-                      style: GoogleFonts.dmSans(
-                          fontSize: 11, color: AppColors.muted),
-                    ),
-                  ],
-                ),
-                if (category.description != null &&
-                    category.description!.isNotEmpty) ...[
-                  const SizedBox(height: 3),
+    return RepaintBoundary(
+      child: GlassCard(
+        margin: const EdgeInsets.only(bottom: 10),
+        padding: const EdgeInsets.all(14),
+        blur: 0,
+        onTap: onTap,
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   Text(
-                    category.description!,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 10.5,
-                      color: AppColors.muted.withValues(alpha: 0.75),
+                    category.name,
+                    style: GoogleFonts.cormorantGaramond(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.charcoal,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
+                  const SizedBox(height: 3),
+                  Row(
+                    children: [
+                      if (category.mainCategoryName != null) ...[
+                        Text(
+                          category.mainCategoryName!.toUpperCase(),
+                          style: GoogleFonts.dmSans(
+                            fontSize: 9.5,
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.labelPink,
+                            letterSpacing: 1,
+                          ),
+                        ),
+                        Text(
+                          '  ·  ',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 10,
+                            fontWeight: FontWeight.w800,
+                            color: AppColors.muted.withValues(alpha: 0.5),
+                          ),
+                        ),
+                      ],
+                      Text(
+                        '${category.productCount} product${category.productCount == 1 ? '' : 's'}',
+                        style: GoogleFonts.dmSans(
+                            fontSize: 11, color: AppColors.muted),
+                      ),
+                    ],
+                  ),
+                  if (category.description != null &&
+                      category.description!.isNotEmpty) ...[
+                    const SizedBox(height: 3),
+                    Text(
+                      category.description!,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 10.5,
+                        color: AppColors.muted.withValues(alpha: 0.75),
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
                 ],
-              ],
+              ),
             ),
-          ),
-          const Icon(Icons.chevron_right, size: 20, color: AppColors.dustyRose),
-        ],
+            const Icon(Icons.chevron_right, size: 20, color: AppColors.dustyRose),
+          ],
+        ),
       ),
     );
   }
@@ -1181,6 +1194,7 @@ class _StoreCategoryProductsPageState
                       child: Padding(
                         padding: const EdgeInsets.all(28),
                         child: GlassCard(
+                          blur: 0,
                           padding: const EdgeInsets.symmetric(
                               horizontal: 28, vertical: 32),
                           child: Column(
