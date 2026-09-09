@@ -137,6 +137,7 @@ class _StorePageState extends State<StorePage>
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
+      useSafeArea: true,
       builder: (sheetCtx) => StoreDetailSheet(
         store: _store!,
         onMessage: () async {

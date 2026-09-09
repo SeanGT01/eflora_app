@@ -11,7 +11,6 @@ import '../../config/mapbox_config.dart';
 import '../../models/store.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/adaptive_blur.dart';
 import '../../widgets/glass.dart';
 
 /// Store hero gradient, mirroring the website's store banner panel.
@@ -34,19 +33,22 @@ class StoreDetailSheet extends StatelessWidget {
       initialChildSize: 0.7,
       minChildSize: 0.4,
       maxChildSize: 0.92,
-      builder: (context, scrollController) => ClipRRect(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        child: AdaptiveBlur(
-          sigma: 18,
-          child: Container(
-            decoration: BoxDecoration(
-              color: AppColors.pageCream.withValues(alpha: 0.92),
-              borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-              border: const Border(
-                top: BorderSide(color: AppColors.glassBorder, width: 1),
-              ),
+      builder: (context, scrollController) => Container(
+        decoration: const BoxDecoration(
+          color: AppColors.pageCream,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(28)),
+          boxShadow: [
+            BoxShadow(
+              color: Color(0x1F40182E),
+              blurRadius: 24,
+              offset: Offset(0, -6),
             ),
-            child: Column(
+          ],
+          border: Border(
+            top: BorderSide(color: AppColors.glassBorder, width: 1),
+          ),
+        ),
+        child: Column(
               children: [
                 // Drag handle
                 Padding(
@@ -121,6 +123,7 @@ class StoreDetailSheet extends StatelessWidget {
                         _sectionLabel('About'),
                         const SizedBox(height: 8),
                         GlassCard(
+                          blur: 0,
                           padding: const EdgeInsets.all(14),
                           child: Text(
                             store.description!,
@@ -167,8 +170,6 @@ class StoreDetailSheet extends StatelessWidget {
               ],
             ),
           ),
-        ),
-      ),
     );
   }
 
@@ -182,130 +183,163 @@ class StoreDetailSheet extends StatelessWidget {
             : ApiService.assetUrl(bannerUrl))
         : ApiService.assetUrl('/static/images/store-hero-florals.jpg');
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
+    return RepaintBoundary(
+      child: ClipRRect(
         borderRadius: BorderRadius.circular(28),
-        gradient: hasBanner ? null : _storeHeroGradient,
-        image: DecorationImage(
-          image: CachedNetworkImageProvider(resolvedBannerUrl),
-          fit: BoxFit.cover,
-        ),
-      ),
-      child: Stack(
-        children: [
-          Row(children: [
-          Container(
-            width: 64,
-            height: 64,
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.22),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.55),
-                width: 1,
+        child: Stack(
+          children: [
+            // Background image or gradient
+            Positioned.fill(
+              child: CachedNetworkImage(
+                imageUrl: resolvedBannerUrl,
+                fit: BoxFit.cover,
+                memCacheWidth: 720,
+                maxWidthDiskCache: 720,
+                placeholder: (_, __) => Container(
+                  decoration: const BoxDecoration(gradient: _storeHeroGradient),
+                ),
+                errorWidget: (_, __, ___) => Container(
+                  decoration: const BoxDecoration(gradient: _storeHeroGradient),
+                ),
               ),
             ),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(17),
-              child: _buildLogo(64),
-            ),
-          ),
-          const SizedBox(width: 14),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(store.name,
-                    style: GoogleFonts.cormorantGaramond(
-                      fontSize: 24,
-                      fontWeight: FontWeight.w600,
-                      color: Colors.white,
-                      height: 1.15,
-                    )),
-                const SizedBox(height: 6),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: isOpen
-                        ? const Color(0x3348BB78)
-                        : const Color(0x33E05353),
-                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                    border: Border.all(
-                      color: isOpen
-                          ? const Color(0x9948BB78)
-                          : const Color(0x99E05353),
-                      width: 1,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 7,
-                        height: 7,
-                        decoration: BoxDecoration(
-                          color: isOpen
-                              ? const Color(0xFFB6F0C4)
-                              : const Color(0xFFFFB4B4),
-                          shape: BoxShape.circle,
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Text(
-                        isOpen ? 'Open Now' : 'Closed',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w700,
-                          color: Colors.white,
-                          letterSpacing: 0.2,
-                        ),
-                      ),
+            // Soft overlay to ensure high contrast for text over any user-uploaded photo
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.18),
+                      Colors.black.withValues(alpha: 0.55),
                     ],
                   ),
                 ),
-              ],
+              ),
             ),
-          ),
-          if (onMessage != null) ...[
-            const SizedBox(width: 12),
-            GestureDetector(
-              onTap: onMessage,
-              child: Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 13, vertical: 9),
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.92),
-                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(Icons.chat_bubble_outline,
-                        size: 14, color: AppColors.roseCta),
-                    const SizedBox(width: 5),
-                    Text(
-                      'Message',
-                      style: GoogleFonts.dmSans(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.roseCta,
+            // Header content
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Row(
+                children: [
+                  Container(
+                    width: 64,
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.22),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.55),
+                        width: 1,
+                      ),
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(17),
+                      child: _buildLogo(64),
+                    ),
+                  ),
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          store.name,
+                          style: GoogleFonts.cormorantGaramond(
+                            fontSize: 24,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.white,
+                            height: 1.15,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 10, vertical: 5),
+                          decoration: BoxDecoration(
+                            color: isOpen
+                                ? const Color(0x3348BB78)
+                                : const Color(0x33E05353),
+                            borderRadius: BorderRadius.circular(AppRadius.pill),
+                            border: Border.all(
+                              color: isOpen
+                                  ? const Color(0x9948BB78)
+                                  : const Color(0x99E05353),
+                              width: 1,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Container(
+                                width: 7,
+                                height: 7,
+                                decoration: BoxDecoration(
+                                  color: isOpen
+                                      ? const Color(0xFFB6F0C4)
+                                      : const Color(0xFFFFB4B4),
+                                  shape: BoxShape.circle,
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                isOpen ? 'Open Now' : 'Closed',
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.w700,
+                                  color: Colors.white,
+                                  letterSpacing: 0.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  if (onMessage != null) ...[
+                    const SizedBox(width: 12),
+                    GestureDetector(
+                      onTap: onMessage,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 13, vertical: 9),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withValues(alpha: 0.92),
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.chat_bubble_outline,
+                                size: 14, color: AppColors.roseCta),
+                            const SizedBox(width: 5),
+                            Text(
+                              'Message',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.roseCta,
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                   ],
-                ),
+                ],
               ),
             ),
           ],
-          ]),
-        ],
+        ),
       ),
     );
   }
 
   Widget _buildStatsRow(BuildContext context) {
     return GlassCard(
+      blur: 0,
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 6),
       child: Row(
         children: [
@@ -483,6 +517,7 @@ class StoreDetailSheet extends StatelessWidget {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10),
       child: GlassCard(
+        blur: 0,
         padding: const EdgeInsets.all(12),
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -570,6 +605,7 @@ class StoreDetailSheet extends StatelessWidget {
     }
 
     return GlassCard(
+      blur: 0,
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       child: Column(
         children: List.generate(daysOfWeek.length, (idx) {
@@ -717,11 +753,16 @@ class StoreDetailSheet extends StatelessWidget {
     final url = store.effectiveLogoUrl;
     if (url != null && url.isNotEmpty) {
       final imageUrl = url.startsWith('http') ? url : ApiService.assetUrl(url);
+      final cacheSize = (size * 2.5).round();
       return CachedNetworkImage(
         imageUrl: imageUrl,
         fit: BoxFit.cover,
         width: size,
         height: size,
+        memCacheWidth: cacheSize,
+        memCacheHeight: cacheSize,
+        maxWidthDiskCache: cacheSize,
+        maxHeightDiskCache: cacheSize,
         errorWidget: (_, __, ___) => _logoFallback(size),
       );
     }
@@ -763,11 +804,52 @@ class _StoreDeliveryMapPreview extends StatefulWidget {
 
 class _StoreDeliveryMapPreviewState extends State<_StoreDeliveryMapPreview> {
   late final Future<String> _tokenFuture;
+  bool _canLoadMap = false;
+  Animation<double>? _routeAnimation;
+  AnimationStatusListener? _statusListener;
 
   @override
   void initState() {
     super.initState();
     _tokenFuture = MapboxConfig.publicToken();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (_routeAnimation == null) {
+      final animation = ModalRoute.of(context)?.animation;
+      if (animation != null) {
+        _routeAnimation = animation;
+        if (animation.isCompleted) {
+          _canLoadMap = true;
+        } else {
+          _statusListener = (status) {
+            if (status == AnimationStatus.completed) {
+              if (_statusListener != null) {
+                animation.removeStatusListener(_statusListener!);
+                _statusListener = null;
+              }
+              if (mounted) setState(() => _canLoadMap = true);
+            }
+          };
+          animation.addStatusListener(_statusListener!);
+        }
+      } else {
+        Future<void>.delayed(const Duration(milliseconds: 300), () {
+          if (mounted) setState(() => _canLoadMap = true);
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_routeAnimation != null && _statusListener != null) {
+      _routeAnimation!.removeStatusListener(_statusListener!);
+      _statusListener = null;
+    }
+    super.dispose();
   }
 
   void _openExpandedMap(BuildContext context, [String? token]) {
@@ -785,67 +867,39 @@ class _StoreDeliveryMapPreviewState extends State<_StoreDeliveryMapPreview> {
   @override
   Widget build(BuildContext context) {
     final store = widget.store;
-    return FutureBuilder<String>(
-      future: _tokenFuture,
-      builder: (context, snap) {
-        final token = snap.data ?? '';
-        if (token.isEmpty) {
-          return GestureDetector(
-            onTap: () => _openExpandedMap(context, token),
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(AppRadius.lg),
-              child: SizedBox(
-                height: 190,
-                width: double.infinity,
-                child: snap.connectionState == ConnectionState.waiting
-                    ? const ColoredBox(
-                        color: Color(0xFFF0EBE6),
-                        child: Center(
-                          child: SizedBox(
-                            width: 22,
-                            height: 22,
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: AppColors.deepRose,
-                            ),
-                          ),
-                        ),
-                      )
-                    : _StaticMapFallback(store: store),
-              ),
-            ),
-          );
-        }
-
-        return GestureDetector(
-          onTap: () => _openExpandedMap(context, token),
+    if (!_canLoadMap) {
+      return RepaintBoundary(
+        child: GestureDetector(
+          onTap: () => _openExpandedMap(context),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(AppRadius.lg),
             child: SizedBox(
               height: 190,
               width: double.infinity,
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  final w = constraints.maxWidth.round().clamp(280, 640);
-                  const h = 190;
-                  final url = _storeStaticMapUrl(
-                    store,
-                    token: token,
-                    width: w,
-                    height: h,
-                  );
-                  return Stack(
-                    fit: StackFit.expand,
-                    children: [
-                      ColoredBox(
-                        color: const Color(0xFFF0EBE6),
-                        child: CachedNetworkImage(
-                          imageUrl: url,
-                          fit: BoxFit.cover,
-                          width: double.infinity,
-                          height: double.infinity,
-                          fadeInDuration: const Duration(milliseconds: 180),
-                          placeholder: (_, __) => const Center(
+              child: _StaticMapFallback(store: store),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return RepaintBoundary(
+      child: FutureBuilder<String>(
+        future: _tokenFuture,
+        builder: (context, snap) {
+          final token = snap.data ?? '';
+          if (token.isEmpty) {
+            return GestureDetector(
+              onTap: () => _openExpandedMap(context, token),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(AppRadius.lg),
+                child: SizedBox(
+                  height: 190,
+                  width: double.infinity,
+                  child: snap.connectionState == ConnectionState.waiting
+                      ? const ColoredBox(
+                          color: Color(0xFFF0EBE6),
+                          child: Center(
                             child: SizedBox(
                               width: 22,
                               height: 22,
@@ -855,53 +909,95 @@ class _StoreDeliveryMapPreviewState extends State<_StoreDeliveryMapPreview> {
                               ),
                             ),
                           ),
-                          errorWidget: (_, __, ___) =>
-                              _StaticMapFallback(store: store),
-                        ),
-                      ),
-                      Center(
-                        child: Transform.translate(
-                          offset: const Offset(0, -10),
-                          child: _StoreMapPin(store: store, size: 40),
-                        ),
-                      ),
-                      Positioned(
-                        right: 10,
-                        bottom: 10,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 9, vertical: 5),
-                          decoration: BoxDecoration(
-                            color: AppColors.warmWhite.withValues(alpha: 0.94),
-                            borderRadius: BorderRadius.circular(AppRadius.pill),
-                            border: Border.all(color: AppColors.glassBorder),
+                        )
+                      : _StaticMapFallback(store: store),
+                ),
+              ),
+            );
+          }
+
+          return GestureDetector(
+            onTap: () => _openExpandedMap(context, token),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(AppRadius.lg),
+              child: SizedBox(
+                height: 190,
+                width: double.infinity,
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final w = constraints.maxWidth.round().clamp(280, 640);
+                    const h = 190;
+                    final url = _storeStaticMapUrl(
+                      store,
+                      token: token,
+                      width: w,
+                      height: h,
+                    );
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        ColoredBox(
+                          color: const Color(0xFFF0EBE6),
+                          child: CachedNetworkImage(
+                            imageUrl: url,
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            height: double.infinity,
+                            memCacheWidth: 640,
+                            memCacheHeight: 380,
+                            maxWidthDiskCache: 640,
+                            maxHeightDiskCache: 380,
+                            fadeInDuration: const Duration(milliseconds: 180),
+                            placeholder: (_, __) =>
+                                _StaticMapFallback(store: store),
+                            errorWidget: (_, __, ___) =>
+                                _StaticMapFallback(store: store),
                           ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(Icons.map_outlined,
-                                  size: 13, color: AppColors.deepRose),
-                              const SizedBox(width: 5),
-                              Text(
-                                'View delivery map',
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 10.5,
-                                  fontWeight: FontWeight.w700,
-                                  color: AppColors.charcoal,
+                        ),
+                        Center(
+                          child: Transform.translate(
+                            offset: const Offset(0, -10),
+                            child: _StoreMapPin(store: store, size: 40),
+                          ),
+                        ),
+                        Positioned(
+                          right: 10,
+                          bottom: 10,
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 9, vertical: 5),
+                            decoration: BoxDecoration(
+                              color: AppColors.warmWhite.withValues(alpha: 0.94),
+                              borderRadius: BorderRadius.circular(AppRadius.pill),
+                              border: Border.all(color: AppColors.glassBorder),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.map_outlined,
+                                    size: 13, color: AppColors.deepRose),
+                                const SizedBox(width: 5),
+                                Text(
+                                  'View delivery map',
+                                  style: GoogleFonts.dmSans(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w700,
+                                    color: AppColors.charcoal,
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
-                      ),
-                    ],
-                  );
-                },
+                      ],
+                    );
+                  },
+                ),
               ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -1525,6 +1621,10 @@ class _StoreMapPin extends StatelessWidget {
               : CachedNetworkImage(
                   imageUrl: imageUrl,
                   fit: BoxFit.cover,
+                  memCacheWidth: 100,
+                  memCacheHeight: 100,
+                  maxWidthDiskCache: 100,
+                  maxHeightDiskCache: 100,
                   errorWidget: (_, __, ___) => Center(
                     child: Text(
                       initial,
