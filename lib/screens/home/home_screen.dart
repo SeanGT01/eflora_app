@@ -784,7 +784,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 620;
         // Uniform, fixed banner height across all slides and device heights.
-        final heroHeight = isWide ? 214.0 : 190.0;
+        final heroHeight = isWide ? 226.0 : 200.0;
         return Container(
           decoration: BoxDecoration(
             color: AppColors.pageCream,
