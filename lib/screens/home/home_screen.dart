@@ -1190,14 +1190,16 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         final innerH = (maxH - padTop - padBottom).clamp(48.0, maxH);
 
         // Scale type from usable banner height (padding already subtracted).
+        // FittedBox.scaleDown below ensures text that can't fit is scaled
+        // down proportionally — so these values are safe maximums.
         final titleSize =
-            (innerH * 0.138).clamp(16.0, isWide ? 30.0 : 21.5);
+            (innerH * 0.165).clamp(18.0, isWide ? 36.0 : 28.0);
         final italicSize =
-            (titleSize * 0.88).clamp(14.5, isWide ? 26.0 : 19.0);
-        final subtitleSize = (innerH * 0.064).clamp(10.5, 13.0);
-        final eyebrowSize = (innerH * 0.052).clamp(8.5, 11.0);
-        final gapEyebrow = (innerH * 0.025).clamp(3.0, 6.0);
-        final gapBody = (innerH * 0.03).clamp(4.0, 8.0);
+            (titleSize * 0.88).clamp(16.0, isWide ? 30.0 : 24.0);
+        final subtitleSize = (innerH * 0.076).clamp(11.5, isWide ? 16.0 : 14.0);
+        final eyebrowSize = (innerH * 0.062).clamp(9.5, isWide ? 13.0 : 11.5);
+        final gapEyebrow = (innerH * 0.028).clamp(3.0, 7.0);
+        final gapBody = (innerH * 0.034).clamp(4.0, 9.0);
 
         return Padding(
           padding: EdgeInsets.fromLTRB(
