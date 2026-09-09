@@ -775,9 +775,8 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 620;
-        final screenH = MediaQuery.sizeOf(context).height;
-        // Compact band ~25–27% of screen (matches reference app screenshot proportion).
-        final heroHeight = (screenH * 0.26).clamp(168.0, 236.0);
+        // Uniform, fixed banner height across all slides and device heights.
+        final heroHeight = isWide ? 228.0 : 204.0;
         return Container(
           decoration: BoxDecoration(
             color: AppColors.pageCream,
@@ -881,12 +880,17 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         fit: StackFit.expand,
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 8, 10, 14),
+            padding: EdgeInsets.fromLTRB(
+              isWide ? 20 : 14,
+              10,
+              isWide ? 16 : 8,
+              14,
+            ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 Expanded(
-                  flex: 38,
+                  flex: isWide ? 44 : 48,
                   child: _buildHeroTextCrossfade(
                     from: from,
                     to: to,
@@ -896,7 +900,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
                   ),
                 ),
                 Expanded(
-                  flex: 62,
+                  flex: isWide ? 56 : 52,
                   child: LayoutBuilder(
                     builder: (context, c) {
                       return Stack(
@@ -1083,6 +1087,10 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           height: h,
           fit: BoxFit.contain,
           alignment: Alignment.center,
+          memCacheWidth: 400,
+          memCacheHeight: 400,
+          maxWidthDiskCache: 400,
+          maxHeightDiskCache: 400,
           placeholder: (_, __) => SizedBox(width: w, height: h * 0.45),
           errorWidget: (_, __, ___) => Icon(
             Icons.local_florist,
@@ -1175,18 +1183,19 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
         // Scale type from usable banner height (padding already subtracted).
         final titleSize =
-            (innerH * 0.175).clamp(compact ? 16.0 : 20.0, isWide ? 34.0 : 28.0);
-        final italicSize = titleSize * 0.78;
-        final subtitleSize = (innerH * 0.068).clamp(10.5, 14.5);
-        final eyebrowSize = (innerH * 0.05).clamp(8.0, 11.0);
-        final gapEyebrow = (innerH * 0.032).clamp(3.0, 8.0);
-        final gapBody = (innerH * 0.036).clamp(4.0, 10.0);
+            (innerH * 0.138).clamp(16.0, isWide ? 30.0 : 21.5);
+        final italicSize =
+            (titleSize * 0.88).clamp(14.5, isWide ? 26.0 : 19.0);
+        final subtitleSize = (innerH * 0.064).clamp(10.5, 13.0);
+        final eyebrowSize = (innerH * 0.052).clamp(8.5, 11.0);
+        final gapEyebrow = (innerH * 0.025).clamp(3.0, 6.0);
+        final gapBody = (innerH * 0.03).clamp(4.0, 8.0);
 
         return Padding(
           padding: EdgeInsets.fromLTRB(
             compact ? 0 : _kHomeGutter,
             padTop,
-            compact ? 4 : _kHomeGutter,
+            compact ? 6 : _kHomeGutter,
             padBottom,
           ),
           child: FittedBox(
@@ -1194,75 +1203,71 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             fit: BoxFit.scaleDown,
             child: ConstrainedBox(
               constraints: BoxConstraints(
-                maxWidth: constraints.maxWidth -
-                    (compact ? 4 : _kHomeGutter * 2),
+                maxWidth: math.max(
+                  0.0,
+                  constraints.maxWidth - (compact ? 6 : _kHomeGutter * 2),
+                ),
               ),
               child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  Container(
-                    width: compact ? 18 : 20,
-                    height: 1,
-                    color: Colors.white.withValues(alpha: 0.55),
-                  ),
-                  SizedBox(width: compact ? 6 : 8),
-                  Expanded(
-                    child: Text(
-                      slide.eyebrow.toUpperCase(),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.dmSans(
-                        fontSize: eyebrowSize,
-                        fontWeight: FontWeight.w700,
-                        letterSpacing: 2,
-                        color: Colors.white.withValues(alpha: 0.55),
+                  Row(
+                    children: [
+                      Container(
+                        width: compact ? 16 : 20,
+                        height: 1.2,
+                        color: Colors.white.withValues(alpha: 0.65),
                       ),
+                      SizedBox(width: compact ? 6 : 8),
+                      Expanded(
+                        child: Text(
+                          slide.eyebrow.toUpperCase(),
+                          maxLines: 1,
+                          style: GoogleFonts.dmSans(
+                            fontSize: eyebrowSize,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 1.8,
+                            color: Colors.white.withValues(alpha: 0.75),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: gapEyebrow),
+                  Text(
+                    slide.titleUpper.toUpperCase(),
+                    style: GoogleFonts.dmSans(
+                      fontSize: titleSize,
+                      fontWeight: FontWeight.w900,
+                      height: 0.98,
+                      letterSpacing: -0.4,
+                      color: Colors.white,
+                    ),
+                  ),
+                  Text(
+                    slide.titleItalic,
+                    style: GoogleFonts.cormorantGaramond(
+                      fontSize: italicSize,
+                      fontWeight: FontWeight.w400,
+                      fontStyle: FontStyle.italic,
+                      height: 1.1,
+                      color: Colors.white.withValues(alpha: 0.92),
+                    ),
+                  ),
+                  SizedBox(height: gapBody),
+                  Text(
+                    slide.subtitle,
+                    maxLines: 5,
+                    style: GoogleFonts.dmSans(
+                      fontSize: subtitleSize,
+                      height: 1.32,
+                      color: Colors.white.withValues(alpha: 0.85),
                     ),
                   ),
                 ],
               ),
-              SizedBox(height: gapEyebrow),
-              Text(
-                slide.titleUpper.toUpperCase(),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.dmSans(
-                  fontSize: titleSize,
-                  fontWeight: FontWeight.w900,
-                  height: 0.95,
-                  letterSpacing: -0.45,
-                  color: Colors.white,
-                ),
-              ),
-              Text(
-                slide.titleItalic,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.cormorantGaramond(
-                  fontSize: italicSize,
-                  fontWeight: FontWeight.w400,
-                  fontStyle: FontStyle.italic,
-                  height: 1.12,
-                  color: Colors.white70,
-                ),
-              ),
-              SizedBox(height: gapBody),
-              Text(
-                slide.subtitle,
-                maxLines: compact ? 3 : 4,
-                overflow: TextOverflow.ellipsis,
-                style: GoogleFonts.dmSans(
-                  fontSize: subtitleSize,
-                  height: 1.35,
-                  color: Colors.white.withValues(alpha: 0.6),
-                ),
-              ),
-            ],
-          ),
             ),
           ),
         );
