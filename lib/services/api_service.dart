@@ -4,12 +4,12 @@ import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 class ApiService {
-  // ── Change this to your machine's LAN IP when testing on a real device ──
-  // Android emulator  → 10.0.2.2:5000
-  // iOS simulator     → localhost:5000
-  // Real device       → 192.168.x.x:5000 (currently: 192.168.1.9)
+  // ── Production deployed URL (Railway) ──
   static const String _base = 'https://eflora-system-production.up.railway.app';
   static const String _api  = '$_base/api/v1';
+
+  /// Public base URL for the server.
+  static String get baseUrl => _base;
 
   /// Public API root for unauthenticated config endpoints.
   static String get apiRoot => _api;
@@ -553,6 +553,88 @@ class ApiService {
   }
 
   // ══════════════════════════════════════════════════════════════════════════
+  // IN-MEMORY & PERSISTENT CACHES
+  // ══════════════════════════════════════════════════════════════════════════
+  static final Map<int, Map<String, dynamic>> _productDetailsCache = {};
+  static final Map<String, List<Map<String, dynamic>>> _categoryProductsCache = {};
+  static List<Map<String, dynamic>>? _storesCache;
+  static List<Map<String, dynamic>>? _ordersCache;
+
+  static Map<String, dynamic>? getCachedProduct(int id) => _productDetailsCache[id];
+
+  static List<Map<String, dynamic>>? getCachedCategoryProducts(String category) =>
+      _categoryProductsCache[category];
+
+  static List<Map<String, dynamic>>? getCachedStores() =>
+      _storesCache != null ? List<Map<String, dynamic>>.from(_storesCache!) : null;
+
+  static List<Map<String, dynamic>>? getCachedOrders() =>
+      _ordersCache != null ? List<Map<String, dynamic>>.from(_ordersCache!) : null;
+
+  static void updateCachedOrders(List<Map<String, dynamic>> orders) {
+    _ordersCache = List<Map<String, dynamic>>.from(orders);
+    try {
+      SharedPreferences.getInstance().then((prefs) {
+        prefs.setString('cached_orders_list', jsonEncode(orders));
+      });
+    } catch (_) {}
+  }
+
+  /// Preload cached products, stores, and orders from SharedPreferences on startup
+  static Future<void> preloadAppCaches() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+
+      // Stores cache
+      final storesStr = prefs.getString('cached_stores_list');
+      if (storesStr != null && storesStr.isNotEmpty) {
+        final raw = jsonDecode(storesStr) as List? ?? [];
+        _storesCache = List<Map<String, dynamic>>.from(
+          raw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)),
+        );
+      }
+
+      // Orders cache
+      final ordersStr = prefs.getString('cached_orders_list');
+      if (ordersStr != null && ordersStr.isNotEmpty) {
+        final raw = jsonDecode(ordersStr) as List? ?? [];
+        _ordersCache = List<Map<String, dynamic>>.from(
+          raw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)),
+        );
+      }
+
+      // Home category products & product details
+      final keys = prefs.getKeys();
+      for (final key in keys) {
+        if (key.startsWith('cached_cat_products_')) {
+          final cat = key.replaceFirst('cached_cat_products_', '');
+          final str = prefs.getString(key);
+          if (str != null && str.isNotEmpty) {
+            final raw = jsonDecode(str) as List? ?? [];
+            _categoryProductsCache[cat] = List<Map<String, dynamic>>.from(
+              raw.whereType<Map>().map((m) => Map<String, dynamic>.from(m)),
+            );
+          }
+        } else if (key.startsWith('cached_product_detail_')) {
+          final idStr = key.replaceFirst('cached_product_detail_', '');
+          final id = int.tryParse(idStr);
+          if (id != null && id > 0) {
+            final str = prefs.getString(key);
+            if (str != null && str.isNotEmpty) {
+              final raw = jsonDecode(str);
+              if (raw is Map) {
+                _productDetailsCache[id] = Map<String, dynamic>.from(raw);
+              }
+            }
+          }
+        }
+      }
+    } catch (e) {
+      print('ApiService.preloadAppCaches error: $e');
+    }
+  }
+
+  // ══════════════════════════════════════════════════════════════════════════
   // PRODUCTS
   // ══════════════════════════════════════════════════════════════════════════
 
@@ -578,7 +660,37 @@ class ApiService {
       final uri = Uri.parse('$_api/customer/products').replace(queryParameters: params);
       print('📡 Getting products: $uri');
       final res = await http.get(uri, headers: await _headers(auth: true)).timeout(const Duration(seconds: 10));
-      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+      final decoded = jsonDecode(res.body);
+      if (res.statusCode == 200) {
+        final list = decoded is List
+            ? decoded
+            : (decoded is Map ? (decoded['products'] ?? []) : []);
+        if (list is List) {
+          for (final item in list) {
+            if (item is Map && item['id'] != null) {
+              final pid = int.tryParse(item['id'].toString());
+              if (pid != null && pid > 0) {
+                final existing = _productDetailsCache[pid];
+                if (existing == null) {
+                  _productDetailsCache[pid] = Map<String, dynamic>.from(item);
+                }
+              }
+            }
+          }
+          if (category != null && page == 1 && search == null && storeId == null) {
+            final mapped = List<Map<String, dynamic>>.from(
+              list.whereType<Map>().map((m) => Map<String, dynamic>.from(m)),
+            );
+            _categoryProductsCache[category] = mapped;
+            try {
+              SharedPreferences.getInstance().then((prefs) {
+                prefs.setString('cached_cat_products_$category', jsonEncode(mapped));
+              });
+            } catch (_) {}
+          }
+        }
+      }
+      return ApiResult(statusCode: res.statusCode, data: decoded);
     } catch (e) {
       print('❌ GetProducts error: $e');
       return ApiResult(statusCode: 0, error: 'Network error: $e');
@@ -621,7 +733,16 @@ class ApiService {
         Uri.parse('$_api/customer/products/$id'),
         headers: await _headers(auth: true),
       ).timeout(const Duration(seconds: 10));
-      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+      final decoded = jsonDecode(res.body);
+      if (res.statusCode == 200 && decoded is Map) {
+        _productDetailsCache[id] = Map<String, dynamic>.from(decoded);
+        try {
+          SharedPreferences.getInstance().then((prefs) {
+            prefs.setString('cached_product_detail_$id', jsonEncode(decoded));
+          });
+        } catch (_) {}
+      }
+      return ApiResult(statusCode: res.statusCode, data: decoded);
     } catch (e) {
       print('❌ GetProduct error: $e');
       return ApiResult(statusCode: 0, error: 'Network error: $e');
@@ -644,7 +765,19 @@ class ApiService {
         uri,
         headers: await _headers(auth: true),
       ).timeout(const Duration(seconds: 10));
-      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+      final decoded = jsonDecode(res.body);
+      if (res.statusCode == 200 && decoded is List) {
+        final mapped = List<Map<String, dynamic>>.from(
+          decoded.whereType<Map>().map((m) => Map<String, dynamic>.from(m)),
+        );
+        _storesCache = mapped;
+        try {
+          SharedPreferences.getInstance().then((prefs) {
+            prefs.setString('cached_stores_list', jsonEncode(mapped));
+          });
+        } catch (_) {}
+      }
+      return ApiResult(statusCode: res.statusCode, data: decoded);
     } catch (e) {
       print('❌ GetStores error: $e');
       return ApiResult(statusCode: 0, error: 'Network error: $e');
@@ -962,31 +1095,57 @@ class ApiService {
   // ══════════════════════════════════════════════════════════════════════════
 
   static Future<ApiResult> getOrders({String? status, int page = 1}) async {
-    try {
-      final params = <String, String>{'page': page.toString()};
-      if (status != null && status.isNotEmpty) params['status'] = status;
-      final uri = Uri.parse('$_api/customer/orders').replace(queryParameters: params);
-      print('📡 Getting orders: $uri');
-      final res = await http.get(uri, headers: await _headers(auth: true)).timeout(const Duration(seconds: 10));
-      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
-    } catch (e) {
-      print('❌ GetOrders error: $e');
-      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        final params = <String, String>{'page': page.toString()};
+        if (status != null && status.isNotEmpty) params['status'] = status;
+        final uri = Uri.parse('$_api/customer/orders').replace(queryParameters: params);
+        print('📡 Getting orders: $uri');
+        final res = await http.get(uri, headers: await _headers(auth: true)).timeout(const Duration(seconds: 25));
+        final decoded = jsonDecode(res.body);
+        if (res.statusCode == 200 && page == 1 && (status == null || status.isEmpty)) {
+          final list = decoded is List
+              ? decoded
+              : (decoded is Map ? (decoded['orders'] ?? []) : []);
+          if (list is List) {
+            final mapped = List<Map<String, dynamic>>.from(
+              list.whereType<Map>().map((m) => Map<String, dynamic>.from(m)),
+            );
+            updateCachedOrders(mapped);
+          }
+        }
+        return ApiResult(statusCode: res.statusCode, data: decoded);
+      } catch (e) {
+        print('❌ GetOrders error (attempt ${attempt + 1}): $e');
+        if (attempt == 0) {
+          await Future.delayed(const Duration(milliseconds: 250));
+          continue;
+        }
+        return ApiResult(statusCode: 0, error: 'Network error: $e');
+      }
     }
+    return ApiResult(statusCode: 0, error: 'Network error');
   }
 
   static Future<ApiResult> getOrder(int id) async {
-    try {
-      print('📡 Getting order: $id');
-      final res = await http.get(
-        Uri.parse('$_api/customer/orders/$id'),
-        headers: await _headers(auth: true),
-      ).timeout(const Duration(seconds: 10));
-      return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
-    } catch (e) {
-      print('❌ GetOrder error: $e');
-      return ApiResult(statusCode: 0, error: 'Network error: $e');
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        print('📡 Getting order: $id');
+        final res = await http.get(
+          Uri.parse('$_api/customer/orders/$id'),
+          headers: await _headers(auth: true),
+        ).timeout(const Duration(seconds: 25));
+        return ApiResult(statusCode: res.statusCode, data: jsonDecode(res.body));
+      } catch (e) {
+        print('❌ GetOrder error (attempt ${attempt + 1}): $e');
+        if (attempt == 0) {
+          await Future.delayed(const Duration(milliseconds: 250));
+          continue;
+        }
+        return ApiResult(statusCode: 0, error: 'Network error: $e');
+      }
     }
+    return ApiResult(statusCode: 0, error: 'Network error');
   }
 
   static Future<ApiResult> getOrderTracking(int id) async {
@@ -1335,8 +1494,6 @@ class ApiResult {
   bool get isSuccess => statusCode >= 200 && statusCode < 300;
   String? get errorMessage => error ?? (data is Map ? (data['error'] ?? data['message']) : null);
 }
-
-
 
 
 

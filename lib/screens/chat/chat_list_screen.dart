@@ -6,6 +6,7 @@ import '../../models/chat.dart';
 import '../../providers/chat_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/datetime_ph.dart';
+import '../../widgets/custom_confirm_dialog.dart';
 import '../../widgets/customer_default_avatar.dart';
 import 'chat_detail_screen.dart';
 
@@ -126,21 +127,14 @@ class _ChatListScreenState extends State<ChatListScreen> {
 
   Future<void> _deleteConvo(ChatConversation convo) async {
     if (convo.otherUser?.role == 'admin') return;
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Delete Conversation', style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
-        content: Text('Delete your conversation with ${convo.storeName ?? convo.otherUser?.fullName ?? 'this seller'}?',
-          style: GoogleFonts.dmSans(),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Delete', style: TextStyle(color: Colors.red[600])),
-          ),
-        ],
-      ),
+    final confirmed = await CustomConfirmDialog.show(
+      context,
+      title: 'Delete Conversation',
+      message: 'Delete your conversation with ${convo.storeName ?? convo.otherUser?.fullName ?? 'this seller'}?',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      icon: Icons.delete_outline_rounded,
+      isDestructive: true,
     );
     if (confirmed == true && mounted) {
       context.read<ChatProvider>().deleteConversation(convo.id);

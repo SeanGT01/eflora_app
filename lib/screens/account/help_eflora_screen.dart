@@ -4,12 +4,13 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass.dart';
+import '../../services/api_service.dart';
 
 class HelpEfloraScreen extends StatelessWidget {
   const HelpEfloraScreen({super.key});
 
   static const _supportEmail = 'efloralaguna@gmail.com';
-  static const _site = 'https://eflora-system-production.up.railway.app';
+  static String get _site => ApiService.baseUrl;
 
   Future<void> _mail() async {
     final uri = Uri.parse('mailto:$_supportEmail');

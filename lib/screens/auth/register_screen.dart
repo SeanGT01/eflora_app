@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../providers/auth_provider.dart';
 import '../../utils/lowercase_email_formatter.dart';
 import '../../utils/person_name.dart';
+import '../../services/api_service.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/auth_chrome.dart';
 import '../../widgets/common.dart';
@@ -31,7 +32,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscure = true;
   bool _obscureConfirm = true;
   bool _agreedTerms = false;
-  static const _policySite = 'https://eflora-system-production.up.railway.app';
+  static String get _policySite => ApiService.baseUrl;
 
   String? _validatePassword(String? v) {
     final value = v ?? '';

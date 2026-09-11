@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/custom_confirm_dialog.dart';
 
 class PaymentVerificationScreen extends StatefulWidget {
   const PaymentVerificationScreen({super.key});
@@ -391,10 +392,11 @@ class _RejectionReasonDialogState extends State<_RejectionReasonDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('Reject Payment'),
-      content: Column(
+    return CustomConfirmDialog(
+      title: 'Reject Payment',
+      contentWidget: Column(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Reason for rejection:',
@@ -412,17 +414,11 @@ class _RejectionReasonDialogState extends State<_RejectionReasonDialog> {
           ),
         ],
       ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
-        ),
-        ElevatedButton(
-          style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
-          onPressed: () => Navigator.pop(context, _controller.text),
-          child: const Text('Reject', style: TextStyle(color: Colors.white)),
-        ),
-      ],
+      confirmText: 'Reject',
+      cancelText: 'Cancel',
+      isDestructive: true,
+      onConfirm: () => Navigator.pop(context, _controller.text),
+      onCancel: () => Navigator.pop(context),
     );
   }
 }

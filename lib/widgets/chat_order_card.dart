@@ -89,17 +89,39 @@ class ChatOrderCardMessage extends StatelessWidget {
                                 ? qRaw
                                 : int.tryParse('${qRaw ?? 1}') ?? 1;
                             final label = qty > 1 ? '+ $name ×$qty' : '+ $name';
+                            final imageUrl = a['image_url']?.toString();
+                            
                             return Padding(
-                              padding: const EdgeInsets.only(top: 2),
-                              child: Text(
-                                label,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: GoogleFonts.dmSans(
-                                  fontSize: 11,
-                                  height: 1.3,
-                                  color: AppColors.muted,
-                                ),
+                              padding: const EdgeInsets.only(top: 4),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                children: [
+                                  if (imageUrl != null && imageUrl.isNotEmpty) ...[
+                                    ClipRRect(
+                                      borderRadius: BorderRadius.circular(3),
+                                      child: CachedNetworkImage(
+                                        imageUrl: imageUrl,
+                                        width: 14,
+                                        height: 14,
+                                        fit: BoxFit.cover,
+                                        errorWidget: (c, u, e) => const SizedBox(width: 14, height: 14),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 4),
+                                  ],
+                                  Expanded(
+                                    child: Text(
+                                      label,
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: GoogleFonts.dmSans(
+                                        fontSize: 11,
+                                        height: 1.3,
+                                        color: AppColors.muted,
+                                      ),
+                                    ),
+                                  ),
+                                ],
                               ),
                             );
                           }),

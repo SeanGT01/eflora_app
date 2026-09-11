@@ -23,14 +23,15 @@ class OrdersScreen extends StatefulWidget {
   const OrdersScreen({super.key});
 
   /// Global notifier to trigger an immediate orders refresh and optional status tab switch.
-  /// Holds (targetStatus, reloadToken) so that every call notifies listeners even if targetStatus is unchanged.
-  static final ValueNotifier<({String? status, int token})> reloadNotifier =
-      ValueNotifier<({String? status, int token})>((status: null, token: 0));
+  /// Holds (targetStatus, targetOrderId, reloadToken) so that every call notifies listeners.
+  static final ValueNotifier<({String? status, int? orderId, int token})> reloadNotifier =
+      ValueNotifier<({String? status, int? orderId, int token})>((status: null, orderId: null, token: 0));
 
-  /// Trigger a reload of orders, optionally switching to a target status tab (e.g. 'to_ship' or '').
-  static void reload({String? targetStatus}) {
+  /// Trigger a reload of orders, optionally switching to a target status tab and opening a specific order.
+  static void reload({String? targetStatus, int? targetOrderId}) {
     reloadNotifier.value = (
       status: targetStatus,
+      orderId: targetOrderId,
       token: reloadNotifier.value.token + 1,
     );
   }
@@ -101,18 +102,34 @@ class _OrdersScreenState extends State<OrdersScreen> {
     return source.where((o) => o.displayKey == _statusFilter).toList();
   }
 
+  int _lastHandledToken = 0;
+  bool _isFetchingOrders = false;
+
   @override
   void initState() {
     super.initState();
+    final cached = ApiService.getCachedOrders();
+    if (cached != null && cached.isNotEmpty) {
+      _allOrders = cached.map((e) => Order.fromJson(e)).toList();
+      _orders = _filtered(_allOrders);
+      _loading = false;
+    }
     OrdersScreen.reloadNotifier.addListener(_onReloadNotified);
     _startPolling();
+    if (OrdersScreen.reloadNotifier.value.token > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _onReloadNotified();
+      });
+    }
   }
 
   void _onReloadNotified() {
     if (!mounted) return;
     final info = OrdersScreen.reloadNotifier.value;
-    if (info.token > 0) {
+    if (info.token > _lastHandledToken) {
+      _lastHandledToken = info.token;
       final targetStatus = info.status;
+      final targetOrderId = info.orderId;
       if (targetStatus != null && targetStatus.isNotEmpty) {
         _statusFilter = targetStatus;
         final tabIndex = _statusTabs.indexWhere((t) => t['id'] == targetStatus);
@@ -127,7 +144,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
       // When explicitly navigated/reloaded (such as tapping Orders in navbar),
       // allow review popup check again.
       _hasCheckedAutoPopup = false;
-      _loadOrders(silent: false, forceCheckPopup: true);
+      _loadOrders(silent: _allOrders.isNotEmpty, forceCheckPopup: true, targetOrderIdToOpen: targetOrderId);
     }
   }
 
@@ -159,16 +176,22 @@ class _OrdersScreenState extends State<OrdersScreen> {
     if (currentUserId != _lastUserId) {
       _lastUserId = currentUserId;
       _hasLoadedForUser = false;
+      _lastHandledToken = 0;
     }
     if (!_hasLoadedForUser && auth.isLoggedIn) {
       _hasLoadedForUser = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _loadOrders();
-        context.read<CartProvider>().load();
-      });
+      if (OrdersScreen.reloadNotifier.value.token == 0 || _lastHandledToken == 0) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_lastHandledToken == 0) {
+            _loadOrders(silent: _allOrders.isNotEmpty);
+            context.read<CartProvider>().load();
+          }
+        });
+      }
     } else if (!auth.isLoggedIn) {
       // Guests never hit the API — stop the initial spinner and clear data
       _hasLoadedForUser = false;
+      _lastHandledToken = 0;
       if (_loading || _orders.isNotEmpty || _cartItems.isNotEmpty) {
         setState(() {
           _allOrders = [];
@@ -183,7 +206,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
   bool _hasCheckedAutoPopup = false;
   bool _isAutoPopupOpen = false;
 
-  Future<void> _loadOrders({bool silent = false, bool forceCheckPopup = false}) async {
+  Future<void> _loadOrders({bool silent = false, bool forceCheckPopup = false, int? targetOrderIdToOpen}) async {
     if (!context.read<AuthProvider>().isLoggedIn) {
       if (_loading || _orders.isNotEmpty || _cartItems.isNotEmpty) {
         setState(() {
@@ -195,29 +218,65 @@ class _OrdersScreenState extends State<OrdersScreen> {
       }
       return;
     }
-    if (!silent) {
+    if (_isFetchingOrders && silent) return;
+    _isFetchingOrders = true;
+
+    if (!silent && _allOrders.isEmpty) {
       setState(() => _loading = true);
     }
 
-    await context.read<CartProvider>().load();
+    try {
+      await context.read<CartProvider>().load();
 
-    final allOrders = await _fetchAllOrderPages();
-    if (!mounted) return;
-    if (allOrders != null) {
-      setState(() {
-        _allOrders = allOrders;
-        _cartItems = context.read<CartProvider>().items;
-        _orders = _filtered(allOrders);
-        _loading = false;
-      });
-      if ((!_hasCheckedAutoPopup || forceCheckPopup) && !silent) {
-        _hasCheckedAutoPopup = true;
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _checkAutoReviewPrompt(allOrders);
+      final allOrders = await _fetchAllOrderPages();
+      if (!mounted) return;
+      if (allOrders != null) {
+        setState(() {
+          _allOrders = allOrders;
+          _cartItems = context.read<CartProvider>().items;
+          _orders = _filtered(allOrders);
+          _loading = false;
         });
+
+        if (targetOrderIdToOpen != null && targetOrderIdToOpen > 0) {
+          final matches = allOrders.where((o) => o.id == targetOrderIdToOpen).toList();
+          if (matches.isNotEmpty) {
+            final targetOrder = matches.first;
+            if (targetOrder.displayKey.isNotEmpty) {
+              setState(() {
+                _statusFilter = targetOrder.displayKey;
+                _orders = _filtered(allOrders);
+              });
+              final tabIndex = _statusTabs.indexWhere((t) => t['id'] == targetOrder.displayKey);
+              if (tabIndex != -1 && _statusScroll.hasClients) {
+                _statusScroll.animateTo(
+                  (tabIndex * 85.0).clamp(0.0, _statusScroll.position.maxScrollExtent),
+                  duration: const Duration(milliseconds: 300),
+                  curve: Curves.easeOut,
+                );
+              }
+            }
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) {
+                Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => OrderDetailScreen(order: targetOrder)),
+                );
+              }
+            });
+          }
+        }
+
+        if ((!_hasCheckedAutoPopup || forceCheckPopup) && !silent && targetOrderIdToOpen == null) {
+          _hasCheckedAutoPopup = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _checkAutoReviewPrompt(allOrders);
+          });
+        }
+      } else {
+        setState(() => _loading = false);
       }
-    } else {
-      setState(() => _loading = false);
+    } finally {
+      _isFetchingOrders = false;
     }
   }
 
@@ -273,6 +332,7 @@ class _OrdersScreenState extends State<OrdersScreen> {
 
   Future<List<Order>?> _fetchAllOrderPages() async {
     final collected = <Order>[];
+    final rawList = <Map<String, dynamic>>[];
     var page = 1;
     while (page <= 50) {
       final result = await ApiService.getOrders(page: page);
@@ -283,13 +343,19 @@ class _OrdersScreenState extends State<OrdersScreen> {
       final list = data is List
           ? data
           : (data is Map ? (data['orders'] ?? []) : []);
-      collected.addAll(
-        (list as List)
-            .map((e) => Order.fromJson(e as Map<String, dynamic>)),
-      );
+      for (final item in (list as List)) {
+        if (item is Map) {
+          final map = Map<String, dynamic>.from(item);
+          rawList.add(map);
+          collected.add(Order.fromJson(map));
+        }
+      }
       final hasNext = data is Map && data['has_next'] == true;
       if (!hasNext) break;
       page++;
+    }
+    if (rawList.isNotEmpty) {
+      ApiService.updateCachedOrders(rawList);
     }
     return collected;
   }
@@ -1127,12 +1193,13 @@ class _TikTokProductCard extends StatelessWidget {
                         child: CachedNetworkImage(
                           imageUrl: item.imageUrl!,
                           fit: BoxFit.cover,
-                          placeholder: (_, __) => const _ImagePlaceholder(),
+                          placeholder: (_, __) =>
+                              _ImagePlaceholder(useEfloraLogo: item.isCustomOrder),
                           errorWidget: (_, __, ___) =>
-                              const _ImagePlaceholder(),
+                              _ImagePlaceholder(useEfloraLogo: item.isCustomOrder),
                         ),
                       )
-                    : const _ImagePlaceholder(),
+                    : _ImagePlaceholder(useEfloraLogo: item.isCustomOrder),
               ),
               const SizedBox(width: 12),
 
@@ -1228,17 +1295,23 @@ class _ItemRatingStars extends StatelessWidget {
 
 /// Rose bloom over the pink/lavender wash, matching the web's empty thumbnails.
 class _ImagePlaceholder extends StatelessWidget {
-  const _ImagePlaceholder();
+  const _ImagePlaceholder({this.useEfloraLogo = false});
 
   static const double _iconSize = 26;
+  final bool useEfloraLogo;
 
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
-      decoration: BoxDecoration(gradient: AppColors.imageWash),
+    return DecoratedBox(
+      decoration: const BoxDecoration(gradient: AppColors.imageWash),
       child: Center(
-        child: Icon(Icons.local_florist,
-            size: _iconSize, color: Color(0x33B5445A)),
+        child: useEfloraLogo
+            ? Padding(
+                padding: const EdgeInsets.all(10),
+                child: Image.asset('assets/images/app_logo.png', fit: BoxFit.contain),
+              )
+            : const Icon(Icons.local_florist,
+                size: _iconSize, color: Color(0x33B5445A)),
       ),
     );
   }

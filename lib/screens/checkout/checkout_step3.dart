@@ -820,79 +820,155 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     });
   }
 
+  String _formattedDateLabel(DateTime? date) {
+    if (date == null) return 'Select date';
+    final normalized = CheckoutService.normalizeToPhDate(date);
+    final phToday = CheckoutService.normalizeToPhDate(CheckoutService.getPhilippineTime());
+    final phTomorrow = phToday.add(const Duration(days: 1));
+
+    if (normalized.year == phToday.year &&
+        normalized.month == phToday.month &&
+        normalized.day == phToday.day) {
+      return 'Today · ${DateFormat('EEE, MMM d').format(normalized)}';
+    } else if (normalized.year == phTomorrow.year &&
+        normalized.month == phTomorrow.month &&
+        normalized.day == phTomorrow.day) {
+      return 'Tomorrow · ${DateFormat('EEE, MMM d').format(normalized)}';
+    }
+    return DateFormat('EEE, MMM d, yyyy').format(normalized);
+  }
+
   Widget _buildStoreDeliveryCard(BuildContext context, int storeId) {
     final selectedDate = _storeDates[storeId];
-    final dateLabel = selectedDate == null
-        ? 'Select date'
-        : DateFormat('MMM d, yyyy').format(
-            CheckoutService.normalizeToPhDate(selectedDate),
-          );
+    final hasDate = selectedDate != null;
+    final hasTime = _storeTimeSlots[storeId] != null;
+    final isLoadingSlots = _storeTimeSlotsLoading[storeId] == true;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          'Delivery',
-          style: GoogleFonts.dmSans(
-            fontSize: 12,
-            fontWeight: FontWeight.w600,
-            color: AppColors.muted,
-          ),
+        Row(
+          children: [
+            const Icon(
+              Icons.local_shipping_outlined,
+              size: 15,
+              color: AppColors.deepRose,
+            ),
+            const SizedBox(width: 6),
+            Text(
+              'Delivery Schedule',
+              style: GoogleFonts.dmSans(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w700,
+                color: AppColors.charcoal,
+              ),
+            ),
+            const Spacer(),
+            if (hasDate && hasTime)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.sage.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.check_circle, size: 11, color: AppColors.deepSage),
+                    const SizedBox(width: 4),
+                    Text(
+                      'Ready',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 10.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.deepSage,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 8),
         if ((_storeAvailableTimeSlots[storeId] ?? const <String>[]).isEmpty &&
             _storeSlotBlockReason[storeId] != null &&
-            _storeTimeSlotsLoading[storeId] != true &&
-            selectedDate != null) ...[
+            !isLoadingSlots &&
+            hasDate) ...[
           Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-              CheckoutService.slotBlockMessage(
-                _storeSlotBlockReason[storeId],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFc0392b).withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(
+                  color: const Color(0xFFc0392b).withValues(alpha: 0.2),
+                ),
               ),
-              style: GoogleFonts.dmSans(
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: const Color(0xFFc0392b),
+              child: Row(
+                children: [
+                  const Icon(
+                    Icons.info_outline_rounded,
+                    size: 14,
+                    color: Color(0xFFc0392b),
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      CheckoutService.slotBlockMessage(
+                        _storeSlotBlockReason[storeId],
+                      ),
+                      style: GoogleFonts.dmSans(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFFc0392b),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
         ],
         LayoutBuilder(
           builder: (context, constraints) {
-            final stacked = constraints.maxWidth < 360;
-            final dateField = _deliveryPickerField(
-              label: 'Date',
-              value: dateLabel,
-              icon: Icons.calendar_today_rounded,
-              isPlaceholder: selectedDate == null,
+            final isWide = constraints.maxWidth >= 360;
+            final dateField = _deliveryBox(
+              label: 'Delivery Date',
+              value: _formattedDateLabel(selectedDate),
+              icon: Icons.calendar_month_rounded,
+              isPlaceholder: !hasDate,
+              isEnabled: true,
+              isLoading: false,
               onTap: () => _pickStoreDeliveryDate(context, storeId),
             );
-            final hoursField = _deliveryPickerField(
-              label: 'Hours',
+            final hoursField = _deliveryBox(
+              label: 'Delivery Time',
               value: _hoursFieldLabel(storeId),
-              icon: Icons.schedule_rounded,
-              isPlaceholder: _storeTimeSlots[storeId] == null,
-              onTap: selectedDate == null ||
-                      _storeTimeSlotsLoading[storeId] == true
+              icon: Icons.access_time_filled_rounded,
+              isPlaceholder: !hasTime,
+              isEnabled: hasDate && !isLoadingSlots,
+              isLoading: isLoadingSlots,
+              onTap: !hasDate || isLoadingSlots
                   ? null
                   : () => _pickStoreTimeSlot(context, storeId),
             );
-            if (stacked) {
-              return Column(
+
+            if (isWide) {
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  dateField,
-                  const SizedBox(height: 8),
-                  hoursField,
+                  Expanded(child: dateField),
+                  const SizedBox(width: 8),
+                  Expanded(child: hoursField),
                 ],
               );
             }
-            return Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            return Column(
               children: [
-                Expanded(flex: 4, child: dateField),
-                const SizedBox(width: 8),
-                Expanded(flex: 6, child: hoursField),
+                dateField,
+                const SizedBox(height: 8),
+                hoursField,
               ],
             );
           },
@@ -901,35 +977,105 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     );
   }
 
-  Widget _deliveryPickerField({
+  Widget _deliveryBox({
     required String label,
     required String value,
     required IconData icon,
     required bool isPlaceholder,
+    required bool isEnabled,
+    required bool isLoading,
     required VoidCallback? onTap,
   }) {
-    return InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(AppRadius.md),
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: label,
-          isDense: true,
-          contentPadding: const EdgeInsets.fromLTRB(10, 10, 6, 10),
-          suffixIcon: Icon(icon, size: 15, color: AppColors.deepRose),
-          suffixIconConstraints: const BoxConstraints(
-            minWidth: 28,
-            minHeight: 28,
-          ),
+    return Material(
+      color: isEnabled
+          ? Colors.white.withValues(alpha: 0.95)
+          : const Color(0xFFF7F4EF),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(12),
+        side: BorderSide(
+          color: !isPlaceholder && isEnabled
+              ? AppColors.deepRose.withValues(alpha: 0.35)
+              : AppColors.border,
+          width: !isPlaceholder && isEnabled ? 1.2 : 1,
         ),
-        child: Text(
-          value,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: GoogleFonts.dmSans(
-            fontSize: 12.5,
-            height: 1.2,
-            color: isPlaceholder ? AppColors.muted : AppColors.charcoal,
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(12),
+        splashColor: AppColors.roseCta.withValues(alpha: 0.08),
+        highlightColor: AppColors.roseCta.withValues(alpha: 0.04),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+          child: Row(
+            children: [
+              Container(
+                width: 34,
+                height: 34,
+                decoration: BoxDecoration(
+                  color: (isEnabled ? AppColors.deepRose : AppColors.muted)
+                      .withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Icon(
+                  icon,
+                  size: 18,
+                  color: isEnabled ? AppColors.deepRose : AppColors.muted,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      label.toUpperCase(),
+                      style: GoogleFonts.dmSans(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.muted,
+                        letterSpacing: 0.5,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      value,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12.5,
+                        fontWeight: isPlaceholder
+                            ? FontWeight.w500
+                            : FontWeight.w600,
+                        color: isPlaceholder
+                            ? AppColors.muted
+                            : (isEnabled
+                                ? AppColors.charcoal
+                                : AppColors.muted),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 4),
+              if (isLoading)
+                const SizedBox(
+                  width: 14,
+                  height: 14,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: AppColors.deepRose,
+                  ),
+                )
+              else
+                Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 20,
+                  color: isEnabled
+                      ? AppColors.deepRose
+                      : AppColors.muted.withValues(alpha: 0.5),
+                ),
+            ],
           ),
         ),
       ),

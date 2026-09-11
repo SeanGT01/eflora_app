@@ -15,7 +15,12 @@ import '../../theme/app_theme.dart';
 import '../../utils/datetime_ph.dart';
 import '../../widgets/customer_default_avatar.dart';
 import '../../widgets/common.dart';
+import '../../widgets/chat_custom_ticket_card.dart';
+import '../../widgets/custom_ticket_checkout_sheet.dart';
+import '../../widgets/custom_quote_create_dialog.dart';
 import '../store/store_page.dart';
+import '../main_shell.dart';
+import '../orders/orders_screen.dart';
 
 /// Instagram-style chat detail screen.
 class ChatDetailScreen extends StatefulWidget {
@@ -83,10 +88,30 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBinding
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    final cached = ChatService.getCachedMessagesSync(widget.conversation.id);
+    if (cached.isNotEmpty) {
+      _messages = List<ChatMessage>.from(cached);
+      _loading = false;
+      _scrollToBottom(immediate: true);
+    } else {
+      _loadLocal();
+    }
     _loadMessages(forceScroll: true);
     _markRead();
     _checkOnline();
     _startPoll();
+  }
+
+  Future<void> _loadLocal() async {
+    final local = await ChatService.getLocalMessages(widget.conversation.id);
+    if (!mounted || local.isEmpty) return;
+    if (_loading || _messages.isEmpty) {
+      setState(() {
+        _messages = local;
+        _loading = false;
+      });
+      _scrollToBottom(immediate: true);
+    }
   }
 
   @override
@@ -115,7 +140,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBinding
   Future<void> _loadMessages({bool forceScroll = false}) async {
     final previousIds = _messages.map((m) => m.id).toSet();
     final nearBottom = !_scrollController.hasClients ||
-        (_scrollController.position.maxScrollExtent - _scrollController.offset) < 140;
+        _scrollController.offset < 140;
     final msgs = await ChatService.getMessages(widget.conversation.id, perPage: 50);
     if (!mounted) return;
     final hasNew = msgs.any((m) => !previousIds.contains(m.id));
@@ -124,22 +149,36 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBinding
       _loading = false;
     });
     if (forceScroll || previousIds.isEmpty || (hasNew && nearBottom)) {
-      _scrollToBottom();
+      _scrollToBottom(immediate: forceScroll || previousIds.isEmpty);
     }
     if (hasNew && msgs.isNotEmpty && msgs.last.senderId != _myId) {
       _markRead();
     }
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
+  void _scrollToBottom({bool immediate = false}) {
+    void doScroll() {
+      if (!mounted || !_scrollController.hasClients) return;
+      if (immediate || _scrollController.offset > 400) {
+        _scrollController.jumpTo(0.0);
+      } else {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          0.0,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
       }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      doScroll();
+      // Double check in subsequent frame to lock at bottom (offset 0.0) after async image / card layout sizing
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        if (immediate && _scrollController.offset != 0.0) {
+          _scrollController.jumpTo(0.0);
+        }
+      });
     });
   }
 
@@ -242,6 +281,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBinding
         _messages.add(msg);
         _sending = false;
       });
+      ChatService.appendMessageToCache(widget.conversation.id, msg);
       context.read<ChatProvider>().touchConversationPreview(
         conversationId: widget.conversation.id,
         previewText: msg.text ?? text,
@@ -294,6 +334,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBinding
       final msg = await ChatService.sendImageMessage(widget.conversation.id, file);
       if (msg != null && mounted) {
         setState(() => _messages.add(msg));
+        ChatService.appendMessageToCache(widget.conversation.id, msg);
         context.read<ChatProvider>().touchConversationPreview(
           conversationId: widget.conversation.id,
           previewText: msg.text?.isNotEmpty == true ? msg.text! : '[Image]',
@@ -397,6 +438,38 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBinding
             ),
           ],
         ),
+        actions: [
+          Builder(
+            builder: (context) {
+              final myRole = context.read<AuthProvider>().user?.role;
+              final isRider = other?.role == 'rider' || widget.conversation.isRiderThread;
+              final isAdmin = other?.role == 'admin';
+              if ((myRole == 'seller' || myRole == 'seller_admin') && !isRider && !isAdmin) {
+                return TextButton.icon(
+                  onPressed: () {
+                    CustomQuoteCreateDialog.show(
+                      context,
+                      conversationId: widget.conversation.id,
+                      onTicketCreated: (newMsg) {
+                        setState(() {
+                          _messages.add(newMsg);
+                        });
+                        _scrollToBottom();
+                      },
+                    );
+                  },
+                  icon: const Icon(Icons.note_add_outlined, size: 16, color: AppColors.deepRose),
+                  label: Text(
+                    'Quote',
+                    style: GoogleFonts.dmSans(fontSize: 12.5, fontWeight: FontWeight.w700, color: AppColors.deepRose),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+          const SizedBox(width: 4),
+        ],
       ),
       body: Column(
         children: [
@@ -420,12 +493,14 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBinding
                       )
                     : ListView.builder(
                         controller: _scrollController,
+                        reverse: true,
                         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                         padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                         itemCount: _groupedMessages.length,
                         itemBuilder: (context, index) {
-                          final group = _groupedMessages[index];
-                          return _buildMessageGroup(group, index);
+                          final reversedIndex = _groupedMessages.length - 1 - index;
+                          final group = _groupedMessages[reversedIndex];
+                          return _buildMessageGroup(group, reversedIndex);
                         },
                       ),
           ),
@@ -488,7 +563,47 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBinding
                 const SizedBox(width: 6),
               ],
               Flexible(
-                child: Container(
+                child: msg.customTicket != null
+                    ? Column(
+                        crossAxisAlignment: isSent ? CrossAxisAlignment.end : CrossAxisAlignment.start,
+                        children: [
+                          ConstrainedBox(
+                            constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.82),
+                            child: SizedBox(
+                              width: 270,
+                              child: ChatCustomTicketCard(
+                                ticket: msg.customTicket!,
+                                isSent: isSent,
+                                onViewOrderPressed: () {
+                                  if (Navigator.of(context).canPop()) {
+                                    Navigator.of(context).popUntil((route) => route.isFirst);
+                                  }
+                                  final orderId = msg.customTicket?.orderId;
+                                  MainShell.switchTab(context, 3, targetOrderStatus: 'pending', targetOrderId: orderId);
+                                },
+                                onReviewPressed: () {
+                                  CustomTicketCheckoutSheet.show(
+                                    context,
+                                    ticket: msg.customTicket!,
+                                    onOrderPlaced: () {
+                                      setState(() {
+                                        msg.customTicket!.status = 'accepted';
+                                      });
+                                      _loadMessages();
+                                    },
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            _formatTime(msg.createdAt),
+                            style: GoogleFonts.dmSans(fontSize: 10, color: Colors.grey[500]),
+                          ),
+                        ],
+                      )
+                    : Container(
                   constraints: BoxConstraints(maxWidth: isImageGrid ? 170.0 : MediaQuery.of(context).size.width * 0.72),
                   padding: EdgeInsets.symmetric(horizontal: isImageGrid ? 6 : 14, vertical: isImageGrid ? 6 : 9),
                   decoration: BoxDecoration(
@@ -531,7 +646,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> with WidgetsBinding
                         ),
                         if (msg.text != null && msg.text!.isNotEmpty) const SizedBox(height: 4),
                       ],
-                      if (!isImageGrid && msg.text != null && msg.text!.isNotEmpty)
+                      if (!isImageGrid && msg.text != null && msg.text!.isNotEmpty && (msg.messageType != 'custom_ticket' || msg.customTicket == null))
                         Text(
                           msg.text!,
                           style: GoogleFonts.dmSans(fontSize: 14, color: AppColors.charcoal, height: 1.4),

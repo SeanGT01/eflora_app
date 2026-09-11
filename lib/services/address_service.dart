@@ -1,14 +1,13 @@
 import 'package:dio/dio.dart';
 import '../models/checkout.dart';
 import '../models/api_result.dart';
+import 'api_service.dart' show ApiService;
 
 class AddressService {
   final Dio _dio;
-  // Use production Railway URL (same as main API)
   // The address endpoints are under /api (not /api/v1)
-  static const String _baseUrl = 'https://eflora-system-production.up.railway.app/api';
-  static const String _customerApi =
-      'https://eflora-system-production.up.railway.app/api/v1/customer';
+  static String get _baseUrl => '${ApiService.baseUrl}/api';
+  static String get _customerApi => '${ApiService.apiRoot}/customer';
 
   AddressService({required Dio dio}) : _dio = dio;
 

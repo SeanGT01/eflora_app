@@ -6,6 +6,7 @@ import '../../providers/address_provider.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/custom_confirm_dialog.dart';
 import '../../widgets/glass.dart';
 import 'add_edit_address_screen.dart';
 
@@ -180,48 +181,14 @@ class AddressListScreen extends StatelessWidget {
     AddressProvider addressProvider,
     Address address,
   ) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.warmWhite,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-        ),
-        title: Text(
-          'Delete address?',
-          style: GoogleFonts.cormorantGaramond(
-            fontSize: 22,
-            fontWeight: FontWeight.w600,
-            color: AppColors.charcoal,
-          ),
-        ),
-        content: Text(
-          'This delivery address will be removed from your account.',
-          style: GoogleFonts.dmSans(fontSize: 13.5, color: AppColors.muted),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(
-              'Cancel',
-              style: GoogleFonts.dmSans(
-                color: AppColors.muted,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(
-              'Delete',
-              style: GoogleFonts.dmSans(
-                color: AppColors.error,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
-        ],
-      ),
+    final confirmed = await CustomConfirmDialog.show(
+      context,
+      title: 'Delete address?',
+      message: 'This delivery address will be removed from your account.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      icon: Icons.delete_outline_rounded,
+      isDestructive: true,
     );
 
     if (confirmed != true || !context.mounted) return;

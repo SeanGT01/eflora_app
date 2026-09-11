@@ -53,6 +53,7 @@ class OrderItem {
   final List<OrderItemAddon> addons;
   final double addonsTotal;
   final double lineTotal;
+  final bool isCustomOrder;
   /// Customer's 1–5 product rating for this line when already rated.
   final int? rating;
 
@@ -63,6 +64,7 @@ class OrderItem {
     this.addons = const [],
     this.addonsTotal = 0,
     this.lineTotal = 0,
+    this.isCustomOrder = false,
     this.rating,
   });
 
@@ -102,6 +104,7 @@ class OrderItem {
       addons: addons,
       addonsTotal: addonsTotal,
       lineTotal: lineTotal,
+      isCustomOrder: j['is_custom_order'] == true,
       rating: rating,
     );
   }
@@ -151,6 +154,7 @@ class Order {
   final String? donePreparingProofUrl;
   final String? paymentMethod;
   final String? paymentStatus;
+  final bool isCustomOrder;
   
   // Status timeline timestamps
   final DateTime? pendingAt;
@@ -175,6 +179,7 @@ class Order {
     this.storeLatitude, this.storeLongitude,
     this.paymentProofUrl, this.deliveryProofUrl, this.deliveryProof2Url, this.donePreparingProofUrl,
     this.paymentMethod, this.paymentStatus,
+    this.isCustomOrder = false,
     this.pendingAt, this.acceptedAt, this.preparingAt, this.donePreparingAt,
     this.confirmedAt, this.deliveredAt,
     this.cancellationReason, this.cancellationReasonCode,
@@ -185,8 +190,18 @@ class Order {
   });
 
   factory Order.fromJson(Map<String, dynamic> j) {
-    final items = (j['items'] as List? ?? [])
-        .map((i) => OrderItem.fromJson(i as Map<String, dynamic>))
+    final rawItems = (j['items'] as List? ?? []);
+    final isCustomOrder = j['order_type'] == 'custom_chat' ||
+      (j['custom_ticket_id'] != null && _safeInt(j['custom_ticket_id']) > 0) ||
+      rawItems.any((item) => item is Map && item['is_custom_order'] == true);
+    final items = rawItems
+        .map((i) {
+          final itemJson = Map<String, dynamic>.from(i as Map);
+          if (isCustomOrder) {
+            itemJson['is_custom_order'] = true;
+          }
+          return OrderItem.fromJson(itemJson);
+        })
         .toList();
     return Order(
       id: _safeInt(j['id']),
@@ -208,6 +223,7 @@ class Order {
       donePreparingProofUrl: j['done_preparing_proof_url'],
       paymentMethod: j['payment_method']?.toString(),
       paymentStatus: j['payment_status']?.toString(),
+      isCustomOrder: isCustomOrder,
       pendingAt: j['pending_at'] != null ? DateTime.tryParse(j['pending_at']) : null,
       acceptedAt: j['accepted_at'] != null ? DateTime.tryParse(j['accepted_at']) : null,
       preparingAt: j['preparing_at'] != null ? DateTime.tryParse(j['preparing_at']) : null,
@@ -248,6 +264,7 @@ class Order {
       donePreparingProofUrl: donePreparingProofUrl,
       paymentMethod: paymentMethod,
       paymentStatus: paymentStatus,
+      isCustomOrder: isCustomOrder,
       pendingAt: pendingAt,
       acceptedAt: acceptedAt,
       preparingAt: preparingAt,
@@ -271,6 +288,14 @@ class Order {
         payStatus == 'cod_approved';
   }
 
+  /// Quotes created before the unified checkout flow used `paid` after a
+  /// receipt upload. Treat them as awaiting review just like normal orders.
+  bool get _isLegacyCustomQuoteReview {
+    final payStatus = (paymentStatus ?? '').toLowerCase().trim();
+    return isCustomOrder && payStatus == 'paid' &&
+        paymentProofUrl != null && paymentProofUrl!.isNotEmpty;
+  }
+
   /// Display grouping aligned with website purchase history tabs.
   /// Keys: pending | processing | on_delivery | delivered | completed | cancelled
   String get displayKey {
@@ -283,6 +308,9 @@ class Order {
     if (status == 'done_preparing') return 'processing';
 
     // COD awaiting seller confirmation → To Ship (not To Pay)
+    if (isCustomOrder && _isCod && status == 'pending') {
+      return 'processing';
+    }
     if (_isCod && (status == 'pending' || payStatus == 'cod_pending')) {
       return 'processing';
     }
@@ -293,7 +321,9 @@ class Order {
       return 'processing';
     }
 
-    if (payStatus == 'pending_verification') return 'processing';
+    if (payStatus == 'pending_verification' || _isLegacyCustomQuoteReview) {
+      return 'processing';
+    }
     if (status == 'accepted' ||
         status == 'preparing' ||
         status == 'confirmed' ||
@@ -352,10 +382,15 @@ class Order {
     if (status == 'on_delivery') return 'In Transit';
     if (status == 'done_preparing') return 'Ready';
 
+    if (isCustomOrder && _isCod && status == 'pending') {
+      return 'Pending';
+    }
     if (_isCod && (status == 'pending' || payStatus == 'cod_pending')) {
       return 'Awaiting Confirmation';
     }
-    if (payStatus == 'pending_verification') return 'Under Review';
+    if (payStatus == 'pending_verification' || _isLegacyCustomQuoteReview) {
+      return 'Under Review';
+    }
     if (status == 'accepted' || status == 'confirmed') return 'Processing';
     if (status == 'preparing' || payStatus == 'cod_approved') return 'Preparing';
     if (displayKey == 'processing') return 'Preparing';

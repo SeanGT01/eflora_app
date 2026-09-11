@@ -40,7 +40,7 @@ class AuthProvider extends ChangeNotifier {
     if (result.isSuccess && result.data is Map) {
       _user = User.fromJson(result.data as Map<String, dynamic>);
       notifyListeners();
-    } else if (result.statusCode == 401) {
+    } else if (result.statusCode == 401 || result.statusCode == 403) {
       await logout(notify: true);
     }
     if (_user != null) {
@@ -282,6 +282,8 @@ class AuthProvider extends ChangeNotifier {
       final p = await SharedPreferences.getInstance();
       await p.setString('user_data', jsonEncode({'user': userMap}));
       notifyListeners();
+    } else if (result.statusCode == 401 || result.statusCode == 403) {
+      await logout(notify: true);
     }
   }
 

@@ -19,6 +19,7 @@ import '../../theme/app_theme.dart';
 import '../../widgets/rider_heading_marker.dart';
 import '../../widgets/common.dart';
 import '../../widgets/chat_drawer.dart';
+import '../../widgets/custom_confirm_dialog.dart';
 import 'rider_status_style.dart';
 import 'rider_ui.dart';
 
@@ -219,32 +220,13 @@ class _DeliveryTrackingScreenState extends State<DeliveryTrackingScreen> {
     if (imagePaths == null || !mounted) return;
 
     // Both images captured, show confirmation
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Confirm Delivery',
-            style: GoogleFonts.cormorantGaramond(
-                fontSize: 22, fontWeight: FontWeight.w600)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Proofs captured successfully!',
-                style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Text('Mark this order as delivered?', style: GoogleFonts.dmSans()),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm'),
-          ),
-        ],
-      ),
+    final confirmed = await CustomConfirmDialog.show(
+      context,
+      title: 'Confirm Delivery',
+      message: 'Proofs captured successfully!\n\nMark this order as delivered?',
+      confirmText: 'Confirm',
+      cancelText: 'Cancel',
+      icon: Icons.check_circle_outline,
     );
 
     if (confirmed != true || !mounted) return;

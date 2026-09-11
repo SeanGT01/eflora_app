@@ -13,6 +13,7 @@ import 'providers/notification_provider.dart';
 import 'screens/main_shell.dart';
 import 'screens/rider/rider_shell.dart';
 import 'services/app_quality.dart';
+import 'services/chat_service.dart';
 import 'services/presence_service.dart';
 import 'services/push_service.dart';
 import 'theme/app_background.dart';
@@ -24,6 +25,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   await AppQuality.instance.init();
+  await ChatService.preloadCaches();
   await initializeImageCache();
   await PushService.instance.init();
 
@@ -206,18 +208,21 @@ Widget _buildHomeForRole(BuildContext context) {
   final chat = context.read<ChatProvider>();
   final notif = context.read<NotificationProvider>();
 
-  if (auth.isLoggedIn) {
-    chat.startPolling();
-    final isCustomer = auth.user?.role == 'customer' || auth.user?.role == null;
-    if (isCustomer) {
-      notif.startPolling();
+  WidgetsBinding.instance.addPostFrameCallback((_) {
+    if (!context.mounted) return;
+    if (auth.isLoggedIn) {
+      chat.startPolling();
+      final isCustomer = auth.user?.role == 'customer' || auth.user?.role == null;
+      if (isCustomer) {
+        notif.startPolling();
+      } else {
+        notif.reset();
+      }
     } else {
+      chat.reset();
       notif.reset();
     }
-  } else {
-    chat.reset();
-    notif.reset();
-  }
+  });
 
   if (auth.isLoggedIn && auth.user?.role == 'rider') {
     return const RiderShell();

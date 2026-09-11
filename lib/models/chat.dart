@@ -81,7 +81,9 @@ class ChatConversation {
       lastMessageText: j['last_message_text'],
       lastMessageAt: j['last_message_at'],
       lastSenderId: j['last_sender_id'],
-      unreadCount: j['unread_count'] ?? 0,
+      unreadCount: j['unread_count'] is int
+          ? (j['unread_count'] as int)
+          : int.tryParse(j['unread_count']?.toString() ?? '') ?? 0,
       createdAt: j['created_at'],
       isRiderThread: j['is_rider_thread'] == true,
       orderContext: orderContext,
@@ -271,6 +273,7 @@ class ChatMessage {
   final String? replyToSenderName;
   final String? replyToMessageType;
   final ChatOrderContext? orderCard;
+  final CustomQuoteTicketContext? customTicket;
 
   const ChatMessage({
     required this.id,
@@ -292,29 +295,100 @@ class ChatMessage {
     this.replyToSenderName,
     this.replyToMessageType,
     this.orderCard,
+    this.customTicket,
   });
 
-  factory ChatMessage.fromJson(Map<String, dynamic> j) => ChatMessage(
-    id: j['id'] ?? 0,
-    conversationId: j['conversation_id'] ?? 0,
-    senderId: j['sender_id'] ?? 0,
-    senderName: j['sender_name'],
-    senderAvatar: j['sender_avatar'],
-    senderRole: j['sender_role'],
-    messageType: (j['order_card'] is Map) ? 'order_card' : (j['message_type'] ?? 'text'),
-    text: j['text'],
-    imageUrl: j['image_url'],
-    imagePublicId: j['image_public_id'],
-    isRead: j['is_read'] ?? false,
-    readAt: j['read_at'],
-    createdAt: j['created_at'] ?? '',
-    isDeleted: j['is_deleted'] ?? false,
-    replyToId: j['reply_to_id'],
-    replyToText: j['reply_to_text'],
-    replyToSenderName: j['reply_to_sender_name'],
-    replyToMessageType: j['reply_to_message_type'],
-    orderCard: _orderCardFromJson(j),
-  );
+  factory ChatMessage.fromJson(Map<String, dynamic> j) {
+    final rawType = j['message_type']?.toString() ?? 'text';
+    final customTicket = _customTicketFromJson(j);
+    final isTicket = rawType == 'custom_ticket' || customTicket != null;
+    return ChatMessage(
+      id: j['id'] ?? 0,
+      conversationId: j['conversation_id'] ?? 0,
+      senderId: j['sender_id'] ?? 0,
+      senderName: j['sender_name'],
+      senderAvatar: j['sender_avatar'],
+      senderRole: j['sender_role'],
+      messageType: isTicket
+          ? 'custom_ticket'
+          : ((j['order_card'] is Map) ? 'order_card' : rawType),
+      text: j['text'],
+      imageUrl: j['image_url'],
+      imagePublicId: j['image_public_id'],
+      isRead: j['is_read'] ?? false,
+      readAt: j['read_at'],
+      createdAt: j['created_at'] ?? '',
+      isDeleted: j['is_deleted'] ?? false,
+      replyToId: j['reply_to_id'],
+      replyToText: j['reply_to_text'],
+      replyToSenderName: j['reply_to_sender_name'],
+      replyToMessageType: j['reply_to_message_type'],
+      orderCard: _orderCardFromJson(j),
+      customTicket: customTicket,
+    );
+  }
+
+  static CustomQuoteTicketContext? _customTicketFromJson(Map<String, dynamic> j) {
+    // 1. Check if j['custom_ticket'] is a Map
+    if (j['custom_ticket'] is Map) {
+      try {
+        return CustomQuoteTicketContext.fromJson(Map<String, dynamic>.from(j['custom_ticket'] as Map));
+      } catch (e) {
+        print("❌ Error parsing custom_ticket map: $e");
+      }
+    }
+
+    // 2. Check if j['custom_ticket'] is a String (JSON encoded)
+    if (j['custom_ticket'] is String) {
+      final str = (j['custom_ticket'] as String).trim();
+      if (str.startsWith('{')) {
+        try {
+          final decoded = jsonDecode(str);
+          if (decoded is Map) {
+            return CustomQuoteTicketContext.fromJson(Map<String, dynamic>.from(decoded));
+          }
+        } catch (e) {
+          print("❌ Error parsing stringified custom_ticket: $e");
+        }
+      }
+    }
+
+    // 3. Check if j['text'] contains JSON ticket object
+    final text = j['text']?.toString().trim();
+    if (text != null && text.startsWith('{')) {
+      try {
+        final decoded = jsonDecode(text);
+        if (decoded is Map) {
+          final map = Map<String, dynamic>.from(decoded);
+          if (_isTicketMap(map)) {
+            return CustomQuoteTicketContext.fromJson(map);
+          }
+        }
+      } catch (_) {}
+    }
+
+    // 4. Check if j ITSELF is a ticket object
+    if (_isTicketMap(j)) {
+      try {
+        return CustomQuoteTicketContext.fromJson(j);
+      } catch (e) {
+        print("❌ Error parsing ticket from root map j: $e");
+      }
+    }
+
+    return null;
+  }
+
+  static bool _isTicketMap(Map map) {
+    if (map.containsKey('ticket_number') || map.containsKey('ticketNumber')) return true;
+    if (map.containsKey('ticket_id') || map.containsKey('ticketId')) return true;
+    final title = map['title']?.toString();
+    final price = map['base_price'] ?? map['basePrice'] ?? map['price'];
+    if (title != null && price != null && (map.containsKey('store_id') || map.containsKey('conversation_id'))) {
+      return true;
+    }
+    return false;
+  }
 
   static ChatOrderContext? _orderCardFromJson(Map<String, dynamic> j) {
     if (j['order_card'] is Map) {
@@ -409,4 +483,117 @@ class SupportFaq {
     answer: j['answer']?.toString() ?? '',
     isActive: j['is_active'] != false,
   );
+}
+
+/// Model for a Custom Arrangement Request Ticket sent by florist in chat.
+class CustomQuoteTicketContext {
+  final int id;
+  final String ticketNumber;
+  final int storeId;
+  final String? storeName;
+  final String? storeGcashNumber;
+  final String? storeGcashQrUrl;
+  final bool storeAllowsGcash;
+  final bool storeAllowsCod;
+  final int customerId;
+  final int conversationId;
+  final String title;
+  final String category;
+  final double basePrice;
+  final String? inclusions;
+  final String? imageUrl;
+  final String? imagePublicId;
+  final String? createdAt;
+  final String? expiresAt;
+  final int? remainingSeconds;
+  final bool isExpired;
+  String status;
+  final int? orderId;
+  final bool allowDedicationCard;
+
+  CustomQuoteTicketContext({
+    required this.id,
+    required this.ticketNumber,
+    required this.storeId,
+    this.storeName,
+    this.storeGcashNumber,
+    this.storeGcashQrUrl,
+    this.storeAllowsGcash = true,
+    this.storeAllowsCod = false,
+    required this.customerId,
+    required this.conversationId,
+    required this.title,
+    required this.category,
+    required this.basePrice,
+    this.inclusions,
+    this.imageUrl,
+    this.imagePublicId,
+    this.createdAt,
+    this.expiresAt,
+    this.remainingSeconds,
+    this.isExpired = false,
+    this.status = 'pending',
+    this.orderId,
+    this.allowDedicationCard = true,
+  });
+
+  factory CustomQuoteTicketContext.fromJson(Map<String, dynamic> j) {
+    double price = ChatOrderContext._asDouble(j['base_price'] ?? j['basePrice'] ?? j['price']);
+    String numStr = (j['ticket_number'] ?? j['ticketNumber'] ?? j['ticket_code'] ?? '').toString();
+    if (numStr.isEmpty) {
+      final tid = ChatOrderContext._asInt(j['id'] ?? j['ticket_id'] ?? j['ticketId']);
+      numStr = tid > 0 ? 'CQT-${tid.toString().padLeft(4, '0')}' : 'CQT-0000';
+    }
+
+    return CustomQuoteTicketContext(
+      id: ChatOrderContext._asInt(j['id'] ?? j['ticket_id'] ?? j['ticketId']),
+      ticketNumber: numStr,
+      storeId: ChatOrderContext._asInt(j['store_id'] ?? j['storeId']),
+      storeName: j['store_name']?.toString() ?? j['storeName']?.toString(),
+      storeGcashNumber: j['store_gcash_number']?.toString() ?? j['storeGcashNumber']?.toString(),
+      storeGcashQrUrl: j['store_gcash_qr_url']?.toString() ?? j['storeGcashQrUrl']?.toString(),
+      storeAllowsGcash: j['store_allows_gcash'] != false && j['storeAllowsGcash'] != false,
+      storeAllowsCod: j['store_allows_cod'] == true || j['storeAllowsCod'] == true,
+      customerId: ChatOrderContext._asInt(j['customer_id'] ?? j['customerId']),
+      conversationId: ChatOrderContext._asInt(j['conversation_id'] ?? j['conversationId']),
+      title: (j['title'] ?? 'Custom Arrangement').toString(),
+      category: (j['category'] ?? 'bouquets').toString(),
+      basePrice: price,
+      inclusions: j['inclusions']?.toString(),
+      imageUrl: j['image_url']?.toString() ?? j['imageUrl']?.toString(),
+      imagePublicId: j['image_public_id']?.toString() ?? j['imagePublicId']?.toString(),
+      createdAt: j['created_at']?.toString() ?? j['createdAt']?.toString(),
+      expiresAt: j['expires_at']?.toString() ?? j['expiresAt']?.toString(),
+      remainingSeconds: j['remaining_seconds'] != null
+          ? ChatOrderContext._asInt(j['remaining_seconds'])
+          : (j['remainingSeconds'] != null ? ChatOrderContext._asInt(j['remainingSeconds']) : null),
+      isExpired: j['is_expired'] == true || j['isExpired'] == true,
+      status: (j['status'] ?? 'pending').toString(),
+      orderId: (j['order_id'] != null || j['orderId'] != null)
+          ? ChatOrderContext._asInt(j['order_id'] ?? j['orderId'])
+          : null,
+      allowDedicationCard: j['allow_dedication_card'] != false && j['allowDedicationCard'] != false,
+    );
+  }
+
+  String get categoryLabel {
+    switch (category.toLowerCase()) {
+      case 'bouquets':
+        return 'Bouquet';
+      case 'fresh_flowers':
+        return 'Fresh Flowers';
+      case 'potted_plants':
+        return 'Potted Plants';
+      case 'succulents':
+        return 'Succulents';
+      case 'dried_flowers':
+        return 'Dried Flowers';
+      case 'stands':
+        return 'Flower Stand';
+      case 'vases':
+        return 'Vase Arrangement';
+      default:
+        return category.replaceAll('_', ' ').split(' ').map((w) => w.isNotEmpty ? '${w[0].toUpperCase()}${w.substring(1)}' : '').join(' ');
+    }
+  }
 }

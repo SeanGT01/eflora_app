@@ -8,7 +8,7 @@ import 'api_service.dart';
 import 'dart:developer' as developer;
 
 class CheckoutService {
-  static const String _baseUrl = 'https://eflora-system-production.up.railway.app/api/v1/checkout';
+  static String get _baseUrl => '${ApiService.apiRoot}/checkout';
 
   /// Extract GCash QR image URLs from API `gcash_qr_codes` (primary first).
   /// Backend [GCashQR.to_dict] uses `url`, not `qr_image_url`.
@@ -296,7 +296,7 @@ class CheckoutService {
       final token = await ApiService.getToken();
       
       // Create multipart request
-      const uploadUrl = 'https://eflora-system-production.up.railway.app/api/v1/checkout/upload-proof';
+      final uploadUrl = '${ApiService.apiRoot}/checkout/upload-proof';
       
       final request = http.MultipartRequest('POST', Uri.parse(uploadUrl))
         ..headers['Authorization'] = 'Bearer $token'
@@ -664,7 +664,7 @@ class CheckoutService {
       };
 
       final uri = Uri.parse(
-        'https://eflora-system-production.up.railway.app/api/v1/customer/stores/$storeId/time-slots?date=$date',
+        '${ApiService.apiRoot}/customer/stores/$storeId/time-slots?date=$date',
       );
 
       developer.log('Fetching time slots: $uri');

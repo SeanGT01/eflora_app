@@ -13,6 +13,7 @@ import '../../navigation/floating_nav_metrics.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/custom_confirm_dialog.dart';
 import '../../widgets/customer_default_avatar.dart';
 import '../../widgets/auth_required_sheet.dart';
 import '../orders/orders_screen.dart';
@@ -130,22 +131,14 @@ class _LoggedInView extends StatelessWidget {
   }
 
   Future<void> _signOut(BuildContext context) async {
-    final confirm = await showDialog<bool>(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text('Sign Out'),
-        content: const Text('Are you sure you want to sign out?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('Sign Out', style: TextStyle(color: AppColors.error)),
-          ),
-        ],
-      ),
+    final confirm = await CustomConfirmDialog.show(
+      context,
+      title: 'Sign Out',
+      message: 'Are you sure you want to sign out?',
+      confirmText: 'Sign Out',
+      cancelText: 'Cancel',
+      icon: Icons.logout_rounded,
+      isDestructive: true,
     );
     if (confirm == true && context.mounted) {
       context.read<AuthProvider>().logout();
@@ -231,7 +224,7 @@ class _LoggedInView extends StatelessWidget {
                         label: 'Seller Dashboard',
                         onTap: () async {
                           final url = Uri.parse(
-                            'https://eflora-system-production.up.railway.app/login',
+                            '${ApiService.baseUrl}/login',
                           );
                           if (await canLaunchUrl(url)) {
                             await launchUrl(

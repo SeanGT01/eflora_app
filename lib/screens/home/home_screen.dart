@@ -21,6 +21,7 @@ import '../../widgets/glass.dart';
 import '../../widgets/horizontal_fading_edge.dart';
 import '../../widgets/product_card.dart';
 import '../../widgets/auth_required_sheet.dart';
+import '../../widgets/custom_confirm_dialog.dart';
 import '../../widgets/quick_add_variant_sheet.dart';
 import '../product/product_detail_screen.dart';
 import '../search/search_screen.dart';
@@ -312,6 +313,29 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     _heroAnimFrom = 0;
     _heroAnimTo = 0;
 
+    // 0ms instant reload from cache
+    final cachedStores = ApiService.getCachedStores();
+    if (cachedStores != null && cachedStores.isNotEmpty) {
+      _stores = cachedStores.map((e) => Store.fromJson(e)).toList();
+      _loadingStores = false;
+    }
+
+    final initialRows = <_FeaturedCategoryRow>[];
+    final initialFlat = <Product>[];
+    for (final row in _kFeaturedHomeRows) {
+      final cached = ApiService.getCachedCategoryProducts(row.$1);
+      if (cached != null && cached.isNotEmpty) {
+        final prods = cached.map((m) => Product.fromJson(m)).toList();
+        initialRows.add(_FeaturedCategoryRow(slug: row.$1, name: row.$2, products: prods));
+        initialFlat.addAll(prods);
+      }
+    }
+    if (initialRows.isNotEmpty) {
+      _featuredRows = initialRows;
+      _products = initialFlat;
+      _loadingProducts = false;
+    }
+
     _loadData();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted && AppQuality.instance.useRichHero) _restartHeroProgress();
@@ -428,7 +452,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   // REMOVE THE DUPLICATE _loadProducts METHOD - KEEP ONLY THIS ONE
   Future<void> _loadProducts({String? category}) async {
-    setState(() => _loadingProducts = true);
+    if (_featuredRows.isEmpty) {
+      setState(() => _loadingProducts = true);
+    }
     final isLoggedIn = context.read<AuthProvider>().isLoggedIn;
     final includeOutside = isLoggedIn ? _browseOutsideLocation : true;
 
@@ -523,6 +549,9 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Future<void> _loadStores() async {
+    if (_stores.isEmpty) {
+      setState(() => _loadingStores = true);
+    }
     final isLoggedIn = context.read<AuthProvider>().isLoggedIn;
     final result = await ApiService.getStores(
       includeOutsideLocation: isLoggedIn ? _browseOutsideLocation : true,
@@ -558,73 +587,58 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   Future<bool> _showBrowseLimitationsModal() async {
     bool dontShowAgain = false;
 
-    final confirmed = await showDialog<bool>(
-          context: context,
-          barrierDismissible: false,
-          builder: (_) => AlertDialog(
-            title: const Text('Browse Outside Coverage Area'),
-            content: StatefulBuilder(
-              builder: (context, setDialogState) => Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'You can browse products from stores outside your delivery area, but:',
-                    style: GoogleFonts.dmSans(
-                        fontSize: 13, fontWeight: FontWeight.w600),
-                  ),
-                  const SizedBox(height: 12),
-                  ...[
-                    '• You cannot add items to cart from unavailable stores',
-                    '• You cannot checkout unless you change your address to match store delivery coverage',
-                  ].map((text) => Padding(
-                        padding: const EdgeInsets.only(bottom: 8),
-                        child: Text(
-                          text,
-                          style: GoogleFonts.dmSans(fontSize: 12, height: 1.4),
-                        ),
-                      )),
-                  const SizedBox(height: 16),
-                  Row(
-                    children: [
-                      Checkbox.adaptive(
-                        value: dontShowAgain,
-                        onChanged: (v) =>
-                            setDialogState(() => dontShowAgain = v ?? false),
-                      ),
-                      const SizedBox(width: 4),
-                      Expanded(
-                        child: Text(
-                          'Do not show again',
-                          style: GoogleFonts.dmSans(fontSize: 12),
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
+    final confirmed = await CustomConfirmDialog.show(
+      context,
+      title: 'Browse Outside Coverage Area',
+      confirmText: 'Continue',
+      cancelText: 'Cancel',
+      icon: Icons.explore_rounded,
+      contentWidget: StatefulBuilder(
+        builder: (context, setDialogState) => Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'You can browse products from stores outside your delivery area, but:',
+              style: GoogleFonts.dmSans(
+                  fontSize: 13, fontWeight: FontWeight.w600),
             ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
-              ),
-              TextButton(
-                onPressed: () {
-                  if (dontShowAgain) {
-                    setState(() => _browseLimitationsDismissed = true);
-                  }
-                  Navigator.pop(context, true);
-                },
-                child: const Text('Continue',
-                    style: TextStyle(
-                        color: AppColors.deepRose,
-                        fontWeight: FontWeight.w600)),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+            const SizedBox(height: 12),
+            ...[
+              '• You cannot add items to cart from unavailable stores',
+              '• You cannot checkout unless you change your address to match store delivery coverage',
+            ].map((text) => Padding(
+                  padding: const EdgeInsets.only(bottom: 8),
+                  child: Text(
+                    text,
+                    style: GoogleFonts.dmSans(fontSize: 12, height: 1.4),
+                  ),
+                )),
+            const SizedBox(height: 16),
+            Row(
+              children: [
+                Checkbox.adaptive(
+                  value: dontShowAgain,
+                  onChanged: (v) =>
+                      setDialogState(() => dontShowAgain = v ?? false),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    'Do not show again',
+                    style: GoogleFonts.dmSans(fontSize: 12),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
+    ) ?? false;
+    
+    if (confirmed && dontShowAgain) {
+      setState(() => _browseLimitationsDismissed = true);
+    }
 
     return confirmed;
   }
@@ -783,8 +797,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     return LayoutBuilder(
       builder: (context, constraints) {
         final isWide = constraints.maxWidth >= 620;
-        // Uniform, fixed banner height across all slides and device heights.
-        final heroHeight = isWide ? 217.0 : 192.0;
+        // Proportional responsive banner height:
+        // On standard phone widths (~375-412px, such as Pixel), 201.6px corresponds
+        // to an aspect ratio of ~1.85:1 (width / height).
+        // Scaling height proportionally with available width keeps the exact same
+        // visual aspect ratio on Realme, Pixel, and other device screen sizes.
+        final heroHeight = isWide
+            ? (constraints.maxWidth * 0.35).clamp(210.0, 260.0)
+            : (constraints.maxWidth * (201.6 / 372.0)).clamp(180.0, 230.0);
         return Container(
           decoration: BoxDecoration(
             color: AppColors.pageCream,
@@ -1578,6 +1598,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   }
 
   Widget _buildStoresSection() {
+    final storesHeight = context.s(136).clamp(130.0, 152.0);
     if (_loadingStores) {
       final gutter = context.pageGutter;
       return Padding(
@@ -1590,14 +1611,14 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
             HorizontalFadingEdge(
               fadeWidth: context.s(22).clamp(16.0, 26.0),
               child: SizedBox(
-                height: context.s(112).clamp(100.0, 124.0),
+                height: storesHeight,
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: 4,
                   separatorBuilder: (_, __) => SizedBox(width: context.s(12)),
                   itemBuilder: (_, __) => const GlassCard(
-                    width: 140,
-                    padding: EdgeInsets.all(12),
+                    width: 130,
+                    padding: EdgeInsets.all(10),
                     blur: 0,
                     child: Center(
                       child: CircularProgressIndicator(
@@ -1626,7 +1647,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
           HorizontalFadingEdge(
             fadeWidth: context.s(22).clamp(16.0, 26.0),
             child: SizedBox(
-              height: context.s(112).clamp(100.0, 124.0),
+              height: storesHeight,
               child: ListView.separated(
                 controller: _storesScrollController,
                 scrollDirection: Axis.horizontal,
@@ -1732,8 +1753,8 @@ class _StoreChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GlassCard(
-      width: 140,
-      padding: const EdgeInsets.all(12),
+      width: 130,
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
       blur: 0,
       onTap: () => Navigator.push(
         context,
@@ -1746,8 +1767,8 @@ class _StoreChip extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              width: 48,
-              height: 48,
+              width: 44,
+              height: 44,
               decoration: const BoxDecoration(
                 gradient: AppColors.blushGradient,
                 shape: BoxShape.circle,
@@ -1770,18 +1791,20 @@ class _StoreChip extends StatelessWidget {
                 ),
               ),
             ),
-            const SizedBox(height: 8),
-            Text(
-              store.name,
-              style: GoogleFonts.cormorantGaramond(
-                fontSize: 15,
-                fontWeight: FontWeight.w500,
-                height: 1.15,
-                color: AppColors.charcoal,
+            const SizedBox(height: 6),
+            Flexible(
+              child: Text(
+                store.name,
+                style: GoogleFonts.cormorantGaramond(
+                  fontSize: 14.5,
+                  fontWeight: FontWeight.w600,
+                  height: 1.15,
+                  color: AppColors.charcoal,
+                ),
+                maxLines: 2,
+                textAlign: TextAlign.center,
+                overflow: TextOverflow.ellipsis,
               ),
-              maxLines: 2,
-              textAlign: TextAlign.center,
-              overflow: TextOverflow.ellipsis,
             ),
           ],
         ),
@@ -1793,7 +1816,7 @@ class _StoreChip extends StatelessWidget {
     final effectiveUrl = store.effectiveLogoUrl;
 
     if (effectiveUrl == null || effectiveUrl.isEmpty) {
-      return const Icon(Icons.storefront, color: AppColors.dustyRose, size: 22);
+      return const Icon(Icons.storefront, color: AppColors.dustyRose, size: 20);
     }
 
     // If it's a Cloudinary URL (starts with http), use directly
@@ -1804,11 +1827,11 @@ class _StoreChip extends StatelessWidget {
     return ClipOval(
       child: CachedNetworkImage(
         imageUrl: imageUrl,
-        width: 48,
-        height: 48,
+        width: 44,
+        height: 44,
         fit: BoxFit.cover,
         errorWidget: (_, __, ___) =>
-            const Icon(Icons.storefront, color: AppColors.dustyRose, size: 22),
+            const Icon(Icons.storefront, color: AppColors.dustyRose, size: 20),
       ),
     );
   }

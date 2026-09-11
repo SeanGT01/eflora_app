@@ -13,6 +13,7 @@ import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/adaptive_blur.dart';
 import '../../widgets/common.dart';
+import '../../widgets/custom_confirm_dialog.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/delivery_unavailable_dialog.dart';
 import '../../widgets/active_order_limit_dialog.dart';
@@ -63,23 +64,14 @@ class _CartScreenState extends State<CartScreen> {
             if (cart.items.isNotEmpty)
               TextButton(
                 onPressed: () async {
-                  final confirm = await showDialog<bool>(
-                    context: context,
-                    builder: (_) => AlertDialog(
-                      title: const Text('Clear Cart'),
-                      content: const Text('Remove all items from your cart?'),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, false),
-                          child: const Text('Cancel'),
-                        ),
-                        TextButton(
-                          onPressed: () => Navigator.pop(context, true),
-                          child: const Text('Clear',
-                              style: TextStyle(color: AppColors.error)),
-                        ),
-                      ],
-                    ),
+                  final confirm = await CustomConfirmDialog.show(
+                    context,
+                    title: 'Clear Cart',
+                    message: 'Remove all items from your cart?',
+                    confirmText: 'Clear',
+                    cancelText: 'Cancel',
+                    icon: Icons.remove_shopping_cart_outlined,
+                    isDestructive: true,
                   );
                   if (confirm == true) cart.clear();
                 },

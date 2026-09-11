@@ -16,6 +16,7 @@ import '../../widgets/glass.dart';
 import '../../widgets/product_card.dart';
 import '../../widgets/auth_required_sheet.dart';
 import '../../widgets/common.dart';
+import '../../widgets/delivery_unavailable_dialog.dart';
 import '../../widgets/quick_add_variant_sheet.dart';
 import '../product/product_detail_screen.dart';
 import '../cart/cart_screen.dart';
@@ -76,7 +77,10 @@ class _StorePageState extends State<StorePage>
 
   Future<void> _loadProducts() async {
     setState(() => _loadingProducts = true);
-    final result = await ApiService.getProducts(storeId: widget.storeId);
+    final result = await ApiService.getProducts(
+      storeId: widget.storeId,
+      includeOutsideLocation: true,
+    );
     if (!mounted) return;
     if (result.isSuccess) {
       final data = result.data;
@@ -116,6 +120,11 @@ class _StorePageState extends State<StorePage>
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       showAuthRequiredSheet(context);
+      return;
+    }
+    if (product.canDeliverToCustomer == false || _store?.canDeliverToCustomer == false) {
+      final reason = product.deliveryReason ?? _store?.deliveryReason;
+      await showDeliveryUnavailableDialog(context, reason: reason);
       return;
     }
     await showQuickAddVariantSheet(context, product: product);
@@ -1096,7 +1105,10 @@ class _StoreCategoryProductsPageState
   }
 
   Future<void> _load() async {
-    final result = await ApiService.getProducts(storeId: widget.storeId);
+    final result = await ApiService.getProducts(
+      storeId: widget.storeId,
+      includeOutsideLocation: true,
+    );
     if (!mounted) return;
     if (result.isSuccess) {
       final data = result.data;
@@ -1131,6 +1143,10 @@ class _StoreCategoryProductsPageState
     final auth = context.read<AuthProvider>();
     if (!auth.isLoggedIn) {
       showAuthRequiredSheet(context);
+      return;
+    }
+    if (product.canDeliverToCustomer == false) {
+      await showDeliveryUnavailableDialog(context, reason: product.deliveryReason);
       return;
     }
     await showQuickAddVariantSheet(context, product: product);

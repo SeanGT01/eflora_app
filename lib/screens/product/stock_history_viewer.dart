@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:eflowers/services/api_service.dart';
+import 'package:http/http.dart' as http;
+import '../../services/api_service.dart';
 import 'package:intl/intl.dart';
 
 class StockHistoryViewer extends StatefulWidget {
@@ -29,10 +31,15 @@ class _StockHistoryViewerState extends State<StockHistoryViewer> {
 
   Future<Map<String, dynamic>> _fetchStockHistory() async {
     try {
-      final response = await ApiService.get(
-        '/seller/products/${widget.productId}/stock-history',
-      );
-      return response;
+      final token = await ApiService.getToken();
+      final res = await http.get(
+        Uri.parse('${ApiService.apiRoot}/seller/products/${widget.productId}/stock-history'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+      ).timeout(const Duration(seconds: 15));
+      return jsonDecode(res.body) as Map<String, dynamic>;
     } catch (e) {
       throw Exception('Failed to load stock history: $e');
     }

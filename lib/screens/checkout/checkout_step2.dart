@@ -7,6 +7,7 @@ import '../../providers/cart_provider.dart';
 import '../../providers/checkout_provider.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/checkout_summary_line.dart';
+import '../../widgets/custom_confirm_dialog.dart';
 import '../../widgets/glass.dart';
 
 // Amber info/warning callout tokens, matching the website's notice styling.
@@ -358,34 +359,13 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
   }
 
   void _showDeliveryInfo(String message) {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.warmWhite,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(AppRadius.lg),
-        ),
-        content: Text(
-          message,
-          style: GoogleFonts.dmSans(
-            fontSize: 14,
-            color: AppColors.charcoal,
-            height: 1.4,
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: Text(
-              'OK',
-              style: GoogleFonts.dmSans(
-                fontWeight: FontWeight.w700,
-                color: AppColors.deepRose,
-              ),
-            ),
-          ),
-        ],
-      ),
+    CustomConfirmDialog.show(
+      context,
+      title: 'Delivery Note',
+      message: message,
+      confirmText: 'OK',
+      showCancelButton: false,
+      icon: Icons.info_outline_rounded,
     );
   }
 

@@ -4,8 +4,8 @@ import 'api_service.dart';
 import 'dart:io';
 
 class RiderService {
-  static const String _base = 'https://eflora-system-production.up.railway.app';
-  static const String _api = '$_base/api/v1/rider';
+  static String get _base => ApiService.baseUrl;
+  static String get _api => '${ApiService.apiRoot}/rider';
 
   static Future<Map<String, String>> _authHeaders() async {
     final h = <String, String>{'Content-Type': 'application/json'};

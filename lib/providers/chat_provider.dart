@@ -21,6 +21,17 @@ class ChatProvider extends ChangeNotifier {
   int get totalUnread => _totalUnread;
   bool get loading => _loading;
 
+  /// Check if a conversation was marked read locally in this session.
+  bool isLocallyRead(int conversationId) => _locallyReadIds.contains(conversationId);
+
+  ChatProvider() {
+    final cached = ChatService.getCachedConversationsSync();
+    if (cached.isNotEmpty) {
+      _conversations = cached;
+      _totalUnread = cached.fold<int>(0, (sum, c) => sum + c.unreadCount);
+    }
+  }
+
   /// Start periodically polling for unread count.
   void startPolling() {
     if (_unreadTimer != null) return;
@@ -69,8 +80,10 @@ class ChatProvider extends ChangeNotifier {
 
   /// Load conversations from server.
   Future<void> loadConversations() async {
-    _loading = true;
-    notifyListeners();
+    if (_conversations.isEmpty) {
+      _loading = true;
+      notifyListeners();
+    }
 
     _conversations =
         _applyLocalReadOverrides(await ChatService.getConversations());

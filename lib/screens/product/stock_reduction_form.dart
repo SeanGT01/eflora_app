@@ -1,6 +1,8 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:eflowers/services/api_service.dart';
-import 'package:eflowers/widgets/common.dart';
+import 'package:http/http.dart' as http;
+import '../../services/api_service.dart';
+import '../../widgets/common.dart';
 
 class StockReductionForm extends StatefulWidget {
   final int productId;
@@ -65,17 +67,22 @@ class _StockReductionFormState extends State<StockReductionForm> {
 
     try {
       final amount = int.parse(_amountController.text);
-      
-      final response = await ApiService.post(
-        '/seller/products/${widget.productId}/reduce-stock',
-        body: {
+      final token = await ApiService.getToken();
+      final res = await http.post(
+        Uri.parse('${ApiService.apiRoot}/seller/products/${widget.productId}/reduce-stock'),
+        headers: {
+          'Content-Type': 'application/json',
+          if (token != null) 'Authorization': 'Bearer $token',
+        },
+        body: jsonEncode({
           'amount': amount,
           'reason': _selectedReason,
           'reason_notes': _notesController.text.isNotEmpty 
             ? _notesController.text 
             : null,
-        },
-      );
+        }),
+      ).timeout(const Duration(seconds: 15));
+      final response = jsonDecode(res.body) as Map<String, dynamic>;
 
       if (!mounted) return;
 

@@ -17,6 +17,11 @@ import '../utils/responsive.dart';
 import 'customer_default_avatar.dart';
 import 'common.dart';
 import 'chat_order_card.dart';
+import 'chat_custom_ticket_card.dart';
+import 'custom_ticket_checkout_sheet.dart';
+import 'custom_confirm_dialog.dart';
+import '../screens/main_shell.dart';
+import '../screens/orders/orders_screen.dart';
 import '../screens/store/store_page.dart';
 
 /// Lightweight Q&A message representation for Quick Answers.
@@ -373,13 +378,53 @@ class ChatDrawerState extends State<ChatDrawer>
             CurvedAnimation(parent: _slideController, curve: Curves.easeOut));
     _slideController.forward();
     _chatProvider.setLiveMode(true);
+
+    final providerConvos = _chatProvider.conversations.isNotEmpty
+        ? _chatProvider.conversations
+        : ChatService.getCachedConversationsSync();
+    if (providerConvos.isNotEmpty) {
+      _conversations = List<ChatConversation>.from(providerConvos);
+      _inboxLoading = false;
+    } else {
+      _loadLocalConversations();
+    }
+
+    final cachedDeliverable = ChatService.getCachedDeliverableStoresSync();
+    if (cachedDeliverable.isNotEmpty) {
+      _deliverableStores = cachedDeliverable;
+    } else {
+      _loadLocalDeliverableStores();
+    }
+
     _loadInbox();
+    _loadDeliverableStores();
     _startInboxSync();
 
     if (widget.openCustomerId != null ||
         widget.openStoreId != null ||
         widget.openOrderId != null) {
       _openWithContext();
+    }
+  }
+
+  Future<void> _loadLocalConversations() async {
+    final local = await ChatService.getLocalConversations();
+    if (!mounted || local.isEmpty) return;
+    if (_conversations.isEmpty) {
+      setState(() {
+        _conversations = local;
+        _inboxLoading = false;
+      });
+    }
+  }
+
+  Future<void> _loadLocalDeliverableStores() async {
+    final local = await ChatService.getLocalDeliverableStores();
+    if (!mounted || local.isEmpty) return;
+    if (_deliverableStores.isEmpty) {
+      setState(() {
+        _deliverableStores = local;
+      });
     }
   }
 
@@ -428,14 +473,17 @@ class ChatDrawerState extends State<ChatDrawer>
     try {
       final convos = await ChatService.getConversations();
       if (!mounted) return;
-      // Keep optimistic unread clears while server catches up
+      // Keep optimistic unread clears while server catches up, but only for threads explicitly read in this session or currently open
       final merged = convos.map((c) {
         final localIdx = _conversations.indexWhere((x) => x.id == c.id);
-        if (localIdx != -1 &&
-            _conversations[localIdx].unreadCount == 0 &&
-            c.unreadCount > 0) {
-          return c.copyWith(unreadCount: 0);
+        final isCurrentlyOpen = _showDetail && _activeConversation?.id == c.id;
+        final isLocallyRead = _chatProvider.isLocallyRead(c.id) || isCurrentlyOpen;
+
+        var result = c;
+        if (isLocallyRead && c.unreadCount > 0) {
+          result = result.copyWith(unreadCount: 0);
         }
+
         // Prefer newer local preview if timestamps look equal/older (just sent)
         if (localIdx != -1) {
           final local = _conversations[localIdx];
@@ -448,15 +496,15 @@ class ChatDrawerState extends State<ChatDrawer>
                   localAt.compareTo(serverAt) >= 0) &&
               local.lastMessageText != null &&
               local.lastMessageText != c.lastMessageText) {
-            return c.copyWith(
+            result = result.copyWith(
               lastMessageText: local.lastMessageText,
               lastMessageAt: localAt,
               lastSenderId: local.lastSenderId,
-              unreadCount: 0,
+              unreadCount: isLocallyRead ? 0 : c.unreadCount,
             );
           }
         }
-        return c;
+        return result;
       }).toList();
 
       // If active conversation is open (e.g. rider thread opened from order details),
@@ -473,7 +521,6 @@ class ChatDrawerState extends State<ChatDrawer>
       final total = merged.fold<int>(0, (sum, c) => sum + c.unreadCount);
       _chatProvider.syncUnreadTotal(total);
       _chatProvider.refreshUnread();
-      _loadDeliverableStores();
       if (!_showDetail) {
         await _refreshInboxPresence();
         _startInboxPresencePoll();
@@ -637,23 +684,45 @@ class ChatDrawerState extends State<ChatDrawer>
     }
     _chatProvider.upsertConversation(convo);
 
+    final cached = ChatService.getCachedMessagesSync(convo.id);
+    final hasCached = cached.isNotEmpty;
+
     setState(() {
       _showDetail = true;
       _quickAnswersMode = false;
       _activeConversation = convo;
       _orderContext = convo.orderContext;
-      _messages = [];
-      _messagesLoading = true;
+      _messages = hasCached ? List<ChatMessage>.from(cached) : [];
+      _messagesLoading = !hasCached;
       _pendingImages.clear();
       _otherIsTyping = false;
       _otherOnline = _isPartnerOnline(convo.otherUser?.id);
     });
+
+    if (hasCached) {
+      _scrollToBottom(immediate: true);
+    } else {
+      _loadLocalMessages(convo.id);
+    }
+
     _loadMessages(forceScroll: true);
     _applyLocalRead(convo.id);
     _markRead();
     _checkOnline();
     _startPoll();
     _ensureOrderContext(convo);
+  }
+
+  Future<void> _loadLocalMessages(int convoId) async {
+    final local = await ChatService.getLocalMessages(convoId);
+    if (!mounted || _activeConversation?.id != convoId || local.isEmpty) return;
+    if (_messagesLoading || _messages.isEmpty) {
+      setState(() {
+        _messages = local;
+        _messagesLoading = false;
+      });
+      _scrollToBottom(immediate: true);
+    }
   }
 
   ChatOrderContext _cardContextForMessage(ChatMessage msg) {
@@ -710,6 +779,7 @@ class ChatDrawerState extends State<ChatDrawer>
       _orderSuggestDismissed = true;
       _suggestOrderId = null;
     });
+    ChatService.appendMessageToCache(convo.id, msg);
     _applyLocalPreview(convo.id, msg.orderCardPreview, senderId: msg.senderId);
     _scrollToBottom();
   }
@@ -839,9 +909,7 @@ class ChatDrawerState extends State<ChatDrawer>
     try {
       final previousIds = _messages.map((m) => m.id).toSet();
       final nearBottom = !_scrollController.hasClients ||
-          (_scrollController.position.maxScrollExtent -
-                  _scrollController.offset) <
-              140;
+          _scrollController.offset < 140;
       final msgs =
           await ChatService.getMessages(_activeConversation!.id, perPage: 50);
       if (!mounted) return;
@@ -851,7 +919,7 @@ class ChatDrawerState extends State<ChatDrawer>
         _messagesLoading = false;
       });
       if (forceScroll || previousIds.isEmpty || (hasNew && nearBottom)) {
-        _scrollToBottom();
+        _scrollToBottom(immediate: forceScroll || previousIds.isEmpty);
       }
       if (hasNew && msgs.isNotEmpty) {
         final last = msgs.last;
@@ -871,15 +939,29 @@ class ChatDrawerState extends State<ChatDrawer>
     }
   }
 
-  void _scrollToBottom() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (_scrollController.hasClients) {
+  void _scrollToBottom({bool immediate = false}) {
+    void doScroll() {
+      if (!mounted || !_scrollController.hasClients) return;
+      if (immediate || _scrollController.offset > 400) {
+        _scrollController.jumpTo(0.0);
+      } else {
         _scrollController.animateTo(
-          _scrollController.position.maxScrollExtent,
+          0.0,
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOut,
         );
       }
+    }
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      doScroll();
+      // Double check in subsequent frame to lock at bottom (offset 0.0) after async image / card layout sizing
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scrollController.hasClients) return;
+        if (immediate && _scrollController.offset != 0.0) {
+          _scrollController.jumpTo(0.0);
+        }
+      });
     });
   }
 
@@ -1019,6 +1101,7 @@ class ChatDrawerState extends State<ChatDrawer>
         _messages.add(msg);
         _sending = false;
       });
+      ChatService.appendMessageToCache(_activeConversation!.id, msg);
       _applyLocalPreview(
         _activeConversation!.id,
         msg.text ?? text,
@@ -1074,6 +1157,7 @@ class ChatDrawerState extends State<ChatDrawer>
           await ChatService.sendImageMessage(_activeConversation!.id, file);
       if (msg != null && mounted) {
         setState(() => _messages.add(msg));
+        ChatService.appendMessageToCache(_activeConversation!.id, msg);
         _applyLocalPreview(
           _activeConversation!.id,
           msg.text?.isNotEmpty == true ? msg.text! : '[Image]',
@@ -1571,18 +1655,20 @@ class ChatDrawerState extends State<ChatDrawer>
 
   Future<void> _openSupportConversation() async {
     if (_openingSupport) return;
-    setState(() => _openingSupport = true);
 
     final existing = _conversations.cast<ChatConversation?>().firstWhere(
       (c) => c?.otherUser?.role == 'admin',
-      orElse: () => null,
+      orElse: () => _chatProvider.conversations.cast<ChatConversation?>().firstWhere(
+        (c) => c?.otherUser?.role == 'admin',
+        orElse: () => ChatService.getSupportConversationSync(),
+      ),
     );
     if (existing != null) {
-      setState(() => _openingSupport = false);
       _openConversation(existing);
       return;
     }
 
+    setState(() => _openingSupport = true);
     try {
       final convo = await ChatService.getOrCreateSupportConversation();
       if (!mounted) return;
@@ -2269,27 +2355,14 @@ class ChatDrawerState extends State<ChatDrawer>
       ),
       confirmDismiss: (_) async {
         if (isAdmin) return false;
-        final confirmed = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: Text('Delete Conversation',
-                style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
-            content: Text('Delete your conversation with $displayName?',
-                style: GoogleFonts.dmSans()),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(false),
-                child: Text('Cancel',
-                    style: GoogleFonts.dmSans(color: AppColors.muted)),
-              ),
-              TextButton(
-                onPressed: () => Navigator.of(ctx).pop(true),
-                child: Text('Delete',
-                    style: GoogleFonts.dmSans(
-                        color: Colors.red, fontWeight: FontWeight.w600)),
-              ),
-            ],
-          ),
+        final confirmed = await CustomConfirmDialog.show(
+          context,
+          title: 'Delete Conversation',
+          message: 'Delete your conversation with $displayName?',
+          confirmText: 'Delete',
+          cancelText: 'Cancel',
+          isDestructive: true,
+          icon: Icons.delete_outline_rounded,
         );
         return confirmed ?? false;
       },
@@ -2389,7 +2462,10 @@ class ChatDrawerState extends State<ChatDrawer>
 
     final supportConvo = _conversations.cast<ChatConversation?>().firstWhere(
       (c) => c?.otherUser?.role == 'admin',
-      orElse: () => null,
+      orElse: () => _chatProvider.conversations.cast<ChatConversation?>().firstWhere(
+        (c) => c?.otherUser?.role == 'admin',
+        orElse: () => ChatService.getSupportConversationSync(),
+      ),
     );
     final normalConvos =
         _conversations.where((c) => c.otherUser?.role != 'admin').toList();
@@ -2660,14 +2736,17 @@ class ChatDrawerState extends State<ChatDrawer>
                     )
                   : ListView.builder(
                       controller: _scrollController,
+                      reverse: true,
                       keyboardDismissBehavior:
                           ScrollViewKeyboardDismissBehavior.onDrag,
                       padding: const EdgeInsets.symmetric(
                           horizontal: 12, vertical: 8),
                       itemCount: _groupedMessages.length,
                       itemBuilder: (context, index) {
+                        final reversedIndex =
+                            _groupedMessages.length - 1 - index;
                         return _buildMessageGroup(
-                            _groupedMessages[index], index);
+                            _groupedMessages[reversedIndex], reversedIndex);
                       },
                     ),
         ),
@@ -2743,6 +2822,7 @@ class ChatDrawerState extends State<ChatDrawer>
         orElse: () => _messages.first);
     final isLastSent = isSent && group.contains(lastSentByMe);
     final isImageGrid = group.length > 1 && !msg.isDeleted;
+    final isCustomTicket = !msg.isDeleted && msg.customTicket != null;
     final isOrderCard = !msg.isDeleted &&
         (msg.orderCard != null || msg.messageType == 'order_card');
 
@@ -2807,6 +2887,51 @@ class ChatDrawerState extends State<ChatDrawer>
                               ctx: _cardContextForMessage(msg),
                               isSent: isSent,
                             ),
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Padding(
+                            padding: const EdgeInsets.symmetric(horizontal: 4),
+                            child: Text(
+                              _formatTime(msg.createdAt),
+                              style: GoogleFonts.dmSans(
+                                  fontSize: 9.5, color: Colors.grey[500]),
+                            ),
+                          ),
+                        ],
+                      )
+                    : isCustomTicket
+                    ? Column(
+                        crossAxisAlignment: isSent
+                            ? CrossAxisAlignment.end
+                            : CrossAxisAlignment.start,
+                        children: [
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxWidth:
+                                  MediaQuery.of(context).size.width * 0.82,
+                            ),
+                            child: SizedBox(
+                              width: 270,
+                              child: ChatCustomTicketCard(
+                                ticket: msg.customTicket!,
+                                isSent: isSent,
+                                onViewOrderPressed: () {
+                                  widget.onClose();
+                                  final orderId = msg.customTicket?.orderId;
+                                  MainShell.switchTab(context, 3, targetOrderStatus: 'pending', targetOrderId: orderId);
+                                },
+                                onReviewPressed: () {
+                                  CustomTicketCheckoutSheet.show(
+                                    context,
+                                    ticket: msg.customTicket!,
+                                    onOrderPlaced: () {
+                                      setState(() => msg.customTicket!.status = 'accepted');
+                                      _loadMessages();
+                                    },
+                                  );
+                                },
+                              ),
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -3346,92 +3471,14 @@ class ChatDrawerState extends State<ChatDrawer>
   }
 
   Future<void> _deleteMessage(ChatMessage msg) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(22)),
-        contentPadding: const EdgeInsets.fromLTRB(22, 22, 22, 14),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 52,
-              height: 52,
-              decoration: const BoxDecoration(
-                color: Color(0xFFFFEBEE),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.delete_outline_rounded,
-                size: 26,
-                color: Color(0xFFE53935),
-              ),
-            ),
-            const SizedBox(height: 14),
-            Text(
-              'Delete message?',
-              style: GoogleFonts.dmSans(
-                fontSize: 17,
-                fontWeight: FontWeight.w700,
-                color: AppColors.charcoal,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'This message will be removed for everyone. This action cannot be undone.',
-              textAlign: TextAlign.center,
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                color: AppColors.muted,
-                height: 1.35,
-              ),
-            ),
-          ],
-        ),
-        actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-        actions: [
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  style: OutlinedButton.styleFrom(
-                    foregroundColor: AppColors.charcoal,
-                    side: BorderSide(color: Colors.grey.withOpacity(0.3)),
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    'Cancel',
-                    style: GoogleFonts.dmSans(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: ElevatedButton(
-                  onPressed: () => Navigator.pop(ctx, true),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFE53935),
-                    foregroundColor: Colors.white,
-                    elevation: 0,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    'Delete',
-                    style: GoogleFonts.dmSans(fontWeight: FontWeight.w600),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    final confirmed = await CustomConfirmDialog.show(
+      context,
+      title: 'Delete message?',
+      message: 'This message will be removed for everyone. This action cannot be undone.',
+      confirmText: 'Delete',
+      cancelText: 'Cancel',
+      isDestructive: true,
+      icon: Icons.delete_outline_rounded,
     );
     if (confirmed != true || _activeConversation == null) return;
 

@@ -108,6 +108,7 @@ class WishlistProvider extends ChangeNotifier {
   }
 
   void reset() {
+    if (_items.isEmpty && _productKeys.isEmpty && !_loading) return;
     _items = [];
     _productKeys.clear();
     _loading = false;

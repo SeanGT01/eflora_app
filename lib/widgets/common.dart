@@ -170,12 +170,15 @@ class RoseButton extends StatelessWidget {
                 width: 18, height: 18,
                 child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2),
               )
-            : Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (icon != null) ...[Icon(icon, size: 16), const SizedBox(width: 6)],
-                  Text(label),
-                ],
+            : FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (icon != null) ...[Icon(icon, size: 16), const SizedBox(width: 6)],
+                    Text(label, maxLines: 1),
+                  ],
+                ),
               ),
       ),
     );
@@ -244,14 +247,30 @@ class AppToastHostState extends State<AppToastHost> {
                 builder: (overlayContext) {
                   return Stack(
                     children: [
+                      // Tap anywhere on screen to dismiss toast
+                      Positioned.fill(
+                        child: GestureDetector(
+                          behavior: HitTestBehavior.translucent,
+                          onTap: hide,
+                          child: const SizedBox.expand(),
+                        ),
+                      ),
                       Positioned(
                         left: 16,
                         right: 16,
                         bottom: bottom,
-                        child: ToastBanner(
-                          msg: _msg!,
-                          isError: _isError,
-                          onClose: hide,
+                        child: Dismissible(
+                          key: ValueKey(_token),
+                          direction: DismissDirection.down,
+                          onDismissed: (_) => hide(),
+                          child: GestureDetector(
+                            behavior: HitTestBehavior.opaque,
+                            onTap: hide,
+                            child: ToastBanner(
+                              msg: _msg!,
+                              isError: _isError,
+                            ),
+                          ),
                         ),
                       ),
                     ],
@@ -279,11 +298,11 @@ class ToastBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = AppColors.deepRose;
+    final accent = isError ? AppColors.deepRose : const Color(0xFF2E7D32);
     final icon = isError
         ? Icons.error_outline_rounded
         : Icons.check_circle_outline_rounded;
-    final fill = const Color(0xFFFBF4F6);
+    const fill = Color(0xFFFBF4F6);
 
     return Material(
       color: Colors.transparent,
@@ -295,7 +314,7 @@ class ToastBanner extends StatelessWidget {
           boxShadow: AppShadows.glassRaised,
         ),
         child: Padding(
-          padding: const EdgeInsets.fromLTRB(12, 8, 4, 8),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           child: Row(
             children: [
               Container(
@@ -309,28 +328,13 @@ class ToastBanner extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 8),
-                  child: Text(
-                    msg,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 13.5,
-                      height: 1.4,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.charcoal,
-                    ),
-                  ),
-                ),
-              ),
-              InkWell(
-                onTap: onClose,
-                customBorder: const CircleBorder(),
-                child: const Padding(
-                  padding: EdgeInsets.all(10),
-                  child: Icon(
-                    Icons.close_rounded,
-                    size: 20,
-                    color: AppColors.muted,
+                child: Text(
+                  msg,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 13.5,
+                    height: 1.4,
+                    fontWeight: FontWeight.w500,
+                    color: AppColors.charcoal,
                   ),
                 ),
               ),
@@ -347,6 +351,7 @@ SnackBar themedSnackBar(String msg, {bool isError = false}) {
     behavior: SnackBarBehavior.floating,
     elevation: 0,
     backgroundColor: Colors.transparent,
+    dismissDirection: DismissDirection.down,
     padding: EdgeInsets.zero,
     margin: const EdgeInsets.fromLTRB(16, 0, 16, 24),
     duration: Duration(seconds: isError ? 4 : 3),

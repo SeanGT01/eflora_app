@@ -11,6 +11,7 @@ import '../../services/cloudinary_service.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/common.dart';
+import '../../widgets/custom_confirm_dialog.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/chat_drawer.dart';
 import '../../widgets/cancel_order_reason_sheet.dart';
@@ -789,24 +790,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   }
 
   Future<void> _markOrderAsCompleted() async {
-    final ok = await showDialog<bool>(
-          context: context,
-          builder: (ctx) => AlertDialog(
-            title: const Text('Complete order'),
-            content: const Text('Mark this delivered order as completed?'),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(ctx, false),
-                child: const Text('Cancel'),
-              ),
-              ElevatedButton(
-                onPressed: () => Navigator.pop(ctx, true),
-                child: const Text('Confirm'),
-              ),
-            ],
-          ),
-        ) ??
-        false;
+    final ok = await CustomConfirmDialog.show(
+      context,
+      title: 'Complete order',
+      message: 'Mark this delivered order as completed?',
+      confirmText: 'Confirm',
+      cancelText: 'Cancel',
+      icon: Icons.check_circle_outline_rounded,
+    ) ?? false;
     if (!ok) return;
 
     final res = await ApiService.completeOrder(_order.id);
@@ -835,10 +826,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           gradient: AppColors.imageWash,
           borderRadius: BorderRadius.circular(AppRadius.md),
         ),
-        child: Center(
-          child: Icon(Icons.local_florist,
-              size: 32, color: AppColors.deepRose.withOpacity(0.16)),
-        ),
+        child: item.isCustomOrder
+            ? Padding(
+                padding: const EdgeInsets.all(12),
+                child: Image.asset('assets/images/app_logo.png', fit: BoxFit.contain),
+              )
+            : Center(
+                child: Icon(Icons.local_florist,
+                    size: 32, color: AppColors.deepRose.withOpacity(0.16)),
+              ),
       );
     }
 
@@ -860,22 +856,27 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           fit: BoxFit.cover,
           memCacheWidth: 70,
           memCacheHeight: 70,
-          placeholder: (_, __) => _imagePlaceholder(),
+          placeholder: (_, __) => _imagePlaceholder(item: item),
           errorWidget: (_, url, error) {
             debugPrint('❌ OrderItem image failed: $url - $error');
-            return _imagePlaceholder();
+            return _imagePlaceholder(item: item);
           },
         ),
       ),
     );
   }
 
-  Widget _imagePlaceholder() {
+  Widget _imagePlaceholder({OrderItem? item}) {
     return DecoratedBox(
       decoration: const BoxDecoration(gradient: AppColors.imageWash),
       child: Center(
-        child: Icon(Icons.local_florist,
-            size: 24, color: AppColors.deepRose.withOpacity(0.16)),
+        child: item?.isCustomOrder == true
+            ? Padding(
+                padding: const EdgeInsets.all(12),
+                child: Image.asset('assets/images/app_logo.png', fit: BoxFit.contain),
+              )
+            : Icon(Icons.local_florist,
+                size: 24, color: AppColors.deepRose.withOpacity(0.16)),
       ),
     );
   }
@@ -1807,9 +1808,14 @@ class _RatingSheetState extends State<_RatingSheet> {
         height: 44,
         decoration: BoxDecoration(
             color: AppColors.cream, borderRadius: BorderRadius.circular(8)),
-        child: const Center(
-            child:
-                Icon(Icons.local_florist, size: 20, color: Color(0x22B5445A))),
+        child: item.isCustomOrder
+            ? Padding(
+                padding: const EdgeInsets.all(8),
+                child: Image.asset('assets/images/app_logo.png', fit: BoxFit.contain),
+              )
+            : const Center(
+                child: Icon(Icons.local_florist,
+                    size: 20, color: Color(0x22B5445A))),
       );
     }
     final url = CloudinaryService.isCloudinaryUrl(item.imageUrl!)

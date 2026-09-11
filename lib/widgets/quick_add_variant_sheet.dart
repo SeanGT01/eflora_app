@@ -56,6 +56,13 @@ Future<void> showQuickAddVariantSheet(
   BuildContext context, {
   required Product product,
 }) async {
+  if (product.canDeliverToCustomer == false) {
+    await showDeliveryUnavailableDialog(
+      context,
+      reason: product.deliveryReason,
+    );
+    return;
+  }
   await showModalBottomSheet<void>(
     context: context,
     isScrollControlled: true,

@@ -205,26 +205,29 @@ class GradientButton extends StatelessWidget {
                   )
                 : Padding(
                     padding: EdgeInsets.symmetric(horizontal: hPad),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (icon != null) ...[
-                          Icon(
-                            icon,
-                            size: iconSize,
-                            color: enabled ? Colors.white : disabledText,
+                    child: FittedBox(
+                      fit: BoxFit.scaleDown,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (icon != null) ...[
+                            Icon(
+                              icon,
+                              size: iconSize,
+                              color: enabled ? Colors.white : disabledText,
+                            ),
+                            SizedBox(width: iconGap),
+                          ],
+                          Text(
+                            label,
+                            style: textStyle ??
+                                Theme.of(context).textTheme.labelLarge?.copyWith(
+                                      color: enabled ? Colors.white : disabledText,
+                                      fontWeight: FontWeight.w500,
+                                    ),
                           ),
-                          SizedBox(width: iconGap),
                         ],
-                        Text(
-                          label,
-                          style: textStyle ??
-                              Theme.of(context).textTheme.labelLarge?.copyWith(
-                                    color: enabled ? Colors.white : disabledText,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                        ),
-                      ],
+                      ),
                     ),
                   ),
           ),

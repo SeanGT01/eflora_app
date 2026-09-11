@@ -7,6 +7,7 @@ import '../../theme/app_theme.dart';
 import '../../theme/app_background.dart';
 import '../../utils/datetime_ph.dart';
 import '../../widgets/common.dart';
+import '../../widgets/custom_confirm_dialog.dart';
 import '../../widgets/chat_drawer.dart';
 import '../../services/api_service.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -564,30 +565,13 @@ class _DeliveredButtonState extends State<_DeliveredButton> {
     if (imagePaths == null || !mounted) return;
 
     // Both images captured, show confirmation
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text('Confirm Delivery',
-            style: GoogleFonts.cormorantGaramond(fontSize: 22, fontWeight: FontWeight.w600)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text('Proofs captured successfully!', style: GoogleFonts.dmSans(fontWeight: FontWeight.w600)),
-            const SizedBox(height: 8),
-            Text('Mark this order as delivered?', style: GoogleFonts.dmSans()),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm'),
-          ),
-        ],
-      ),
+    final confirmed = await CustomConfirmDialog.show(
+      context,
+      title: 'Confirm Delivery',
+      message: 'Proofs captured successfully!\n\nMark this order as delivered?',
+      confirmText: 'Confirm',
+      cancelText: 'Cancel',
+      icon: Icons.check_circle_outline_rounded,
     );
 
     if (confirmed != true || !mounted) return;

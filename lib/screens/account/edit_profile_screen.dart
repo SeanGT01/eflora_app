@@ -411,6 +411,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   Widget _profileOutlineButton({
     required String label,
     required VoidCallback? onPressed,
+    IconData? icon,
   }) {
     final enabled = onPressed != null;
     return OutlinedButton(
@@ -432,7 +433,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
         textStyle: GoogleFonts.dmSans(fontWeight: FontWeight.w600, fontSize: 14),
       ),
-      child: Text(label),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          if (icon != null) ...[
+            Icon(icon, size: 16),
+            const SizedBox(width: 6),
+          ],
+          Text(label),
+        ],
+      ),
     );
   }
 
@@ -456,7 +467,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                 keyboardType: TextInputType.phone,
                 decoration: _fieldDecoration(
                   labelText: 'Mobile number',
-                  prefixIcon: const Icon(Icons.phone_outlined, size: 20),
+                  prefixIcon: const Icon(Icons.phone_android_rounded, size: 20),
                 ),
               ),
               if (kRequirePhoneBindOtp && _phoneOtpSent) ...[
@@ -467,7 +478,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   maxLength: 6,
                   decoration: _fieldDecoration(
                     labelText: '6-digit SMS code',
-                    prefixIcon: const Icon(Icons.sms_outlined, size: 20),
+                    prefixIcon: const Icon(Icons.pin_outlined, size: 20),
                   ),
                 ),
               ],
@@ -475,7 +486,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               if (!kRequirePhoneBindOtp)
                 RoseButton(
                   label: 'Save number',
-                  icon: Icons.check,
+                  icon: Icons.check_circle_outline_rounded,
                   onPressed: _canSendPhoneCode ? _sendPhoneOtp : null,
                   loading: _savingPhone,
                   width: double.infinity,
@@ -483,7 +494,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
               else if (!_phoneOtpSent)
                 RoseButton(
                   label: 'Send code',
-                  icon: Icons.sms_outlined,
+                  icon: Icons.send_rounded,
                   onPressed: _canSendPhoneCode ? _sendPhoneOtp : null,
                   loading: _savingPhone,
                   width: double.infinity,
@@ -493,12 +504,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   children: [
                     _profileOutlineButton(
                       label: 'Resend',
+                      icon: Icons.refresh_rounded,
                       onPressed: _canSendPhoneCode ? _sendPhoneOtp : null,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: RoseButton(
                         label: 'Verify',
+                        icon: Icons.verified_rounded,
                         onPressed: _canVerifyPhone ? _verifyPhoneOtp : null,
                         loading: _savingPhone,
                       ),
@@ -616,7 +629,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                               boxShadow: AppShadows.roseButton,
                             ),
                             child: const Icon(
-                              Icons.camera_alt_rounded,
+                              Icons.photo_camera_rounded,
                               size: 16,
                               color: Colors.white,
                             ),
@@ -643,9 +656,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     ),
                     if (_selectedImage != null) ...[
                       const SizedBox(height: 10),
-                      TextButton(
+                      TextButton.icon(
                         onPressed: () => setState(() => _selectedImage = null),
-                        child: Text(
+                        icon: const Icon(Icons.delete_outline_rounded, size: 16),
+                        label: Text(
                           'Remove photo',
                           style: GoogleFonts.dmSans(
                             fontWeight: FontWeight.w600,
@@ -667,7 +681,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       controller: _firstNameCtrl,
                       decoration: _fieldDecoration(
                         labelText: 'First name',
-                        prefixIcon: const Icon(Icons.person_outline, size: 20),
+                        prefixIcon: const Icon(Icons.person_rounded, size: 20),
                         counterText: '',
                       ),
                       textCapitalization: TextCapitalization.words,
@@ -684,7 +698,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       controller: _lastNameCtrl,
                       decoration: _fieldDecoration(
                         labelText: 'Last name',
-                        prefixIcon: const Icon(Icons.person_outline, size: 20),
+                        prefixIcon: const Icon(Icons.badge_outlined, size: 20),
                         counterText: '',
                       ),
                       textCapitalization: TextCapitalization.words,
@@ -706,7 +720,17 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       decoration: _fieldDecoration(
                         labelText: 'Email or mobile number',
                         helperText: 'Login identity — cannot be changed',
-                        prefixIcon: const Icon(Icons.badge_outlined, size: 20),
+                        prefixIcon: Icon(
+                          _loginIdCtrl.text.contains('@')
+                              ? Icons.alternate_email_rounded
+                              : Icons.phone_iphone_rounded,
+                          size: 20,
+                        ),
+                        suffixIcon: const Icon(
+                          Icons.lock_outline_rounded,
+                          size: 18,
+                          color: AppColors.muted,
+                        ),
                       ),
                     ),
                     const SizedBox(height: _fieldGap),
@@ -716,9 +740,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                       onTap: _pickBirthday,
                       decoration: _fieldDecoration(
                         labelText: 'Birthday',
-                        prefixIcon: const Icon(Icons.cake_outlined, size: 20),
-                        suffixIcon:
-                            const Icon(Icons.calendar_today_outlined, size: 18),
+                        prefixIcon: const Icon(
+                          Icons.cake_rounded,
+                          size: 20,
+                          color: AppColors.dustyRose,
+                        ),
+                        suffixIcon: const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 22,
+                          color: AppColors.deepRose,
+                        ),
                       ),
                     ),
                   ],
@@ -739,6 +770,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                   Expanded(
                     child: _profileOutlineButton(
                       label: 'Discard',
+                      icon: Icons.undo_rounded,
                       onPressed:
                           _isProfileDirty && !_saving ? _discardChanges : null,
                     ),
@@ -748,9 +780,9 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                     flex: 2,
                     child: RoseButton(
                       label: 'Save Changes',
+                      icon: Icons.check_circle_rounded,
                       onPressed: _isProfileDirty && !_saving ? _save : null,
                       loading: _saving,
-                      width: double.infinity,
                     ),
                   ),
                 ],

@@ -173,6 +173,7 @@ class NotificationProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   void reset() {
     stopPolling();
+    if (_notifications.isEmpty && _unreadCount == 0 && !_loading) return;
     _notifications = [];
     _unreadCount = 0;
     _loading = false;

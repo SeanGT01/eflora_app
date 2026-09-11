@@ -92,7 +92,70 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   void initState() {
     super.initState();
     debugPrint('🔵 ProductDetailScreen.initState for product ID: ${widget.productId}');
+    final cached = ApiService.getCachedProduct(widget.productId);
+    if (cached != null) {
+      _applyProductData(cached);
+      _buildAvailableDates();
+      _selectFirstOpenDate();
+    }
     _loadProduct();
+  }
+
+  void _applyProductData(Map<String, dynamic> raw) {
+    final relatedRaw = (raw['related_products'] as List? ?? []);
+    final ymalRaw = (raw['ymal_addon_options'] as List? ?? []);
+    _product = Product.fromJson(raw);
+    _loading = false;
+    _overallAvgRating = (raw['overall_avg_rating'] as num?)?.toDouble()
+        ?? (raw['avg_rating'] as num?)?.toDouble()
+        ?? 0;
+    _overallTotalRatings = (raw['overall_total_ratings'] as num?)?.toInt()
+        ?? (raw['total_ratings'] as num?)?.toInt()
+        ?? 0;
+    _variantRatings = {};
+    final vr = raw['variant_ratings'];
+    if (vr is Map) {
+      for (final e in vr.entries) {
+        final v = e.value;
+        if (v is Map) {
+          _variantRatings[e.key.toString()] = {
+            'avg': (v['avg'] as num?) ?? 0,
+            'count': (v['count'] as num?) ?? 0,
+          };
+        }
+      }
+    }
+    _relatedProducts = relatedRaw
+        .whereType<Map>()
+        .map((e) => Product.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+    _ymalAddons = ymalRaw
+        .whereType<Map>()
+        .map((e) => ProductAddonOption.fromJson(Map<String, dynamic>.from(e)))
+        .toList();
+    _ymalAddonQty.clear();
+    _ymalTab = _ymalAddons.isNotEmpty ? 'addons' : 'flowers';
+    _selectedAddonOptions.clear();
+    for (final g in _product!.addonGroups) {
+      _selectedAddonOptions[g.id] = null;
+    }
+    if (raw['store'] is Map) {
+      _storeDetail = Store.fromJson(Map<String, dynamic>.from(raw['store'] as Map));
+      final schedules = _storeDetail!.storeSchedule?['schedules'];
+      final days = <String>{};
+      if (schedules is List) {
+        for (final entry in schedules) {
+          if (entry is Map && entry['days'] is List) {
+            for (final day in entry['days'] as List) {
+              days.add(day.toString().toLowerCase());
+            }
+          }
+        }
+      }
+      _openDays = days;
+      _hasSchedule = days.isNotEmpty;
+    }
+    _syncRatingDisplay();
   }
 
   Future<void> _loadProduct() async {
@@ -107,48 +170,8 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     if (result.isSuccess && result.data is Map) {
       debugPrint('✅ Product data received, parsing...');
       final raw = Map<String, dynamic>.from(result.data as Map);
-      final relatedRaw = (raw['related_products'] as List? ?? []);
-      final ymalRaw = (raw['ymal_addon_options'] as List? ?? []);
       setState(() {
-        _product = Product.fromJson(raw);
-        _loading = false;
-        _overallAvgRating = (raw['overall_avg_rating'] as num?)?.toDouble()
-            ?? (raw['avg_rating'] as num?)?.toDouble()
-            ?? 0;
-        _overallTotalRatings = (raw['overall_total_ratings'] as num?)?.toInt()
-            ?? (raw['total_ratings'] as num?)?.toInt()
-            ?? 0;
-        _variantRatings = {};
-        final vr = raw['variant_ratings'];
-        if (vr is Map) {
-          for (final e in vr.entries) {
-            final v = e.value;
-            if (v is Map) {
-              _variantRatings[e.key.toString()] = {
-                'avg': (v['avg'] as num?) ?? 0,
-                'count': (v['count'] as num?) ?? 0,
-              };
-            }
-          }
-        }
-        _relatedProducts = relatedRaw
-            .whereType<Map>()
-            .map((e) => Product.fromJson(Map<String, dynamic>.from(e)))
-            .toList();
-        _ymalAddons = ymalRaw
-            .whereType<Map>()
-            .map((e) => ProductAddonOption.fromJson(Map<String, dynamic>.from(e)))
-            .toList();
-        _ymalAddonQty.clear();
-        _ymalTab = _ymalAddons.isNotEmpty ? 'addons' : 'flowers';
-        _selectedAddonOptions.clear();
-        for (final g in _product!.addonGroups) {
-          _selectedAddonOptions[g.id] = null;
-        }
-        if (raw['store'] is Map) {
-          _storeDetail = Store.fromJson(Map<String, dynamic>.from(raw['store'] as Map));
-        }
-        _syncRatingDisplay();
+        _applyProductData(raw);
       });
       
       // Load the trading days first so closed dates are locked immediately.
@@ -180,7 +203,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       }
     } else {
       debugPrint('❌ Failed to load product: ${result.error}');
-      setState(() => _loading = false);
+      if (_product == null) {
+        setState(() => _loading = false);
+      }
     }
   }
 

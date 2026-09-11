@@ -10,6 +10,7 @@ import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/auth_required_sheet.dart';
 import '../main_shell.dart';
+import '../rider/rider_shell.dart';
 import 'forgot_password_otp_screen.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -135,22 +136,25 @@ class _LoginScreenState extends State<LoginScreen> {
     if (error != null) {
       showToast(context, error, isError: true);
     } else {
-      if (auth.user?.role == 'rider') {
-        if (mounted) {
-          Navigator.of(context).pop();
-        }
-      } else {
-        // Prefer Home so the required-info dialogs are visible after login.
+      final isRider = auth.user?.role == 'rider';
+      if (!isRider) {
         MainShell.switchTab(context, 0);
-        if (mounted) {
-          Navigator.of(context).pop();
-        }
-
         try {
           await context.read<CartProvider>().load();
         } catch (e) {
           debugPrint('❌ Error loading cart: $e');
         }
+      }
+      if (!mounted) return;
+      if (Navigator.of(context).canPop()) {
+        Navigator.of(context).pop();
+      } else {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => isRider ? const RiderShell() : const MainShell(),
+          ),
+          (route) => false,
+        );
       }
     }
   }

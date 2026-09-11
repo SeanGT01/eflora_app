@@ -265,6 +265,7 @@ class CartProvider extends ChangeNotifier {
     }
     _qtyDebounce.clear();
     _pendingQty.clear();
+    if (_cart == null) return;
     _cart = null;
     notifyListeners();
   }

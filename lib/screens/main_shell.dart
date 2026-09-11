@@ -18,8 +18,8 @@ class MainShell extends StatefulWidget {
   const MainShell({super.key});
 
   /// Switch the tab from anywhere in the widget tree.
-  static void switchTab(BuildContext context, int index, {String? targetOrderStatus}) {
-    context.findAncestorStateOfType<MainShellState>()?.switchToTab(index, targetOrderStatus: targetOrderStatus);
+  static void switchTab(BuildContext context, int index, {String? targetOrderStatus, int? targetOrderId}) {
+    context.findAncestorStateOfType<MainShellState>()?.switchToTab(index, targetOrderStatus: targetOrderStatus, targetOrderId: targetOrderId);
   }
 
   /// Open chat (optionally with a store) from anywhere under MainShell.
@@ -36,10 +36,14 @@ class MainShellState extends State<MainShell> {
   bool _chatOpen = false;
   int? _chatOpenStoreId;
 
-  void switchToTab(int index, {String? targetOrderStatus}) {
-    setState(() => _idx = index);
+  void switchToTab(int index, {String? targetOrderStatus, int? targetOrderId}) {
+    setState(() {
+      _idx = index;
+      _chatOpen = false;
+      _chatOpenStoreId = null;
+    });
     if (index == 3) {
-      OrdersScreen.reload(targetStatus: targetOrderStatus);
+      OrdersScreen.reload(targetStatus: targetOrderStatus, targetOrderId: targetOrderId);
     }
   }
 
