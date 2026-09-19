@@ -26,10 +26,11 @@ import 'help_eflora_screen.dart';
 import 'about_eflora_screen.dart';
 import '../address/address_list_screen.dart';
 
-const _kHeader = AppColors.deepRose;
-const _kText = AppColors.charcoal;
-const _kMuted = AppColors.muted;
-const _kDivider = AppColors.border;
+const _kDeepRose = Color(0xFFB5445A);
+const _kTextCharcoal = Color(0xFF2C2520);
+const _kMuted = Color(0xFF9A8D85);
+const _kSoftBlush = Color(0xFFFBE9EE);
+const _kBorder = Color(0xFFF0DDE2);
 
 class AccountScreen extends StatelessWidget {
   const AccountScreen({super.key});
@@ -44,7 +45,9 @@ class AccountScreen extends StatelessWidget {
       child: AppBackground(
         child: Scaffold(
           backgroundColor: Colors.transparent,
-          body: auth.isLoggedIn ? _LoggedInView(user: auth.user!) : const _GuestView(),
+          body: auth.isLoggedIn
+              ? _LoggedInView(user: auth.user!)
+              : const _GuestView(),
         ),
       ),
     );
@@ -58,49 +61,77 @@ class _GuestView extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        const _AccountTitleBar(),
+        const _AccountHeader(user: null),
         Expanded(
           child: Center(
-            child: Padding(
-              padding: const EdgeInsets.all(32),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  const CustomerDefaultAvatar(size: 80),
-                  const SizedBox(height: 20),
-                  Text(
-                    'Sign in to your account',
-                    style: GoogleFonts.cormorantGaramond(
-                      fontSize: 22,
-                      fontWeight: FontWeight.w500,
-                      color: _kText,
-                      letterSpacing: 0.3,
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+              child: Container(
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.95),
+                  borderRadius: BorderRadius.circular(24),
+                  border: Border.all(color: _kBorder),
+                  boxShadow: const [
+                    BoxShadow(
+                      color: Color(0x0C502846),
+                      blurRadius: 20,
+                      offset: Offset(0, 6),
                     ),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    'Access your orders, wishlist, and account settings',
-                    style: GoogleFonts.dmSans(fontSize: 13, color: _kMuted),
-                    textAlign: TextAlign.center,
-                  ),
-                  const SizedBox(height: 28),
-                  RoseButton(
-                    label: 'Sign In',
-                    onPressed: () => pushLoginScreen(context),
-                    width: double.infinity,
-                  ),
-                  const SizedBox(height: 12),
-                  OutlinedButton(
-                    onPressed: () => pushRegisterScreen(context),
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size(double.infinity, 50),
-                      foregroundColor: _kHeader,
-                      side: const BorderSide(color: _kHeader),
+                  ],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const CustomerDefaultAvatar(size: 80),
+                    const SizedBox(height: 20),
+                    Text(
+                      'Sign in to your account',
+                      style: GoogleFonts.cormorantGaramond(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w600,
+                        color: _kTextCharcoal,
+                        letterSpacing: 0.3,
+                      ),
+                      textAlign: TextAlign.center,
                     ),
-                    child: const Text('Create Account'),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    Text(
+                      'Access your orders, wishlist, and account settings',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 13.5,
+                        color: _kMuted,
+                        height: 1.4,
+                      ),
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 26),
+                    RoseButton(
+                      label: 'Sign In',
+                      onPressed: () => pushLoginScreen(context),
+                      width: double.infinity,
+                    ),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                      onPressed: () => pushRegisterScreen(context),
+                      style: OutlinedButton.styleFrom(
+                        minimumSize: const Size(double.infinity, 48),
+                        foregroundColor: _kDeepRose,
+                        side: const BorderSide(color: _kDeepRose, width: 1.2),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                        ),
+                      ),
+                      child: Text(
+                        'Create Account',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -157,10 +188,10 @@ class _LoggedInView extends StatelessWidget {
     final liveUser = context.watch<AuthProvider>().user ?? user;
     final cartCount = context.watch<CartProvider>().itemCount;
     final notifCount = context.watch<NotificationProvider>().unreadCount;
-    final bottomPad = floatingNavScrollClearance(context);
+    final bottomPad = floatingNavScrollClearance(context) + 24;
 
     return RefreshIndicator(
-      color: _kHeader,
+      color: _kDeepRose,
       onRefresh: () async {
         await Future.wait([
           context.read<AuthProvider>().refreshUser(),
@@ -174,28 +205,39 @@ class _LoggedInView extends StatelessWidget {
         slivers: [
           SliverToBoxAdapter(
             child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const _AccountTitleBar(),
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                  child: _ProfileHeader(user: liveUser),
+                _AccountHeader(user: liveUser),
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    _ProfileHero(user: liveUser),
+                    Positioned(
+                      left: 20,
+                      right: 20,
+                      bottom: -32,
+                      child: _ProfileCard(
+                        user: liveUser,
+                        onTap: () => _open(context, const EditProfileScreen()),
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 10),
+                const SizedBox(height: 44),
                 Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: _EditBar(
-                    onEdit: () => _open(context, const EditProfileScreen()),
-                    onSignOut: () => _signOut(context),
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: _EditProfileButton(
+                    onTap: () => _open(context, const EditProfileScreen()),
                   ),
                 ),
               ],
             ),
           ),
           SliverPadding(
-            padding: EdgeInsets.fromLTRB(16, 12, 16, bottomPad),
+            padding: EdgeInsets.fromLTRB(20, 20, 20, bottomPad),
             sliver: SliverList(
               delegate: SliverChildListDelegate([
-                _ShortcutGrid(
+                _QuickAccessSection(
                   cartCount: cartCount,
                   notificationCount: notifCount,
                   onOrders: () => _open(context, const OrdersScreen()),
@@ -205,16 +247,16 @@ class _LoggedInView extends StatelessWidget {
                   onPassword: () => _open(context, const ChangePasswordScreen()),
                   onNotifications: () => _open(context, const NotificationsScreen()),
                 ),
-                const SizedBox(height: 14),
+                const SizedBox(height: 20),
                 _SettingsGroup(
                   tiles: [
                     _TileData(
-                      icon: Icons.help_outline,
+                      icon: Icons.help_outline_rounded,
                       label: 'Help E-FLORA',
                       onTap: () => _open(context, const HelpEfloraScreen()),
                     ),
                     _TileData(
-                      icon: Icons.info_outline,
+                      icon: Icons.info_outline_rounded,
                       label: 'About E-FLORA',
                       onTap: () => _open(context, const AboutEfloraScreen()),
                     ),
@@ -234,17 +276,27 @@ class _LoggedInView extends StatelessWidget {
                           }
                         },
                       ),
+                    _TileData(
+                      icon: Icons.logout_rounded,
+                      label: 'Sign Out',
+                      onTap: () => _signOut(context),
+                    ),
                   ],
                 ),
                 if (liveUser.role == 'customer') ...[
-                  const SizedBox(height: 14),
+                  const SizedBox(height: 18),
                   _DeleteBar(onTap: () => _openDeleteAccount(context)),
                 ],
-                const SizedBox(height: 16),
+                const SizedBox(height: 20),
                 Center(
                   child: Text(
                     'E-FLORA v1.0.0',
-                    style: GoogleFonts.dmSans(fontSize: 11, color: _kMuted),
+                    style: GoogleFonts.dmSans(
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.w500,
+                      color: _kMuted,
+                      letterSpacing: 0.3,
+                    ),
                   ),
                 ),
               ]),
@@ -256,63 +308,169 @@ class _LoggedInView extends StatelessWidget {
   }
 }
 
-class _AccountTitleBar extends StatelessWidget {
-  const _AccountTitleBar();
+class _AccountHeader extends StatelessWidget {
+  final dynamic user;
+
+  const _AccountHeader({required this.user});
 
   @override
   Widget build(BuildContext context) {
-    return SafeArea(
-      bottom: false,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 10, 20, 4),
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Text(
-            'My Account',
-            style: GoogleFonts.cormorantGaramond(
-              fontSize: 22,
-              fontWeight: FontWeight.w500,
-              color: AppColors.charcoal,
-              letterSpacing: 0.3,
+    return const EfloraTopBar();
+  }
+}
+
+class _BannerWaveClipper extends CustomClipper<Path> {
+  @override
+  Path getClip(Size size) {
+    final path = Path();
+    final w = size.width;
+    final h = size.height;
+
+    // Start at top-left edge
+    path.moveTo(0, 22);
+    // Smooth, continuous organic wave across top
+    path.cubicTo(w * 0.35, 36, w * 0.70, 6, w, 6);
+    // Down the right edge
+    path.lineTo(w, h);
+    // Straight across bottom so it sits cleanly behind the floating profile card
+    path.lineTo(0, h);
+    path.close();
+
+    return path;
+  }
+
+  @override
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) => false;
+}
+
+class _ProfileHero extends StatelessWidget {
+  final dynamic user;
+  const _ProfileHero({required this.user});
+
+  String get _firstName {
+    final name = (user?.fullName ?? '').toString().trim();
+    if (name.isEmpty) return 'Customer';
+    return name.split(RegExp(r'\s+')).first;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isSmallScreen = screenWidth < 360;
+
+    return SizedBox(
+      height: 240,
+      width: double.infinity,
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          // 1. Pink Wave-Clipped Banner with Greeting Text and subtle line art
+          Positioned.fill(
+            child: ClipPath(
+              clipper: _BannerWaveClipper(),
+              child: Container(
+                decoration: const BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Color(0xFFB53852),
+                      Color(0xFFCD5770),
+                      Color(0xFFE58D8C),
+                      Color(0xFFF2A79D),
+                    ],
+                    stops: [0.0, 0.35, 0.75, 1.0],
+                  ),
+                ),
+                child: Stack(
+                  children: [
+                    Positioned(
+                      right: -20,
+                      top: -20,
+                      bottom: -20,
+                      child: Opacity(
+                        opacity: 0.08,
+                        child: Image.asset(
+                          'assets/images/eflora_profile_line_art.png',
+                          fit: BoxFit.contain,
+                          errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      left: isSmallScreen ? 18 : 24,
+                      top: 34,
+                      right: isSmallScreen ? 140 : 170,
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Good Day,',
+                            style: GoogleFonts.cormorantGaramond(
+                              fontSize: isSmallScreen ? 22 : 25,
+                              fontStyle: FontStyle.italic,
+                              fontWeight: FontWeight.w500,
+                              color: Colors.white.withValues(alpha: 0.95),
+                              height: 1.1,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '$_firstName!',
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: GoogleFonts.cormorantGaramond(
+                              fontSize: isSmallScreen ? 30 : 35,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                              height: 1.1,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            'Flowers make\neverything better 🌼',
+                            style: GoogleFonts.dmSans(
+                              fontSize: isSmallScreen ? 12.5 : 13.5,
+                              fontWeight: FontWeight.w400,
+                              color: Colors.white.withValues(alpha: 0.92),
+                              height: 1.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             ),
           ),
-        ),
+          // 2. Flower Bouquet - placed above the banner, unclipped by the wave,
+          // extending downward so that the lower foliage & blossoms cascade
+          // behind the top-right of the user info card (which sits at bottom: -32)
+          Positioned(
+            right: isSmallScreen ? -8 : -6,
+            top: 15,
+            width: isSmallScreen ? 230 : 255,
+            child: Image.asset(
+              'assets/images/eflora_profile_header_bouquet_transparent.png',
+              key: const ValueKey('profile_bouquet_transparent_v1'),
+              fit: BoxFit.contain,
+              alignment: Alignment.topRight,
+              errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+            ),
+          ),
+        ],
       ),
     );
   }
 }
 
-class _IosGlyph extends StatelessWidget {
-  const _IosGlyph({required this.icon, this.size = 28, this.iconSize = 15});
-  final IconData icon;
-  final double size;
-  final double iconSize;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      width: size,
-      height: size,
-      decoration: BoxDecoration(
-        color: AppColors.blush.withValues(alpha: 0.38),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Icon(icon, size: iconSize, color: AppColors.deepRose),
-    );
-  }
-}
-
-BoxDecoration _groupedCard() {
-  return BoxDecoration(
-    color: Colors.white.withValues(alpha: 0.92),
-    borderRadius: BorderRadius.circular(12),
-    border: Border.all(color: AppColors.border),
-  );
-}
-
-class _ProfileHeader extends StatelessWidget {
-  const _ProfileHeader({required this.user});
+class _ProfileCard extends StatelessWidget {
   final dynamic user;
+  final VoidCallback onTap;
+
+  const _ProfileCard({required this.user, required this.onTap});
 
   String get _roleLabel {
     final role = (user.role ?? 'customer').toString();
@@ -324,163 +482,186 @@ class _ProfileHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final avatarUrl = user.avatarUrl as String?;
     final hasPhoto = avatarUrl != null && avatarUrl.isNotEmpty;
-    return Container(
-      decoration: _groupedCard(),
-      padding: const EdgeInsets.fromLTRB(12, 12, 14, 12),
-      child: Row(
-        children: [
-          if (hasPhoto)
-            Container(
-              width: 56,
-              height: 56,
-              decoration: const BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white,
-              ),
-              clipBehavior: Clip.antiAlias,
-              child: ClipOval(
-                child: CachedNetworkImage(
-                  imageUrl: avatarUrl,
-                  fit: BoxFit.cover,
-                  errorWidget: (_, __, ___) => const _PlaceholderAvatar(),
-                ),
-              ),
-            )
-          else
-            const _PlaceholderAvatar(),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  user.fullName,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.cormorantGaramond(
-                    fontSize: 20,
-                    fontWeight: FontWeight.w600,
-                    color: _kText,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  user.email,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.dmSans(fontSize: 12.5, color: _kMuted),
-                ),
-                const SizedBox(height: 6),
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.blush.withValues(alpha: 0.4),
-                    borderRadius: BorderRadius.circular(99),
-                  ),
-                  child: Text(
-                    _roleLabel,
-                    style: GoogleFonts.dmSans(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.deepRose,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isSmall = screenWidth < 360;
+    final avatarSize = isSmall ? 52.0 : 60.0;
+
+    return Material(
+      color: Colors.white,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(22),
+        side: const BorderSide(color: Color(0xFFF3E6EA), width: 1.2),
       ),
-    );
-  }
-}
-
-class _PlaceholderAvatar extends StatelessWidget {
-  const _PlaceholderAvatar();
-
-  @override
-  Widget build(BuildContext context) {
-    return const CustomerDefaultAvatar(size: 56);
-  }
-}
-
-class _EditBar extends StatelessWidget {
-  const _EditBar({required this.onEdit, required this.onSignOut});
-  final VoidCallback onEdit;
-  final VoidCallback onSignOut;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: _groupedCard(),
-      child: IntrinsicHeight(
-        child: Row(
-          children: [
-            Expanded(
-              child: InkWell(
-                onTap: onEdit,
-                borderRadius: const BorderRadius.horizontal(left: Radius.circular(12)),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const _IosGlyph(icon: Icons.edit_outlined, size: 26, iconSize: 14),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          'Edit Profile',
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w500,
-                            color: _kText,
-                          ),
-                        ),
-                      ),
-                    ],
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(22),
+        child: Container(
+          padding: EdgeInsets.symmetric(
+            horizontal: isSmall ? 12 : 16,
+            vertical: isSmall ? 12 : 14,
+          ),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(22),
+            boxShadow: [
+              BoxShadow(
+                color: const Color(0xFF502846).withValues(alpha: 0.08),
+                blurRadius: 18,
+                offset: const Offset(0, 6),
+              ),
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.03),
+                blurRadius: 4,
+                offset: const Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            children: [
+              Container(
+                width: avatarSize,
+                height: avatarSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: const Color(0xFFF4C5CE),
+                    width: 2.5,
                   ),
                 ),
-              ),
-            ),
-            const VerticalDivider(width: 1, thickness: 0.5, color: _kDivider),
-            Expanded(
-              child: InkWell(
-                onTap: onSignOut,
-                borderRadius: const BorderRadius.horizontal(right: Radius.circular(12)),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 8),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      const _IosGlyph(icon: Icons.logout, size: 26, iconSize: 14),
-                      const SizedBox(width: 8),
-                      Flexible(
-                        child: Text(
-                          'Sign Out',
-                          overflow: TextOverflow.ellipsis,
-                          style: GoogleFonts.dmSans(
-                            fontSize: 13.5,
-                            fontWeight: FontWeight.w500,
-                            color: _kText,
-                          ),
-                        ),
-                      ),
-                      const Icon(Icons.chevron_right, size: 18, color: _kMuted),
-                    ],
-                  ),
+                child: ClipOval(
+                  child: hasPhoto
+                      ? CachedNetworkImage(
+                          imageUrl: avatarUrl,
+                          fit: BoxFit.cover,
+                          errorWidget: (_, __, ___) => _PlaceholderAvatar(size: avatarSize - 4),
+                        )
+                      : _PlaceholderAvatar(size: avatarSize - 4),
                 ),
               ),
-            ),
-          ],
+              SizedBox(width: isSmall ? 10 : 14),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      user.fullName ?? 'Customer',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.cormorantGaramond(
+                        fontSize: isSmall ? 18.5 : 20,
+                        fontWeight: FontWeight.w700,
+                        color: _kTextCharcoal,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      user.email ?? '',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: GoogleFonts.dmSans(
+                        fontSize: isSmall ? 12 : 12.5,
+                        color: _kMuted,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: _kSoftBlush,
+                        borderRadius: BorderRadius.circular(99),
+                      ),
+                      child: Text(
+                        _roleLabel,
+                        style: GoogleFonts.dmSans(
+                          fontSize: isSmall ? 10.5 : 11,
+                          fontWeight: FontWeight.w700,
+                          color: _kDeepRose,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 24,
+                color: _kDeepRose,
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 }
 
-class _ShortcutGrid extends StatelessWidget {
-  const _ShortcutGrid({
+class _PlaceholderAvatar extends StatelessWidget {
+  final double size;
+  const _PlaceholderAvatar({this.size = 56});
+
+  @override
+  Widget build(BuildContext context) {
+    final user = context.watch<AuthProvider>().user;
+    return CustomerDefaultAvatar(size: size, seed: user?.id ?? user?.fullName);
+  }
+}
+
+class _EditProfileButton extends StatelessWidget {
+  final VoidCallback onTap;
+  const _EditProfileButton({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: _kSoftBlush,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(18),
+        child: Container(
+          height: 46,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(
+                Icons.edit_outlined,
+                size: 16,
+                color: _kDeepRose,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Edit Profile',
+                style: GoogleFonts.dmSans(
+                  fontSize: 13.5,
+                  fontWeight: FontWeight.w700,
+                  color: _kDeepRose,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _QuickAccessSection extends StatelessWidget {
+  final int cartCount;
+  final int notificationCount;
+  final VoidCallback onOrders;
+  final VoidCallback onWishlist;
+  final VoidCallback onCart;
+  final VoidCallback onAddresses;
+  final VoidCallback onPassword;
+  final VoidCallback onNotifications;
+
+  const _QuickAccessSection({
     required this.cartCount,
     this.notificationCount = 0,
     required this.onOrders,
@@ -491,93 +672,149 @@ class _ShortcutGrid extends StatelessWidget {
     required this.onNotifications,
   });
 
-  final int cartCount;
-  final int notificationCount;
-  final VoidCallback onOrders;
-  final VoidCallback onWishlist;
-  final VoidCallback onCart;
-  final VoidCallback onAddresses;
-  final VoidCallback onPassword;
-  final VoidCallback onNotifications;
-
   @override
   Widget build(BuildContext context) {
     final items = [
-      _GridItem(icon: Icons.receipt_long_outlined, label: 'My Orders', onTap: onOrders),
-      _GridItem(icon: Icons.favorite_border, label: 'Wishlist', onTap: onWishlist),
-      _GridItem(icon: Icons.shopping_bag_outlined, label: 'My Cart', onTap: onCart, badge: cartCount),
-      _GridItem(icon: Icons.location_on_outlined, label: 'My Addresses', onTap: onAddresses),
-      _GridItem(icon: Icons.lock_outline, label: 'Change Password', onTap: onPassword),
-      _GridItem(icon: Icons.notifications_none, label: 'Notifications', onTap: onNotifications, badge: notificationCount),
+      _QuickAccessItem(
+        icon: Icons.receipt_long_outlined,
+        label: 'My Orders',
+        onTap: onOrders,
+      ),
+      _QuickAccessItem(
+        icon: Icons.favorite_border_rounded,
+        label: 'Wishlist',
+        onTap: onWishlist,
+      ),
+      _QuickAccessItem(
+        icon: Icons.shopping_bag_outlined,
+        label: 'My Cart',
+        onTap: onCart,
+        badge: cartCount,
+      ),
+      _QuickAccessItem(
+        icon: Icons.location_on_outlined,
+        label: 'My Addresses',
+        onTap: onAddresses,
+      ),
+      _QuickAccessItem(
+        icon: Icons.lock_outline_rounded,
+        label: 'Change Password',
+        onTap: onPassword,
+      ),
+      _QuickAccessItem(
+        icon: Icons.notifications_none_rounded,
+        label: 'Notifications',
+        onTap: onNotifications,
+        badge: notificationCount,
+      ),
     ];
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        const gap = 8.0;
-        final cols = constraints.maxWidth < 330 ? 2 : 3;
-        final w = (constraints.maxWidth - gap * (cols - 1)) / cols;
-        return Wrap(
-          spacing: gap,
-          runSpacing: gap,
-          children: [
-            for (final item in items)
-              SizedBox(width: w, height: 82, child: item),
-          ],
-        );
-      },
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Quick Access',
+          style: GoogleFonts.cormorantGaramond(
+            fontSize: 23,
+            fontWeight: FontWeight.w700,
+            color: _kTextCharcoal,
+            letterSpacing: 0.2,
+          ),
+        ),
+        const SizedBox(height: 12),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final isSmall = constraints.maxWidth < 340;
+            final gap = isSmall ? 8.0 : 10.0;
+            const cols = 3;
+            final w = (constraints.maxWidth - gap * (cols - 1)) / cols;
+            final h = isSmall ? 98.0 : 102.0;
+            return Wrap(
+              spacing: gap,
+              runSpacing: gap,
+              children: [
+                for (final item in items)
+                  SizedBox(width: w, height: h, child: item),
+              ],
+            );
+          },
+        ),
+      ],
     );
   }
 }
 
-class _GridItem extends StatelessWidget {
-  const _GridItem({
+class _QuickAccessItem extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+  final int badge;
+
+  const _QuickAccessItem({
     required this.icon,
     required this.label,
     required this.onTap,
     this.badge = 0,
   });
 
-  final IconData icon;
-  final String label;
-  final VoidCallback onTap;
-  final int badge;
-
   @override
   Widget build(BuildContext context) {
     return Material(
-      color: Colors.white.withValues(alpha: 0.92),
+      color: Colors.white,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(12),
-        side: const BorderSide(color: AppColors.border),
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFF4E5E9), width: 1),
       ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 6),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x08502846),
+                blurRadius: 8,
+                offset: Offset(0, 3),
+              ),
+            ],
+          ),
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Stack(
                 clipBehavior: Clip.none,
                 children: [
-                  _IosGlyph(icon: icon),
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      color: _kSoftBlush,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(
+                      icon,
+                      size: 20,
+                      color: _kDeepRose,
+                    ),
+                  ),
                   if (badge > 0)
                     Positioned(
-                      top: -5,
+                      top: -4,
                       right: -6,
                       child: Container(
-                        constraints: const BoxConstraints(minWidth: 15, minHeight: 15),
-                        padding: const EdgeInsets.symmetric(horizontal: 3),
+                        constraints: const BoxConstraints(minWidth: 17, minHeight: 17),
+                        padding: const EdgeInsets.symmetric(horizontal: 4),
                         decoration: const BoxDecoration(
-                          color: AppColors.dustyRose,
+                          color: Color(0xFFC83757),
                           shape: BoxShape.circle,
                         ),
                         child: Center(
                           child: Text(
                             badge > 9 ? '9+' : '$badge',
                             style: GoogleFonts.dmSans(
-                              fontSize: 8.5,
+                              fontSize: 9,
                               fontWeight: FontWeight.w700,
                               color: Colors.white,
                             ),
@@ -588,16 +825,19 @@ class _GridItem extends StatelessWidget {
                 ],
               ),
               const SizedBox(height: 6),
-              Text(
-                label,
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.center,
-                style: GoogleFonts.dmSans(
-                  fontSize: 11.5,
-                  fontWeight: FontWeight.w500,
-                  color: _kText,
-                  height: 1.2,
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 2),
+                child: Text(
+                  label,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w500,
+                    color: _kTextCharcoal,
+                    height: 1.15,
+                  ),
                 ),
               ),
             ],
@@ -616,47 +856,70 @@ class _TileData {
 }
 
 class _SettingsGroup extends StatelessWidget {
-  const _SettingsGroup({required this.tiles});
   final List<_TileData> tiles;
+  const _SettingsGroup({required this.tiles});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: _groupedCard(),
-      child: Column(
-        children: [
-          for (var i = 0; i < tiles.length; i++) ...[
-          if (i > 0) const Divider(height: 1, thickness: 0.5, color: _kDivider, indent: 48),
-            _SettingsTile(data: tiles[i]),
+    return Material(
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: const BorderSide(color: _kBorder, width: 1),
+      ),
+      child: Container(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(18),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x08502846),
+              blurRadius: 10,
+              offset: Offset(0, 3),
+            ),
           ],
-        ],
+        ),
+        child: Column(
+          children: [
+            for (var i = 0; i < tiles.length; i++) ...[
+              if (i > 0)
+                const Divider(
+                  height: 1,
+                  thickness: 0.5,
+                  color: _kBorder,
+                  indent: 52,
+                ),
+              _SettingsTile(data: tiles[i]),
+            ],
+          ],
+        ),
       ),
     );
   }
 }
 
 class _SettingsTile extends StatelessWidget {
-  const _SettingsTile({required this.data});
   final _TileData data;
+  const _SettingsTile({required this.data});
 
   @override
   Widget build(BuildContext context) {
     return InkWell(
       onTap: data.onTap,
+      borderRadius: BorderRadius.circular(18),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
         child: Row(
           children: [
             Container(
-              width: 28,
-              height: 28,
+              width: 32,
+              height: 32,
               decoration: BoxDecoration(
-                color: AppColors.blush.withValues(alpha: 0.38),
-                borderRadius: BorderRadius.circular(8),
+                color: _kSoftBlush,
+                borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(data.icon, size: 15, color: AppColors.deepRose),
+              child: Icon(data.icon, size: 17, color: _kDeepRose),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 14),
             Expanded(
               child: Text(
                 data.label,
@@ -665,11 +928,15 @@ class _SettingsTile extends StatelessWidget {
                 style: GoogleFonts.dmSans(
                   fontSize: 14,
                   fontWeight: FontWeight.w500,
-                  color: _kText,
+                  color: _kTextCharcoal,
                 ),
               ),
             ),
-            const Icon(Icons.chevron_right, size: 20, color: _kMuted),
+            const Icon(
+              Icons.chevron_right_rounded,
+              size: 20,
+              color: Color(0xFFD4788A),
+            ),
           ],
         ),
       ),
@@ -678,27 +945,39 @@ class _SettingsTile extends StatelessWidget {
 }
 
 class _DeleteBar extends StatelessWidget {
-  const _DeleteBar({required this.onTap});
   final VoidCallback onTap;
+  const _DeleteBar({required this.onTap});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      decoration: _groupedCard(),
+    return Material(
+      color: Colors.white.withValues(alpha: 0.65),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: const BorderSide(color: Color(0xFFE5A8A8), width: 1.2),
+      ),
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(12),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          height: 48,
+          alignment: Alignment.center,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
+              const Icon(
+                Icons.delete_outline_rounded,
+                size: 19,
+                color: Color(0xFFC94343),
+              ),
+              const SizedBox(width: 8),
               Text(
                 'Delete Account',
                 style: GoogleFonts.dmSans(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.error,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFFC94343),
                 ),
               ),
             ],
@@ -758,7 +1037,16 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
   @override
   Widget build(BuildContext context) {
     return AlertDialog(
-      title: const Text('Delete your account?'),
+      backgroundColor: const Color(0xFFFFFDF9),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+      title: Text(
+        'Delete your account?',
+        style: GoogleFonts.cormorantGaramond(
+          fontSize: 22,
+          fontWeight: FontWeight.w700,
+          color: _kTextCharcoal,
+        ),
+      ),
       content: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -766,23 +1054,65 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
           children: [
             Text(
               'This cannot be undone. You will be signed out and will not be able to log in again.',
-              style: Theme.of(context).textTheme.bodyMedium,
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                color: _kTextCharcoal,
+                height: 1.4,
+              ),
             ),
-            const SizedBox(height: 10),
-            Text(
-              '• Your name, email, phone, photo, addresses, cart, wishlist, and notifications will be removed.\n'
-              '• Completed, cancelled, and refunded orders stay in shop records with your delivery details removed.\n'
-              '• Ratings you already submitted stay, shown as a deleted customer.\n'
-              '• You cannot delete while an order is still being prepared or delivered.',
-              style: Theme.of(context).textTheme.bodySmall,
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFAF6F0),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: _kBorder),
+              ),
+              child: Text(
+                '• Your name, email, phone, photo, addresses, cart, wishlist, and notifications will be removed.\n'
+                '• Completed, cancelled, and refunded orders stay in shop records with your delivery details removed.\n'
+                '• Ratings you already submitted stay, shown as a deleted customer.\n'
+                '• You cannot delete while an order is still being prepared or delivered.',
+                style: GoogleFonts.dmSans(fontSize: 11.5, color: _kMuted, height: 1.45),
+              ),
             ),
-            const SizedBox(height: 14),
+            const SizedBox(height: 16),
             TextField(
               controller: _confirmCtrl,
               enabled: !_submitting,
               textCapitalization: TextCapitalization.characters,
-              decoration: const InputDecoration(
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.error,
+              ),
+              decoration: InputDecoration(
                 labelText: 'Type DELETE to confirm',
+                labelStyle: GoogleFonts.dmSans(
+                  fontSize: 12.5,
+                  color: AppColors.error,
+                  fontWeight: FontWeight.w500,
+                ),
+                floatingLabelStyle: GoogleFonts.dmSans(
+                  fontSize: 12.5,
+                  color: AppColors.error,
+                  fontWeight: FontWeight.w600,
+                ),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: AppColors.error.withValues(alpha: 0.5)),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: BorderSide(color: AppColors.error.withValues(alpha: 0.5)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: AppColors.error, width: 1.5),
+                ),
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -791,14 +1121,38 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
               controller: _passwordCtrl,
               enabled: !_submitting,
               obscureText: true,
-              decoration: const InputDecoration(
+              style: GoogleFonts.dmSans(fontSize: 13),
+              decoration: InputDecoration(
                 labelText: 'Password',
+                labelStyle: GoogleFonts.dmSans(fontSize: 12.5, color: _kMuted),
+                filled: true,
+                fillColor: Colors.white,
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: _kBorder),
+                ),
+                enabledBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: _kBorder),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  borderSide: const BorderSide(color: _kDeepRose),
+                ),
               ),
               onChanged: (_) => setState(() {}),
             ),
             if (_error != null) ...[
               const SizedBox(height: 10),
-              Text(_error!, style: const TextStyle(color: AppColors.error)),
+              Text(
+                _error!,
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  color: AppColors.error,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
             ],
           ],
         ),
@@ -806,14 +1160,23 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
       actions: [
         TextButton(
           onPressed: _submitting ? null : () => Navigator.pop(context, false),
-          child: const Text('Cancel'),
+          child: Text(
+            'Cancel',
+            style: GoogleFonts.dmSans(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
+              color: _kMuted,
+            ),
+          ),
         ),
         TextButton(
           onPressed: _ready ? _submit : null,
           child: Text(
             _submitting ? 'Deleting…' : 'Delete account',
-            style: TextStyle(
-              color: _ready ? AppColors.error : AppColors.muted,
+            style: GoogleFonts.dmSans(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w700,
+              color: _ready ? AppColors.error : _kMuted,
             ),
           ),
         ),
@@ -821,3 +1184,4 @@ class _DeleteAccountDialogState extends State<_DeleteAccountDialog> {
     );
   }
 }
+

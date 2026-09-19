@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../utils/datetime_ph.dart';
+import '../utils/string_utils.dart';
 
 /// Rider order model matching backend Order.to_dict() + enriched fields
 class RiderOrder {
@@ -243,8 +244,8 @@ class RiderOrderItem {
     return RiderOrderItem(
       id: j['id'] ?? 0,
       productId: j['product_id'] ?? 0,
-      productName: j['product_name'] ?? j['name'] ?? '',
-      variantName: j['variant_name'],
+      productName: formatTitleCase(j['product_name'] ?? j['name'] ?? ''),
+      variantName: j['variant_name'] != null ? formatTitleCase(j['variant_name'].toString()) : null,
       quantity: qty,
       price: price,
       imageUrl: j['product_image_url'] ?? j['image_url'],

@@ -1,4 +1,5 @@
 import '../services/cloudinary_service.dart';
+import '../utils/string_utils.dart';
 import 'package:flutter/foundation.dart';
 
 bool? _parseOptionalBool(dynamic v) {
@@ -95,7 +96,7 @@ class ProductVariant {
     return ProductVariant(
       id: j['id'] ?? 0,
       productId: j['product_id'] ?? 0,
-      name: j['name'] ?? '',
+      name: formatTitleCase(j['name'] ?? ''),
       price: (j['price'] is int)
           ? (j['price'] as int).toDouble()
           : (j['price'] ?? 0.0).toDouble(),
@@ -158,7 +159,7 @@ class ProductAddonOption {
     return ProductAddonOption(
       id: j['id'] ?? 0,
       groupId: j['group_id'] ?? 0,
-      name: j['name'] ?? '',
+      name: formatTitleCase(j['name'] ?? ''),
       price: (j['price'] is int)
           ? (j['price'] as int).toDouble()
           : (j['price'] ?? 0.0).toDouble(),
@@ -196,7 +197,7 @@ class ProductAddonGroup {
     return ProductAddonGroup(
       id: j['id'] ?? 0,
       productId: j['product_id'] ?? 0,
-      name: j['name'] ?? '',
+      name: formatTitleCase(j['name'] ?? ''),
       sortOrder: j['sort_order'] ?? 0,
       isActive: j['is_active'] ?? true,
       options: opts,
@@ -240,6 +241,7 @@ class Product {
   final List<ProductAddonOption> ymalAddonOptions;
   final double avgRating;
   final int reviewCount;
+  final int totalSold;
   final Map<String, Map<String, dynamic>> variantRatings;
   final String? storeName;
   final DateTime? createdAt;
@@ -247,6 +249,7 @@ class Product {
   final bool hasAddons;
   final bool? canDeliverToCustomer;
   final String? deliveryReason;
+  final bool allowPickup;
 
   /// The price customers actually pay.
   double get effectivePrice {
@@ -289,6 +292,7 @@ class Product {
     this.ymalAddonOptions = const [],
     this.avgRating = 0,
     this.reviewCount = 0,
+    this.totalSold = 0,
     this.variantRatings = const {},
     this.storeName,
     this.createdAt,
@@ -296,6 +300,7 @@ class Product {
     this.hasAddons = false,
     this.canDeliverToCustomer,
     this.deliveryReason,
+    this.allowPickup = true,
   });
 
   factory Product.fromJson(Map<String, dynamic> j) {
@@ -339,7 +344,7 @@ class Product {
     return Product(
       id: j['id'] ?? 0,
       storeId: j['store_id'] ?? 0,
-      name: j['name'] ?? '',
+      name: formatTitleCase(j['name'] ?? ''),
       description: j['description'],
       price: (j['price'] is int)
           ? (j['price'] as int).toDouble()
@@ -380,6 +385,9 @@ class Product {
       reviewCount: (j['review_count'] as num?)?.toInt()
           ?? (j['total_ratings'] as num?)?.toInt()
           ?? 0,
+      totalSold: (j['total_sold'] as num?)?.toInt()
+          ?? (j['sold_count'] as num?)?.toInt()
+          ?? 0,
       variantRatings: variantRatings,
       storeName: j['store_name'],
       createdAt: j['created_at'] != null
@@ -389,6 +397,7 @@ class Product {
       hasAddons: j['has_addons'] ?? addonGroups.isNotEmpty,
       canDeliverToCustomer: _parseOptionalBool(j['can_deliver_to_customer']),
       deliveryReason: j['delivery_reason'] as String?,
+      allowPickup: (j['allow_pickup'] != false) && (j['store_allow_pickup'] != false),
     );
   }
 

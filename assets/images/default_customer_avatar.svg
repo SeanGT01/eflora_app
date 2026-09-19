@@ -1,48 +1,60 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Default profile">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="Cute Flower Avatar - Blossom Pink">
   <defs>
-    <linearGradient id="bg" x1="18" y1="12" x2="102" y2="108" gradientUnits="userSpaceOnUse">
-      <stop stop-color="#FFFCF8"/>
-      <stop offset="0.42" stop-color="#F9EEF2"/>
-      <stop offset="1" stop-color="#EEC4D0"/>
+    <linearGradient id="bgGrad_pink" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#FFF0F5"/>
+      <stop offset="100%" stop-color="#FCE4EC"/>
     </linearGradient>
-    <linearGradient id="rose" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#D4788A"/>
-      <stop offset="1" stop-color="#C24E68"/>
+    <linearGradient id="petalGrad_pink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFB2CC"/>
+      <stop offset="100%" stop-color="#F06292"/>
     </linearGradient>
-    <linearGradient id="roseLight" x1="0" y1="0" x2="0" y2="1">
-      <stop stop-color="#F2C4CE"/>
-      <stop offset="1" stop-color="#E8A0B0"/>
+    <linearGradient id="centerGrad_pink" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFF59D"/>
+      <stop offset="100%" stop-color="#FFCA28"/>
     </linearGradient>
-    <linearGradient id="leaf" x1="0" y1="0" x2="0" y2="1">
-      <stop stop-color="#9BBEA0"/>
-      <stop offset="1" stop-color="#6B9E72"/>
-    </linearGradient>
-    <radialGradient id="glow" cx="50%" cy="42%" r="50%">
-      <stop stop-color="#FFFFFF" stop-opacity="0.55"/>
-      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
-    </radialGradient>
+    <filter id="shadow_pink" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="1.5" stdDeviation="1.5" flood-color="#000000" flood-opacity="0.10"/>
+    </filter>
   </defs>
-  <circle cx="60" cy="60" r="58" fill="url(#bg)" stroke="#F2C4CE" stroke-width="2"/>
-  <circle cx="60" cy="60" r="58" fill="url(#glow)"/>
-  <!-- soft decorative petals -->
-  <ellipse cx="28" cy="34" rx="10" ry="14" fill="#F2C4CE" opacity="0.35" transform="rotate(-25 28 34)"/>
-  <ellipse cx="92" cy="38" rx="9" ry="13" fill="#E8A0B0" opacity="0.28" transform="rotate(20 92 38)"/>
-  <ellipse cx="24" cy="78" rx="8" ry="11" fill="#D4788A" opacity="0.18" transform="rotate(15 24 78)"/>
-  <ellipse cx="96" cy="82" rx="9" ry="12" fill="#F2C4CE" opacity="0.22" transform="rotate(-18 96 82)"/>
-  <!-- bouquet -->
-  <g transform="translate(60 62)">
-    <ellipse cx="0" cy="22" rx="18" ry="5.5" fill="#D8C8BC" opacity="0.35"/>
-    <path d="M-10 20 Q-8 4 0 -16" stroke="url(#leaf)" stroke-width="2.6" fill="none" stroke-linecap="round"/>
-    <path d="M0 22 Q1 2 10 -20" stroke="url(#leaf)" stroke-width="2.8" fill="none" stroke-linecap="round"/>
-    <path d="M10 20 Q12 6 4 -8" stroke="url(#leaf)" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-    <circle cx="0" cy="-18" r="8.5" fill="url(#rose)"/>
-    <circle cx="-7" cy="-13" r="6" fill="url(#roseLight)"/>
-    <circle cx="7" cy="-13" r="6" fill="url(#roseLight)"/>
-    <circle cx="11" cy="-22" r="7" fill="url(#rose)"/>
-    <circle cx="-10" cy="-10" r="5" fill="#D4788A"/>
-    <circle cx="0" cy="-18" r="2.2" fill="#FFF8F4" opacity="0.85"/>
-    <!-- subtle person silhouette -->
-    <circle cx="0" cy="10" r="13" fill="#C24E68" opacity="0.1"/>
-    <circle cx="0" cy="-1" r="11" fill="#C24E68" opacity="0.08"/>
+
+  <!-- Background Circle with Border -->
+  <circle cx="60" cy="60" r="57" fill="url(#bgGrad_pink)" stroke="#F8BBD0" stroke-width="2.5"/>
+
+  <!-- Little Green Stem & Leaf -->
+  <path d="M 60 76 Q 60 96 55 106" fill="none" stroke="#66BB6A" stroke-width="4.5" stroke-linecap="round"/>
+  <path d="M 58 92 C 50 92 46 98 48 102 C 53 103 57 97 58 92 Z" fill="#66BB6A"/>
+
+  <!-- 6 Puffy Petals (Angle 0, 60, 120, 180, 240, 300) -->
+  <g filter="url(#shadow_pink)">
+    <!-- Petal 1 (Top) -->
+    <ellipse cx="60" cy="34" rx="14" ry="17" fill="url(#petalGrad_pink)"/>
+    <!-- Petal 2 (Top Right) -->
+    <ellipse cx="81.5" cy="46.5" rx="14" ry="17" fill="url(#petalGrad_pink)" transform="rotate(60 81.5 46.5)"/>
+    <!-- Petal 3 (Bottom Right) -->
+    <ellipse cx="81.5" cy="73.5" rx="14" ry="17" fill="url(#petalGrad_pink)" transform="rotate(120 81.5 73.5)"/>
+    <!-- Petal 4 (Bottom) -->
+    <ellipse cx="60" cy="86" rx="14" ry="17" fill="url(#petalGrad_pink)"/>
+    <!-- Petal 5 (Bottom Left) -->
+    <ellipse cx="38.5" cy="73.5" rx="14" ry="17" fill="url(#petalGrad_pink)" transform="rotate(240 38.5 73.5)"/>
+    <!-- Petal 6 (Top Left) -->
+    <ellipse cx="38.5" cy="46.5" rx="14" ry="17" fill="url(#petalGrad_pink)" transform="rotate(300 38.5 46.5)"/>
+
+    <!-- Flower Center -->
+    <circle cx="60" cy="60" r="22" fill="url(#centerGrad_pink)"/>
   </g>
+
+  <!-- Cute Smiling Face -->
+  <!-- Left Eye -->
+  <circle cx="53" cy="58" r="2.6" fill="#3D2B1F"/>
+  <circle cx="52.2" cy="57.2" r="0.9" fill="#FFFFFF"/>
+  <!-- Right Eye -->
+  <circle cx="67" cy="58" r="2.6" fill="#3D2B1F"/>
+  <circle cx="66.2" cy="57.2" r="0.9" fill="#FFFFFF"/>
+
+  <!-- Cheeks -->
+  <ellipse cx="49" cy="62.5" rx="3.5" ry="2" fill="#FF5252" opacity="0.6"/>
+  <ellipse cx="71" cy="62.5" rx="3.5" ry="2" fill="#FF5252" opacity="0.6"/>
+
+  <!-- Smile -->
+  <path d="M 57 62 Q 60 65.5 63 62" fill="none" stroke="#3D2B1F" stroke-width="1.8" stroke-linecap="round"/>
 </svg>

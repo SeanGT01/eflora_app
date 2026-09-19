@@ -6,6 +6,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:shimmer/shimmer.dart';
 import '../theme/app_theme.dart';
 import 'glass.dart';
+export 'eflora_brand_header.dart';
 
 // Section header with eyebrow + title (matches web design)
 class SectionHeader extends StatelessWidget {

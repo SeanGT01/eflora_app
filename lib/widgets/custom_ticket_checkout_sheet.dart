@@ -426,7 +426,7 @@ class _CustomTicketCheckoutSheetState extends State<CustomTicketCheckoutSheet> {
 
   Future<void> _pickDeliveryTimeSlot() async {
     if (_availableTimeSlots.isEmpty) {
-      showToast(context, 'No delivery hours available for this date.', isError: true);
+      showToast(context, 'Please choose another delivery date.', isError: true);
       return;
     }
     var initialIndex = _selectedTimeSlot == null ? 0 : _availableTimeSlots.indexOf(_selectedTimeSlot!);
@@ -554,7 +554,7 @@ class _CustomTicketCheckoutSheetState extends State<CustomTicketCheckoutSheet> {
     if (_closedOnDate || _availableTimeSlots.isEmpty) {
       if (_slotBlockReason == 'no_schedule') return 'Hours not set';
       if (_slotBlockReason == 'closed') return 'Closed';
-      return 'No slots';
+      return 'Choose another day';
     }
     return 'Select hours';
   }

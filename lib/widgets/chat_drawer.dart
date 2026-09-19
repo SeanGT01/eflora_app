@@ -3858,7 +3858,7 @@ class ChatDrawerState extends State<ChatDrawer>
 
   Widget _placeholderAvatar(String name, double size, {bool customerDefault = true}) {
     if (customerDefault) {
-      return CustomerDefaultAvatar(size: size);
+      return CustomerDefaultAvatar(size: size, seed: name);
     }
     final parts = name.trim().split(' ');
     final initials = parts.length >= 2

@@ -1,3 +1,6 @@
+import 'dart:convert';
+import '../utils/datetime_ph.dart';
+
 class Store {
   final int id;
   final String name;
@@ -15,6 +18,9 @@ class Store {
   final String? bannerUrl;
   final double? deliveryRadiusKm;
   final double? baseDeliveryFee;
+  final double? deliveryRatePerKm;
+  final double? freeDeliveryMinimum;
+  final bool freeDeliveryEnabled;
   final double? latitude;
   final double? longitude;
   final int? productCount;
@@ -46,6 +52,9 @@ class Store {
     this.bannerUrl,
     this.deliveryRadiusKm,
     this.baseDeliveryFee,
+    this.deliveryRatePerKm,
+    this.freeDeliveryMinimum,
+    this.freeDeliveryEnabled = true,
     this.latitude,
     this.longitude,
     this.productCount,
@@ -79,7 +88,13 @@ class Store {
       logoUrl: j['logo_url'],
       bannerUrl: j['banner_url'],
       deliveryRadiusKm: (j['delivery_radius_km'] as num?)?.toDouble(),
-      baseDeliveryFee: (j['base_delivery_fee'] as num?)?.toDouble(),
+      baseDeliveryFee: (j['base_delivery_fee'] as num?)?.toDouble() ??
+          double.tryParse('${j['base_delivery_fee']}'),
+      deliveryRatePerKm: (j['delivery_rate_per_km'] as num?)?.toDouble() ??
+          double.tryParse('${j['delivery_rate_per_km']}'),
+      freeDeliveryMinimum: (j['free_delivery_minimum'] as num?)?.toDouble() ??
+          double.tryParse('${j['free_delivery_minimum']}'),
+      freeDeliveryEnabled: j['free_delivery_enabled'] != false,
       latitude: (j['latitude'] as num?)?.toDouble(),
       longitude: (j['longitude'] as num?)?.toDouble(),
       productCount: j['product_count'] as int?,
@@ -90,10 +105,31 @@ class Store {
       deliveryReason: j['delivery_reason'] as String?,
       deliveryMethod: j['delivery_method'],
       currentDeliveryGeojson: j['current_delivery_geojson'],
-      selectedMunicipalities: (j['selected_municipalities'] as List<dynamic>? ?? const [])
-          .map((item) => item.toString())
-          .where((item) => item.trim().isNotEmpty)
-          .toList(),
+      selectedMunicipalities: () {
+        final raw = j['selected_municipalities'];
+        if (raw is List) {
+          return raw
+              .map((item) => item.toString().trim())
+              .where((item) => item.isNotEmpty)
+              .toList();
+        } else if (raw is String && raw.trim().isNotEmpty) {
+          try {
+            final decoded = jsonDecode(raw);
+            if (decoded is List) {
+              return decoded
+                  .map((item) => item.toString().trim())
+                  .where((item) => item.isNotEmpty)
+                  .toList();
+            }
+          } catch (_) {}
+          return raw
+              .split(',')
+              .map((item) => item.trim())
+              .where((item) => item.isNotEmpty)
+              .toList();
+        }
+        return const <String>[];
+      }(),
       isCustomer: j['is_customer'] == true,
       customerMapLocation: customerRaw is Map
           ? StoreMapLocation.fromJson(Map<String, dynamic>.from(customerRaw))
@@ -161,6 +197,50 @@ class Store {
     if (deliveryRadiusKm == null) return 'Delivery area';
     return '${deliveryRadiusKm!.toStringAsFixed(0)}km delivery';
   }
+
+  bool get hasFreeDelivery =>
+      freeDeliveryEnabled &&
+      freeDeliveryMinimum != null &&
+      freeDeliveryMinimum! > 0;
+
+  bool get isAlwaysFreeDelivery =>
+      (baseDeliveryFee == null || baseDeliveryFee == 0) &&
+      (deliveryRatePerKm == null || deliveryRatePerKm == 0);
+
+  /// Human-readable delivery fee calculation summary.
+  /// Examples:
+  /// - "Free delivery for all orders"
+  /// - "₱50.00 base + ₱20.00 / km"
+  /// - "₱50.00 flat delivery fee"
+  /// - "₱20.00 / km distance rate"
+  String get deliveryFeeCalculationSummary {
+    if (isAlwaysFreeDelivery) {
+      return 'Free delivery for all orders';
+    }
+    final hasBase = baseDeliveryFee != null && baseDeliveryFee! > 0;
+    final hasRate = deliveryRatePerKm != null && deliveryRatePerKm! > 0;
+
+    if (hasBase && hasRate) {
+      return '₱${baseDeliveryFee!.toStringAsFixed(2)} base + ₱${deliveryRatePerKm!.toStringAsFixed(2)} / km';
+    } else if (hasBase) {
+      return '₱${baseDeliveryFee!.toStringAsFixed(2)} flat delivery fee';
+    } else if (hasRate) {
+      return '₱${deliveryRatePerKm!.toStringAsFixed(2)} / km distance rate';
+    }
+    return 'Free delivery';
+  }
+
+  /// Explanation of how delivery fee is computed
+  String get deliveryFeeExplanation {
+    if (isAlwaysFreeDelivery) {
+      return 'This store offers free delivery on all orders.';
+    }
+    final hasRate = deliveryRatePerKm != null && deliveryRatePerKm! > 0;
+    if (hasRate) {
+      return 'Calculated based on actual road distance from the store to your delivery address.';
+    }
+    return 'Flat delivery fee applies to all deliveries within the coverage area.';
+  }
 }
 
 class StoreMapLocation {
@@ -199,6 +279,6 @@ class StoreReview {
         rating: (json['rating'] as num?)?.toInt() ?? 0,
         comment: json['comment']?.toString(),
         customerName: json['customer_name']?.toString() ?? 'Customer',
-        createdAt: DateTime.tryParse(json['created_at']?.toString() ?? ''),
+        createdAt: parseBackendDateTime(json['created_at']?.toString()),
       );
 }

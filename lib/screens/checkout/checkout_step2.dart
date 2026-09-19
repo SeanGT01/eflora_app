@@ -157,17 +157,23 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
   }
 
   Widget _buildDeliverySummary(BuildContext context, CheckoutProvider provider) {
+    final isPickup = provider.fulfillmentType == 'pickup';
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const Icon(Icons.location_on_rounded, color: AppColors.roseCta, size: 18),
+        Icon(
+          isPickup ? Icons.storefront_rounded : Icons.location_on_rounded,
+          color: AppColors.roseCta,
+          size: 18,
+        ),
         const SizedBox(width: 8),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Deliver to',
+                isPickup ? 'Fulfillment' : 'Deliver to',
                 style: GoogleFonts.dmSans(
                   fontSize: 11,
                   fontWeight: FontWeight.w700,
@@ -177,7 +183,9 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
               ),
               const SizedBox(height: 2),
               Text(
-                provider.selectedAddress?.addressLine ?? 'No address selected',
+                isPickup
+                    ? 'In-Store Pickup (Claim directly from flower shop)'
+                    : (provider.selectedAddress?.addressLine ?? 'No address selected'),
                 style: GoogleFonts.dmSans(
                   fontSize: 13.5,
                   fontWeight: FontWeight.w600,
@@ -198,8 +206,11 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
     int index,
     List<CartItem> cartItems,
   ) {
+    final isPickup = storeOrder.fulfillmentType == 'pickup' ||
+        context.read<CheckoutProvider>().fulfillmentType == 'pickup';
     final displaySubtotal = _storeSubtotalIncludingAddons(storeOrder, cartItems);
-    final displayTotal = displaySubtotal + storeOrder.deliveryFee;
+    final displayDeliveryFee = isPickup ? 0.0 : storeOrder.deliveryFee;
+    final displayTotal = displaySubtotal + displayDeliveryFee;
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -220,16 +231,49 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        storeOrder.storeName,
-                        style: GoogleFonts.dmSans(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.labelPink,
-                          letterSpacing: 0.1,
-                        ),
+                      Row(
+                        children: [
+                          Flexible(
+                            child: Text(
+                              storeOrder.storeName,
+                              style: GoogleFonts.dmSans(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                color: AppColors.labelPink,
+                                letterSpacing: 0.1,
+                              ),
+                            ),
+                          ),
+                          if (isPickup) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                              decoration: BoxDecoration(
+                                color: AppColors.deepSage.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(AppRadius.pill),
+                              ),
+                              child: Text(
+                                'Pickup',
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.w700,
+                                  color: AppColors.deepSage,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
-                      if (!storeOrder.canDeliver && storeOrder.deliveryError != null)
+                      if (isPickup)
+                        Text(
+                          storeOrder.storeAddress ?? 'Flower Shop Pickup',
+                          style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                color: AppColors.charcoal,
+                              ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        )
+                      else if (!storeOrder.canDeliver && storeOrder.deliveryError != null)
                         Text(
                           'Outside delivery area',
                           style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -246,7 +290,9 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                     ],
                   ),
                 ),
-                if (!storeOrder.canDeliver)
+                if (!isPickup && !storeOrder.canDeliver)
+                  const Icon(Icons.error_outline, color: Color(0xFFc0392b), size: 20)
+                else if (isPickup && !storeOrder.allowPickup)
                   const Icon(Icons.error_outline, color: Color(0xFFc0392b), size: 20),
               ],
             ),
@@ -262,12 +308,15 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
             _buildPriceRow('Subtotal', displaySubtotal),
             _buildPriceRow(
               'Delivery Fee',
-              storeOrder.deliveryFee,
+              displayDeliveryFee,
               isDeliveryFee: true,
-              isFree: storeOrder.canDeliver && storeOrder.freeDeliveryApplied,
-              infoMessage: storeOrder.canDeliver
-                  ? _deliveryFeeInfo(storeOrder, displaySubtotal)
-                  : null,
+              isNone: isPickup,
+              isFree: !isPickup && (storeOrder.canDeliver && storeOrder.freeDeliveryApplied),
+              infoMessage: isPickup
+                  ? 'No delivery fee for in-store pickup orders.'
+                  : (storeOrder.canDeliver
+                      ? _deliveryFeeInfo(storeOrder, displaySubtotal)
+                      : null),
             ),
             const Divider(),
             _buildPriceRow('Total', displayTotal, isBold: true, isTotal: true),
@@ -298,16 +347,23 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
     bool isTotal = false,
     bool isDeliveryFee = false,
     bool isFree = false,
+    bool isNone = false,
     String? infoMessage,
   }) {
-    final color = isFree
-        ? AppColors.successGreen
-        : isDeliveryFee
-            ? const Color(0xFF9A5B00)
-            : isTotal
-                ? AppColors.deepRose
-                : AppColors.charcoal;
-    final amountText = isFree ? 'FREE' : '₱${amount.toStringAsFixed(2)}';
+    final color = isNone
+        ? AppColors.charcoal
+        : isFree
+            ? AppColors.successGreen
+            : isDeliveryFee
+                ? const Color(0xFF9A5B00)
+                : isTotal
+                    ? AppColors.deepRose
+                    : AppColors.charcoal;
+    final amountText = isNone
+        ? 'None'
+        : isFree
+            ? 'FREE'
+            : '₱${amount.toStringAsFixed(2)}';
 
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -335,7 +391,7 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                 : Text(
                     amountText,
                     style: GoogleFonts.dmSans(
-                      fontWeight: isBold || isFree ? FontWeight.w700 : FontWeight.w600,
+                      fontWeight: isBold || isFree || isNone ? FontWeight.w700 : FontWeight.w600,
                       fontSize: isBold ? 14 : 13,
                       color: color,
                     ),
@@ -348,7 +404,11 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
                 child: Icon(
                   Icons.info_outline_rounded,
                   size: 16,
-                  color: isFree ? AppColors.successGreen : const Color(0xFF9A5B00),
+                  color: isNone
+                      ? AppColors.muted
+                      : isFree
+                          ? AppColors.successGreen
+                          : const Color(0xFF9A5B00),
                 ),
               ),
             ],
@@ -416,7 +476,10 @@ class _CheckoutStep2State extends State<CheckoutStep2> {
   double _displayGrandTotal(List<CartItem> cartItems) {
     final grand = _validationResponse.storeOrderTotals.fold<double>(0, (s, st) {
       final sub = _storeSubtotalIncludingAddons(st, cartItems);
-      return s + sub + st.deliveryFee;
+      final isPickup = st.fulfillmentType == 'pickup' ||
+          context.read<CheckoutProvider>().fulfillmentType == 'pickup';
+      final fee = isPickup ? 0.0 : st.deliveryFee;
+      return s + sub + fee;
     });
     return grand > _validationResponse.grandTotal ? grand : _validationResponse.grandTotal;
   }

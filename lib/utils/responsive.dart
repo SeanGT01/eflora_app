@@ -53,11 +53,11 @@ class AppResponsive {
 
   double get productMainSpacing => s(12).clamp(8.0, 16.0);
 
-  /// Taller cards on narrow devices so title + price don't clip.
+  /// Taller cards for spacious portrait photos so flower bouquets are fully visible.
   double get productAspectRatio {
-    if (size.width < 340) return 0.62;
-    if (size.width < 380) return 0.65;
-    return 0.68;
+    if (size.width < 340) return 0.54;
+    if (size.width < 380) return 0.56;
+    return 0.58;
   }
 
   EdgeInsets pagePadding({

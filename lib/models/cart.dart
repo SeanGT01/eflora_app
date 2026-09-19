@@ -53,6 +53,7 @@ class CartItem {
   bool isSelected;
   final List<CartItemAddon> addons;
   final double addonsTotal;
+  final bool allowPickup;
 
   CartItem({
     required this.id,
@@ -72,6 +73,7 @@ class CartItem {
     this.isSelected = true,
     this.addons = const [],
     this.addonsTotal = 0,
+    this.allowPickup = true,
   });
 
   bool get isVariant => variantId != null;
@@ -248,6 +250,7 @@ factory CartItem.fromJson(Map<String, dynamic> j) {
     isSelected: j['is_selected'] as bool? ?? true,
     addons: addons,
     addonsTotal: addonsTotal,
+    allowPickup: (j['allow_pickup'] != false) && product.allowPickup,
   );
 }
 

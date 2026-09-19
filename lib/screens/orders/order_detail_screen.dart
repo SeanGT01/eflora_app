@@ -140,10 +140,16 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
   }
 
-  bool get _allRated =>
-      _ratingsLoaded &&
-      _storeRated &&
-      _order.items.every((i) => _existingRatings.containsKey(i.id));
+  bool get _isFullyRated {
+    if (_order.allRated) return true;
+    if (!_ratingsLoaded) return false;
+    final rateable = _order.items
+        .where((i) => !i.productName.startsWith('[Deleted'))
+        .toList();
+    final itemsOk = rateable.isEmpty ||
+        rateable.every((i) => _existingRatings.containsKey(i.id));
+    return _storeRated && itemsOk;
+  }
 
   Future<void> _buyAgain() async {
     if (_buyAgainBusy) return;
@@ -572,8 +578,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                   ),
                   const SizedBox(height: 8),
                   _SummaryRow(
-                    label: 'Delivery',
-                    value: '₱${order.deliveryFee.toStringAsFixed(2)}',
+                    label: 'Delivery Fee',
+                    value: order.isPickup
+                        ? 'None'
+                        : (order.deliveryFee <= 0
+                            ? 'FREE'
+                            : '₱${order.deliveryFee.toStringAsFixed(2)}'),
+                    valueColor: order.isPickup
+                        ? AppColors.charcoal
+                        : (order.deliveryFee <= 0 ? AppColors.successGreen : null),
                   ),
                   const Divider(height: 16, color: AppColors.glassBorder),
                   _SummaryRow(
@@ -671,7 +684,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         const SizedBox(height: 10),
       ],
       if ((order.status == 'delivered' || order.status == 'completed') &&
-          !_allRated) ...[
+          !_isFullyRated) ...[
         GradientButton(
           label: 'Rate order',
           icon: Icons.star_border_rounded,
@@ -786,6 +799,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     if (!mounted) return;
     if (updated == true) {
       await _loadExistingRatings();
+      if (mounted) {
+        setState(() {});
+      }
     }
   }
 
@@ -884,19 +900,33 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   String _getStatusExplanation(String status) {
     switch (status) {
       case 'pending':
+        if (_order.paymentMethod == 'cop' || _order.paymentStatus == 'cop_pending') {
+          return 'Your store pickup order has been placed and is awaiting store confirmation.';
+        }
+        if (_order.paymentMethod == 'cod' || _order.paymentStatus == 'cod_pending') {
+          return 'Your cash on delivery order has been placed and is awaiting seller confirmation.';
+        }
         return 'Your payment receipt has been submitted and is awaiting seller verification.';
       case 'accepted':
         return 'Your order has been confirmed and the seller is preparing your items.';
       case 'preparing':
-        return 'Your items are being carefully prepared and packed for delivery.';
+        return 'Your items are being carefully prepared and packed.';
       case 'done_preparing':
+        if (_order.isPickup) {
+          return 'Your order is ready for pickup at the store!';
+        }
         return 'Your order is ready and waiting for the rider to collect for delivery.';
       case 'confirmed':
         return 'Your order is on the way. Track your delivery in real-time.';
       case 'on_delivery':
+        if (_order.isPickup) {
+          return 'Your order is ready for pickup at the store!';
+        }
         return 'Your order is on the way. Track your delivery in real-time.';
       case 'delivered':
-        return 'Your order has been successfully delivered. Thank you for your purchase!';
+        return _order.isPickup
+            ? 'Your order has been picked up. Thank you for your purchase!'
+            : 'Your order has been successfully delivered. Thank you for your purchase!';
       case 'completed':
         return 'Order completed. Thanks for confirming receipt!';
       default:
@@ -1032,13 +1062,15 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
       String? deliveryProof2Url,
       String? donePreparingProofUrl,
       BuildContext context) {
+    final isPickupOrder = _order.isPickup;
+    final isPayLater = _order.paymentMethod == 'cod' || _order.paymentMethod == 'cop';
     final statuses = [
-      {'id': 'pending', 'label': 'Payment'},
+      {'id': 'pending', 'label': isPayLater ? 'Order Placed' : 'Payment'},
       {'id': 'accepted', 'label': 'Confirmed'},
       {'id': 'preparing', 'label': 'Preparing'},
-      {'id': 'done_preparing', 'label': 'Ready'},
-      {'id': 'confirmed', 'label': 'In Transit'},
-      {'id': 'delivered', 'label': 'Delivered'},
+      {'id': 'done_preparing', 'label': isPickupOrder ? 'Ready for Pickup' : 'Ready'},
+      {'id': 'confirmed', 'label': isPickupOrder ? 'Ready for Pickup' : 'In Transit'},
+      {'id': 'delivered', 'label': isPickupOrder ? 'Picked Up' : 'Delivered'},
     ];
 
     final statusOrder = [

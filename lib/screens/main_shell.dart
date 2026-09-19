@@ -222,6 +222,9 @@ class _NavItem extends StatelessWidget {
   final bool isFirst;
   final bool isLast;
 
+  /// Set to false to remove icon names (can be easily set back to true if preferred).
+  static const bool _showLabels = false;
+
   const _NavItem({
     required this.icon,
     required this.activeIcon,
@@ -235,6 +238,28 @@ class _NavItem extends StatelessWidget {
 
   static const _inactive = Color(0xFF757575);
   static const _pill = Color(0xFFF8D5DE);
+
+  Widget _buildBadge() {
+    return Container(
+      constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
+      padding: const EdgeInsets.symmetric(horizontal: 3),
+      decoration: const BoxDecoration(
+        color: AppColors.roseCta,
+        shape: BoxShape.circle,
+      ),
+      child: Center(
+        child: Text(
+          badge > 9 ? '9+' : '$badge',
+          style: GoogleFonts.dmSans(
+            fontSize: 8,
+            fontWeight: FontWeight.w800,
+            color: Colors.white,
+            height: 1,
+          ),
+        ),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -277,61 +302,70 @@ class _NavItem extends StatelessWidget {
                     ),
                   ),
                 ),
-                Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Stack(
-                      clipBehavior: Clip.none,
-                      children: [
-                        SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: Icon(
-                            selected ? activeIcon : icon,
-                            size: 20,
-                            color: color,
-                          ),
-                        ),
-                        if (badge > 0)
-                          Positioned(
-                            top: -4,
-                            right: -4,
-                            child: Container(
-                              constraints: const BoxConstraints(minWidth: 14, minHeight: 14),
-                              padding: const EdgeInsets.symmetric(horizontal: 3),
-                              decoration: const BoxDecoration(
-                                color: AppColors.roseCta,
-                                shape: BoxShape.circle,
-                              ),
-                              child: Center(
-                                child: Text(
-                                  badge > 9 ? '9+' : '$badge',
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 8,
-                                    fontWeight: FontWeight.w800,
-                                    color: Colors.white,
-                                    height: 1,
+                Center(
+                  child: Tooltip(
+                    message: label,
+                    child: _showLabels
+                        ? Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Stack(
+                                clipBehavior: Clip.none,
+                                children: [
+                                  SizedBox(
+                                    width: 22,
+                                    height: 22,
+                                    child: Icon(
+                                      selected ? activeIcon : icon,
+                                      size: 20,
+                                      color: color,
+                                    ),
                                   ),
+                                  if (badge > 0)
+                                    Positioned(
+                                      top: -4,
+                                      right: -4,
+                                      child: _buildBadge(),
+                                    ),
+                                ],
+                              ),
+                              const SizedBox(height: 2),
+                              Text(
+                                label,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 9.5,
+                                  fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
+                                  color: color,
+                                  height: 1.1,
                                 ),
                               ),
-                            ),
+                            ],
+                          )
+                        : Stack(
+                            clipBehavior: Clip.none,
+                            alignment: Alignment.center,
+                            children: [
+                              SizedBox(
+                                width: 28,
+                                height: 28,
+                                child: Icon(
+                                  selected ? activeIcon : icon,
+                                  size: 24,
+                                  color: color,
+                                ),
+                              ),
+                              if (badge > 0)
+                                Positioned(
+                                  top: -3,
+                                  right: -4,
+                                  child: _buildBadge(),
+                                ),
+                            ],
                           ),
-                      ],
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      label,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: GoogleFonts.dmSans(
-                        fontSize: 9.5,
-                        fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                        color: color,
-                        height: 1.1,
-                      ),
-                    ),
-                  ],
+                  ),
                 ),
               ],
             ),

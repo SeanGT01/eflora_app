@@ -13,6 +13,7 @@ import '../../widgets/auth_chrome.dart';
 import '../../widgets/common.dart';
 import '../../widgets/glass.dart';
 import '../../widgets/auth_required_sheet.dart';
+import '../../config/phone_bind_flags.dart';
 import 'otp_verification_screen.dart';
 
 class RegisterScreen extends StatefulWidget {
@@ -32,7 +33,23 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscure = true;
   bool _obscureConfirm = true;
   bool _agreedTerms = false;
+  bool _allowPhoneRegistration = kAllowPhoneRegistration;
   static String get _policySite => ApiService.baseUrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadFeatureControls();
+  }
+
+  Future<void> _loadFeatureControls() async {
+    await refreshPhoneBindFlags();
+    if (mounted) {
+      setState(() {
+        _allowPhoneRegistration = kAllowPhoneRegistration;
+      });
+    }
+  }
 
   String? _validatePassword(String? v) {
     final value = v ?? '';
@@ -60,12 +77,17 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   String? _validateIdentifier(String? v) {
     final raw = (v ?? '').trim();
-    if (raw.isEmpty) return 'Email or phone is required';
+    if (raw.isEmpty) {
+      return _allowPhoneRegistration ? 'Email or phone is required' : 'Email is required';
+    }
     if (raw.contains('@')) {
       if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(raw.toLowerCase())) {
         return 'Enter a valid email';
       }
       return null;
+    }
+    if (!_allowPhoneRegistration) {
+      return 'Enter a valid email address';
     }
     if (_normalizePhMobile(raw) == null) {
       return 'Enter a valid email or PH mobile (09XXXXXXXXX)';
@@ -217,13 +239,13 @@ class _RegisterScreenState extends State<RegisterScreen> {
           const AuthBrandMark(),
           SizedBox(height: MediaQuery.sizeOf(context).height < 720 ? 10 : 24),
           const AuthHeading(
-            title: 'Create your account',
+            title: 'Create your customer account',
             subtitle: 'Join E-FLORA and start sending blooms',
           ),
           SizedBox(height: MediaQuery.sizeOf(context).height < 720 ? 12 : 22),
         ] else ...[
           const AuthHeading(
-            title: 'Create your account',
+            title: 'Create your customer account',
             subtitle: 'Join thousands of flower lovers today.',
           ),
           const SizedBox(height: 16),
@@ -254,16 +276,16 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   validator: validateFullName,
                 ),
                 const SizedBox(height: 18),
-                const AuthFieldLabel('Email or mobile number'),
+                AuthFieldLabel(_allowPhoneRegistration ? 'Email or mobile number' : 'Email address'),
                 TextFormField(
                   controller: _identifierCtrl,
-                  keyboardType: TextInputType.text,
+                  keyboardType: _allowPhoneRegistration ? TextInputType.text : TextInputType.emailAddress,
                   textInputAction: TextInputAction.next,
                   inputFormatters: const [LowercaseEmailInputFormatter()],
                   style: fieldStyle,
                   decoration: authInputDecoration(
-                    hint: 'you@example.com or 09171234567',
-                    prefixIcon: Icons.person_outline,
+                    hint: _allowPhoneRegistration ? 'you@example.com or 09171234567' : 'you@example.com',
+                    prefixIcon: _allowPhoneRegistration ? Icons.person_outline : Icons.email_outlined,
                   ),
                   validator: _validateIdentifier,
                 ),

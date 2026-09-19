@@ -68,6 +68,7 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
     CheckoutProvider checkoutProvider,
     AddressProvider addressProvider,
   ) {
+    if (checkoutProvider.fulfillmentType == 'pickup') return;
     if (addressProvider.isLoading || addressProvider.addresses.isEmpty) return;
 
     final resolved = _resolveDropdownAddress(checkoutProvider, addressProvider);
@@ -95,6 +96,8 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
           _syncCheckoutAddress(checkoutProvider, addressProvider);
         });
 
+        final isPickup = checkoutProvider.fulfillmentType == 'pickup';
+
         return Column(
           children: [
             Expanded(
@@ -113,7 +116,11 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
                           tint: AppColors.error,
                         ),
                       ),
-                    _buildAddressSection(context, checkoutProvider, addressProvider),
+                    _buildFulfillmentToggle(context, checkoutProvider),
+                    if (isPickup)
+                      _buildPickupInfoSection(context, checkoutProvider)
+                    else
+                      _buildAddressSection(context, checkoutProvider, addressProvider),
                     const SizedBox(height: 16),
                     _buildNotesSection(context, checkoutProvider),
                   ],
@@ -271,15 +278,170 @@ class _CheckoutStep1State extends State<CheckoutStep1> {
     );
   }
 
+  Widget _buildFulfillmentToggle(BuildContext context, CheckoutProvider provider) {
+    final isPickup = provider.fulfillmentType == 'pickup';
+    final allowPickup = provider.allowPickup;
+
+    Widget tabOption({
+      required String label,
+      required String subtitle,
+      required IconData icon,
+      required bool isSelected,
+      required VoidCallback onTap,
+      bool isEnabled = true,
+    }) {
+      return Expanded(
+        child: Opacity(
+          opacity: isEnabled ? 1.0 : 0.45,
+          child: GestureDetector(
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
+              decoration: BoxDecoration(
+                color: isSelected ? AppColors.roseCta.withValues(alpha: 0.08) : Colors.white,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+                border: Border.all(
+                  color: isSelected ? AppColors.roseCta : AppColors.glassBorder,
+                  width: isSelected ? 1.5 : 1.0,
+                ),
+                boxShadow: isSelected
+                    ? [
+                        BoxShadow(
+                          color: AppColors.roseCta.withValues(alpha: 0.12),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Column(
+                children: [
+                  Icon(
+                    icon,
+                    color: isSelected ? AppColors.roseCta : AppColors.muted,
+                    size: 22,
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    label,
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                          color: isSelected ? AppColors.roseCta : AppColors.charcoal,
+                        ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle,
+                    textAlign: TextAlign.center,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          fontSize: 10.5,
+                          color: AppColors.muted,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        children: [
+          tabOption(
+            label: 'Delivery',
+            subtitle: 'Door-to-door',
+            icon: Icons.local_shipping_outlined,
+            isSelected: !isPickup,
+            onTap: () => provider.setFulfillmentType('delivery'),
+          ),
+          const SizedBox(width: 12),
+          tabOption(
+            label: 'Store Pickup',
+            subtitle: allowPickup ? 'Claim at shop' : 'Unavailable',
+            icon: Icons.storefront_outlined,
+            isSelected: isPickup && allowPickup,
+            isEnabled: allowPickup,
+            onTap: () {
+              if (!allowPickup) {
+                showToast(context, 'Store pickup is not offered by this store.', isError: true);
+                return;
+              }
+              provider.setFulfillmentType('pickup');
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPickupInfoSection(BuildContext context, CheckoutProvider provider) {
+    return _buildSectionCard(
+      context,
+      title: 'Store Pickup',
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(
+          color: AppColors.roseCta.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(AppRadius.lg),
+          border: Border.all(color: AppColors.glassBorderActive, width: 1.5),
+        ),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                gradient: AppColors.brandGradient,
+                borderRadius: BorderRadius.circular(AppRadius.md),
+              ),
+              child: const Icon(Icons.storefront_rounded, color: Colors.white, size: 22),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Claim at Flower Shop',
+                    style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    'Pick up your order directly from the florist.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: AppColors.charcoal,
+                          height: 1.4,
+                        ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildNotesSection(BuildContext context, CheckoutProvider provider) {
+    final isPickup = provider.fulfillmentType == 'pickup';
     return _buildSectionCard(
       context,
       title: 'Notes',
       child: TextField(
         controller: _notesController,
         maxLines: 2,
-        decoration: const InputDecoration(
-          hintText: 'Optional — gate code, landmark…',
+        decoration: InputDecoration(
+          hintText: isPickup
+              ? 'Optional — vehicle details, pickup representative name…'
+              : 'Optional — gate code, landmark…',
         ),
         onChanged: (value) => provider.setDeliveryNotes(value),
       ),

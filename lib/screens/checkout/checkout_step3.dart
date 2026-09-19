@@ -57,6 +57,7 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
   /// Weekday names the store is open (`monday`…), from time-slot / schedule API.
   final Map<int, Set<String>> _storeOpenDays = {};
   final Map<int, bool> _storeHasSchedule = {};
+  final Map<int, bool> _storeAllowSameDay = {};
 
   // Duplicate submission prevention
   bool _isSubmitting = false;
@@ -80,21 +81,35 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
   }
 
   String _paymentMethodFor(StoreOrderTotal storeOrder) {
+    final isPickup = storeOrder.fulfillmentType == 'pickup' ||
+        context.read<CheckoutProvider>().fulfillmentType == 'pickup';
     final selected = _storePaymentMethods[storeOrder.storeId];
-    if (storeOrder.allowCod && selected == 'cod') return 'cod';
-    if (storeOrder.allowGcash && selected != 'cod') return 'gcash';
-    if (storeOrder.allowGcash) return 'gcash';
-    if (storeOrder.allowCod) return 'cod';
-    return 'gcash';
+
+    if (isPickup) {
+      if (storeOrder.allowCop && selected == 'cop') return 'cop';
+      if (storeOrder.allowGcash && selected != 'cop') return 'gcash';
+      if (storeOrder.allowGcash) return 'gcash';
+      if (storeOrder.allowCop) return 'cop';
+      return 'gcash';
+    } else {
+      if (storeOrder.allowCod && selected == 'cod') return 'cod';
+      if (storeOrder.allowGcash && selected != 'cod') return 'gcash';
+      if (storeOrder.allowGcash) return 'gcash';
+      if (storeOrder.allowCod) return 'cod';
+      return 'gcash';
+    }
   }
 
   bool _isCod(StoreOrderTotal storeOrder) => _paymentMethodFor(storeOrder) == 'cod';
+  bool _isCop(StoreOrderTotal storeOrder) => _paymentMethodFor(storeOrder) == 'cop';
+  bool _isCashPayment(StoreOrderTotal storeOrder) =>
+      _isCod(storeOrder) || _isCop(storeOrder);
 
   bool _storeIsReady(StoreOrderTotal storeOrder) {
     final hasDelivery = _storeDates.containsKey(storeOrder.storeId) &&
         _storeTimeSlots[storeOrder.storeId] != null;
     if (!hasDelivery) return false;
-    if (_isCod(storeOrder)) return true;
+    if (_isCashPayment(storeOrder)) return true;
     return _storeImages.containsKey(storeOrder.storeId);
   }
 
@@ -275,7 +290,9 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     final storeId = storeOrder.storeId;
     final storeName = storeOrder.storeName;
     final total = storeOrder.total;
-    final isCod = _isCod(storeOrder);
+    final isPickup = storeOrder.fulfillmentType == 'pickup' ||
+        context.read<CheckoutProvider>().fulfillmentType == 'pickup';
+    final isCash = _isCashPayment(storeOrder);
     final isReady = _storeIsReady(storeOrder);
 
     return Container(
@@ -334,18 +351,23 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
                 ],
               ),
             ),
+          if (isPickup)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(14, 10, 14, 0),
+              child: _buildStorePickupInfoCard(storeOrder),
+            ),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 12, 14, 0),
-            child: _buildStoreDeliveryCard(context, storeId),
+            child: _buildStoreDeliveryCard(context, storeId, isPickup: isPickup),
           ),
           Padding(
             padding: const EdgeInsets.fromLTRB(14, 14, 14, 0),
             child: _buildPaymentMethodSelector(context, storeOrder),
           ),
-          if (isCod)
+          if (isCash)
             Padding(
               padding: const EdgeInsets.fromLTRB(14, 10, 14, 14),
-              child: _buildCodInfoCard(),
+              child: _isCop(storeOrder) ? _buildCopInfoCard() : _buildCodInfoCard(),
             )
           else ...[
             Padding(
@@ -362,10 +384,65 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     );
   }
 
+  Widget _buildStorePickupInfoCard(StoreOrderTotal storeOrder) {
+    return Container(
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        color: AppColors.roseCta.withValues(alpha: 0.05),
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: AppColors.glassBorder),
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Icon(Icons.storefront_rounded, size: 18, color: AppColors.deepRose),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'Pickup Location',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.muted,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  storeOrder.storeAddress ?? 'Address provided upon confirmation',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    color: AppColors.charcoal,
+                  ),
+                ),
+                if (storeOrder.storePhone != null && storeOrder.storePhone!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    'Contact: ${storeOrder.storePhone}',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 11.5,
+                      color: AppColors.muted,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildPaymentMethodSelector(BuildContext context, StoreOrderTotal storeOrder) {
+    final isPickup = storeOrder.fulfillmentType == 'pickup' ||
+        context.read<CheckoutProvider>().fulfillmentType == 'pickup';
     final method = _paymentMethodFor(storeOrder);
     final gcashEnabled = storeOrder.allowGcash;
     final codEnabled = storeOrder.allowCod;
+    final copEnabled = storeOrder.allowCop;
 
     Widget chip({
       required String value,
@@ -382,10 +459,10 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
           child: Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
             decoration: BoxDecoration(
-              color: selected ? AppColors.dustyRose.withOpacity(0.12) : Colors.white,
+              color: selected ? AppColors.dustyRose.withValues(alpha: 0.12) : Colors.white,
               borderRadius: BorderRadius.circular(999),
               border: Border.all(
-                color: selected ? AppColors.dustyRose.withOpacity(0.45) : AppColors.border,
+                color: selected ? AppColors.dustyRose.withValues(alpha: 0.45) : AppColors.border,
               ),
             ),
             child: Row(
@@ -424,25 +501,43 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
           ),
         ),
         const SizedBox(height: 8),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            chip(value: 'gcash', label: 'GCash', enabled: gcashEnabled),
-            chip(value: 'cod', label: 'Cash on delivery', enabled: codEnabled),
+        if (isPickup) ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              chip(value: 'gcash', label: 'GCash', enabled: gcashEnabled),
+              chip(value: 'cop', label: 'Cash on pickup (Pay in store)', enabled: copEnabled),
+            ],
+          ),
+          if (!copEnabled) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Cash on pickup is disabled by this store. Advance payment via GCash is required.',
+              style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
+            ),
           ],
-        ),
+        ] else ...[
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              chip(value: 'gcash', label: 'GCash', enabled: gcashEnabled),
+              chip(value: 'cod', label: 'Cash on delivery', enabled: codEnabled),
+            ],
+          ),
+          if (!codEnabled) ...[
+            const SizedBox(height: 6),
+            Text(
+              'Cash on delivery is disabled by this store.',
+              style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
+            ),
+          ],
+        ],
         if (!gcashEnabled) ...[
           const SizedBox(height: 6),
           Text(
             'GCash is disabled by this store.',
-            style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
-          ),
-        ],
-        if (!codEnabled) ...[
-          const SizedBox(height: 6),
-          Text(
-            'Cash on delivery is disabled by this store.',
             style: GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
           ),
         ],
@@ -461,9 +556,20 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     );
   }
 
+  Widget _buildCopInfoCard() {
+    return Text(
+      'Pay the florist in cash upon claiming your order at the flower shop. No receipt needed.',
+      style: GoogleFonts.dmSans(
+        fontSize: 12.5,
+        color: AppColors.muted,
+        height: 1.4,
+      ),
+    );
+  }
+
   Widget _buildStoreQrSection(BuildContext context, StoreOrderTotal storeOrder) {
     final qrImages = (storeOrder.qrImages as List?)?.cast<String>() ?? const <String>[];
-    final rawInstructions = (storeOrder.instructions as String?)?.trim();
+    final rawInstructions = storeOrder.instructions?.trim();
     final instructions = (rawInstructions != null && rawInstructions.isNotEmpty)
         ? rawInstructions
         : 'Scan the GCash QR code, pay the exact amount due, then upload a screenshot of your receipt.';
@@ -663,9 +769,9 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     final storeTotals = provider.validationResponse?.storeOrderTotals ?? [];
 
     try {
-      // Upload GCash proofs only; COD orders skip receipt upload
+      // Upload GCash proofs only; COD and COP orders skip receipt upload
       for (final storeOrder in storeTotals) {
-        if (_isCod(storeOrder)) continue;
+        if (_isCashPayment(storeOrder)) continue;
 
         final storeId = storeOrder.storeId;
         final image = _storeImages[storeId];
@@ -797,8 +903,10 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
         final openDays = (result['open_days'] as List? ?? const [])
             .map((d) => d.toString().toLowerCase())
             .toSet();
+        final allowSameDay = result['allow_same_day'] != false;
         _storeOpenDays[storeId] = openDays;
         _storeHasSchedule[storeId] = hasSchedule;
+        _storeAllowSameDay[storeId] = allowSameDay;
         _storeClosedOnDate[storeId] = reason == 'closed';
         _storeSlotBlockReason[storeId] = reason;
         _storeAvailableTimeSlots[storeId] = filteredSlots;
@@ -838,7 +946,7 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     return DateFormat('EEE, MMM d, yyyy').format(normalized);
   }
 
-  Widget _buildStoreDeliveryCard(BuildContext context, int storeId) {
+  Widget _buildStoreDeliveryCard(BuildContext context, int storeId, {bool isPickup = false}) {
     final selectedDate = _storeDates[storeId];
     final hasDate = selectedDate != null;
     final hasTime = _storeTimeSlots[storeId] != null;
@@ -849,14 +957,14 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
       children: [
         Row(
           children: [
-            const Icon(
-              Icons.local_shipping_outlined,
+            Icon(
+              isPickup ? Icons.event_available_rounded : Icons.local_shipping_outlined,
               size: 15,
               color: AppColors.deepRose,
             ),
             const SizedBox(width: 6),
             Text(
-              'Delivery Schedule',
+              isPickup ? 'Pickup Schedule' : 'Delivery Schedule',
               style: GoogleFonts.dmSans(
                 fontSize: 12.5,
                 fontWeight: FontWeight.w700,
@@ -934,24 +1042,24 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
           builder: (context, constraints) {
             final isWide = constraints.maxWidth >= 360;
             final dateField = _deliveryBox(
-              label: 'Delivery Date',
+              label: isPickup ? 'Pickup Date' : 'Delivery Date',
               value: _formattedDateLabel(selectedDate),
               icon: Icons.calendar_month_rounded,
               isPlaceholder: !hasDate,
               isEnabled: true,
               isLoading: false,
-              onTap: () => _pickStoreDeliveryDate(context, storeId),
+              onTap: () => _pickStoreDeliveryDate(context, storeId, isPickup: isPickup),
             );
             final hoursField = _deliveryBox(
-              label: 'Delivery Time',
-              value: _hoursFieldLabel(storeId),
+              label: isPickup ? 'Pickup Hours' : 'Delivery Hours',
+              value: _hoursFieldLabel(storeId, isPickup: isPickup),
               icon: Icons.access_time_filled_rounded,
               isPlaceholder: !hasTime,
               isEnabled: hasDate && !isLoadingSlots,
               isLoading: isLoadingSlots,
               onTap: !hasDate || isLoadingSlots
                   ? null
-                  : () => _pickStoreTimeSlot(context, storeId),
+                  : () => _pickStoreTimeSlot(context, storeId, isPickup: isPickup),
             );
 
             if (isWide) {
@@ -1114,20 +1222,28 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
         .map((d) => d.toString().toLowerCase())
         .toSet();
     final hasSchedule = result['has_schedule'] == true;
+    final allowSameDay = result['allow_same_day'] != false;
     setState(() {
       _storeOpenDays[storeId] = openDays;
       _storeHasSchedule[storeId] = hasSchedule;
+      _storeAllowSameDay[storeId] = allowSameDay;
     });
     return hasSchedule && openDays.isNotEmpty;
   }
 
-  Future<void> _pickStoreDeliveryDate(BuildContext context, int storeId) async {
+  Future<void> _pickStoreDeliveryDate(
+    BuildContext context,
+    int storeId, {
+    bool isPickup = false,
+  }) async {
     final ready = await _ensureStoreOpenDays(storeId);
     if (!mounted) return;
     if (!ready) {
       showToast(
         context,
-        'This store has not set delivery hours yet.',
+        isPickup
+            ? 'This store has not set pickup hours yet.'
+            : 'This store has not set delivery hours yet.',
         isError: true,
       );
       return;
@@ -1137,7 +1253,9 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     if (openDates.isEmpty) {
       showToast(
         context,
-        'No open delivery days in the next 2 weeks.',
+        isPickup
+            ? 'No open pickup days in the next 2 weeks.'
+            : 'No open delivery days in the next 2 weeks.',
         isError: true,
       );
       return;
@@ -1155,7 +1273,7 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     }
 
     final picked = await _showCupertinoWheelPicker<DateTime>(
-      title: 'Delivery date',
+      title: isPickup ? 'Pickup date' : 'Delivery date',
       itemCount: openDates.length,
       initialIndex: initialIndex,
       itemBuilder: (index) => Center(
@@ -1185,31 +1303,45 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     final phToday = CheckoutService.normalizeToPhDate(CheckoutService.getPhilippineTime());
     final maxDate = phToday.add(const Duration(days: 14));
     final dates = <DateTime>[];
+    final allowSameDay = _storeAllowSameDay[storeId] ?? true;
     for (var d = phToday; !d.isAfter(maxDate); d = d.add(const Duration(days: 1))) {
+      if (d.year == phToday.year && d.month == phToday.month && d.day == phToday.day && !allowSameDay) {
+        continue;
+      }
       if (_isStoreOpenOn(storeId, d)) dates.add(d);
     }
     return dates;
   }
 
-  String _hoursFieldLabel(int storeId) {
+  String _hoursFieldLabel(int storeId, {bool isPickup = false}) {
     final selected = _storeTimeSlots[storeId];
     if (selected != null) return CheckoutService.formatTimeSlot(selected);
-    if (_storeDates[storeId] == null) return 'Select date first';
+    if (_storeDates[storeId] == null) return isPickup ? 'Select pickup date first' : 'Select date first';
     if (_storeTimeSlotsLoading[storeId] == true) return 'Loading…';
     final reason = _storeSlotBlockReason[storeId];
     if (_storeClosedOnDate[storeId] == true ||
         (_storeAvailableTimeSlots[storeId] ?? const <String>[]).isEmpty) {
-      if (reason == 'no_schedule') return 'Hours not set';
+      if (reason == 'no_schedule') return isPickup ? 'Pickup hours not set' : 'Hours not set';
       if (reason == 'closed') return 'Closed';
-      return 'No slots';
+      return 'Choose another day';
     }
-    return 'Select hours';
+    return isPickup ? 'Select pickup hours' : 'Select hours';
   }
 
-  Future<void> _pickStoreTimeSlot(BuildContext context, int storeId) async {
+  Future<void> _pickStoreTimeSlot(
+    BuildContext context,
+    int storeId, {
+    bool isPickup = false,
+  }) async {
     final slots = _storeAvailableTimeSlots[storeId] ?? const <String>[];
     if (slots.isEmpty) {
-      showToast(context, 'No delivery hours for this date.', isError: true);
+      showToast(
+        context,
+        isPickup
+            ? 'Please choose another pickup date.'
+            : 'Please choose another delivery date.',
+        isError: true,
+      );
       return;
     }
     final current = _storeTimeSlots[storeId];
@@ -1217,7 +1349,7 @@ class _CheckoutStep3State extends State<CheckoutStep3> {
     if (initialIndex < 0) initialIndex = 0;
 
     final picked = await _showCupertinoWheelPicker<String>(
-      title: 'Delivery hours',
+      title: isPickup ? 'Pickup hours' : 'Delivery hours',
       itemCount: slots.length,
       initialIndex: initialIndex,
       itemBuilder: (index) => Center(

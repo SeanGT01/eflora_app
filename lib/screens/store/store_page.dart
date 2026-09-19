@@ -777,8 +777,8 @@ class _ProductListTile extends StatelessWidget {
           const SizedBox(width: 12),
           // Info
           Expanded(
-            child: SizedBox(
-              height: 100,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minHeight: context.s(100)),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -793,7 +793,7 @@ class _ProductListTile extends StatelessWidget {
                           child: Text(
                             product.category!.toUpperCase(),
                             style: GoogleFonts.dmSans(
-                              fontSize: 9.5,
+                              fontSize: context.sp(9.5),
                               fontWeight: FontWeight.w700,
                               color: AppColors.labelPink,
                               letterSpacing: 1,
@@ -805,7 +805,7 @@ class _ProductListTile extends StatelessWidget {
                       Text(
                         product.name,
                         style: GoogleFonts.cormorantGaramond(
-                          fontSize: 16,
+                          fontSize: context.sp(16),
                           fontWeight: FontWeight.w600,
                           color: AppColors.charcoal,
                           height: 1.2,
@@ -826,7 +826,7 @@ class _ProductListTile extends StatelessWidget {
                           Text(
                             '₱${product.effectivePrice.toStringAsFixed(2)}',
                             style: GoogleFonts.cormorantGaramond(
-                              fontSize: 19,
+                              fontSize: context.sp(18.5),
                               fontWeight: FontWeight.w600,
                               color: AppColors.deepRose,
                             ),
@@ -837,7 +837,7 @@ class _ProductListTile extends StatelessWidget {
                                 Text(
                                   '₱${product.price.toStringAsFixed(2)}',
                                   style: GoogleFonts.dmSans(
-                                    fontSize: 11,
+                                    fontSize: context.sp(10.5),
                                     color: AppColors.muted,
                                     decoration: TextDecoration.lineThrough,
                                   ),
@@ -854,7 +854,7 @@ class _ProductListTile extends StatelessWidget {
                                   child: Text(
                                     '${product.discountPct}% off',
                                     style: GoogleFonts.dmSans(
-                                      fontSize: 9,
+                                      fontSize: context.sp(8.5),
                                       fontWeight: FontWeight.w700,
                                       color: Colors.white,
                                     ),
@@ -1236,22 +1236,31 @@ class _StoreCategoryProductsPageState
                         ),
                       ),
                     )
-                  : GridView.builder(
-                      padding: const EdgeInsets.fromLTRB(12, 60, 12, 24),
-                      gridDelegate:
-                          const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 2,
-                        mainAxisSpacing: 12,
-                        crossAxisSpacing: 12,
-                        childAspectRatio: 0.68,
-                      ),
-                      itemCount: _products.length,
-                      itemBuilder: (context, i) {
-                        final product = _products[i];
-                        return ProductCard(
-                          product: product,
-                          onTap: () => _openProduct(product),
-                          onAddToCart: () => _addToCart(product),
+                  : Builder(
+                      builder: (context) {
+                        final r = context.responsive;
+                        return GridView.builder(
+                          padding: EdgeInsets.fromLTRB(
+                            context.pageGutter * 0.7,
+                            60,
+                            context.pageGutter * 0.7,
+                            24,
+                          ),
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: r.productCrossAxisCount,
+                            mainAxisSpacing: r.productMainSpacing,
+                            crossAxisSpacing: r.productCrossSpacing,
+                            childAspectRatio: r.productAspectRatio,
+                          ),
+                          itemCount: _products.length,
+                          itemBuilder: (context, i) {
+                            final product = _products[i];
+                            return ProductCard(
+                              product: product,
+                              onTap: () => _openProduct(product),
+                              onAddToCart: () => _addToCart(product),
+                            );
+                          },
                         );
                       },
                     ),

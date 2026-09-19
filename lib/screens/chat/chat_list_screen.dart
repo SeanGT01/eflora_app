@@ -283,7 +283,7 @@ class _ConversationTile extends StatelessWidget {
 
   Widget _placeholderAvatar(String name, {bool customerDefault = true}) {
     if (customerDefault) {
-      return const CustomerDefaultAvatar(size: 48);
+      return CustomerDefaultAvatar(size: 48, seed: name);
     }
     final initials = _getInitials(name);
     return Container(

@@ -8,19 +8,23 @@ import '../../providers/cart_provider.dart';
 import '../../providers/address_provider.dart';
 import '../../services/checkout_service.dart';
 import '../../navigation/floating_nav_metrics.dart';
-import '../../services/app_quality.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/adaptive_blur.dart';
 import '../../widgets/common.dart';
 import '../../widgets/custom_confirm_dialog.dart';
-import '../../widgets/glass.dart';
 import '../../widgets/delivery_unavailable_dialog.dart';
 import '../../widgets/active_order_limit_dialog.dart';
 import '../../widgets/stock_issue_dialog.dart';
 import '../checkout/checkout_modal.dart';
 import '../main_shell.dart';
 import '../orders/orders_screen.dart';
+
+const _kDeepRose = Color(0xFFB5445A);
+const _kDustyRose = Color(0xFFD4788A);
+const _kSoftBlush = Color(0xFFFBE9EE);
+const _kTextCharcoal = Color(0xFF2C2520);
+const _kMuted = Color(0xFF8F7D79);
+const _kBorder = Color(0xFFF0DDE2);
 
 class CartScreen extends StatefulWidget {
   const CartScreen({super.key});
@@ -47,22 +51,59 @@ class _CartScreenState extends State<CartScreen> {
     return AppBackground(
       child: Scaffold(
         backgroundColor: Colors.transparent,
-        appBar: AppBar(
-          backgroundColor: Colors.transparent,
-          elevation: 0,
-          scrolledUnderElevation: 0,
-          title: Text(
-            'My Cart',
-            style: GoogleFonts.cormorantGaramond(
-              fontSize: 22,
-              fontWeight: FontWeight.w500,
-              color: AppColors.charcoal,
-              letterSpacing: 0.3,
-            ),
+        body: SafeArea(
+          bottom: false,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildHeader(context, cart),
+              Expanded(
+                child: cart.loading && cart.items.isEmpty
+                    ? const Center(
+                        child: CircularProgressIndicator(color: _kDeepRose),
+                      )
+                    : RefreshIndicator(
+                        color: _kDeepRose,
+                        onRefresh: () => cart.load(showLoading: false),
+                        child: cart.items.isEmpty
+                            ? ListView(
+                                physics: const AlwaysScrollableScrollPhysics(),
+                                children: [
+                                  SizedBox(
+                                    height: MediaQuery.sizeOf(context).height * 0.65,
+                                    child: _buildEmpty(context),
+                                  ),
+                                ],
+                              )
+                            : _buildStoreGroupedList(context, cart),
+                      ),
+              ),
+            ],
           ),
+        ),
+        bottomNavigationBar: cart.items.isNotEmpty
+            ? Padding(
+                padding: EdgeInsets.only(bottom: _shellNavClearance(context)),
+                child: _buildCheckoutBar(context, cart),
+              )
+            : null,
+      ),
+    );
+  }
+
+  Widget _buildHeader(BuildContext context, CartProvider cart) {
+    return Column(
+      children: [
+        EfloraTopBar(
           actions: [
             if (cart.items.isNotEmpty)
-              TextButton(
+              IconButton(
+                icon: const Icon(
+                  Icons.delete_sweep_outlined,
+                  color: _kDustyRose,
+                  size: 22,
+                ),
+                tooltip: 'Clear Cart',
                 onPressed: () async {
                   final confirm = await CustomConfirmDialog.show(
                     context,
@@ -75,39 +116,59 @@ class _CartScreenState extends State<CartScreen> {
                   );
                   if (confirm == true) cart.clear();
                 },
-                child: Text('Clear',
-                    style: GoogleFonts.dmSans(
-                        color: AppColors.muted, fontSize: 13)),
               ),
           ],
         ),
-        body: cart.loading && cart.items.isEmpty
-            ? const Center(
-                child: CircularProgressIndicator(color: AppColors.roseCta))
-            : RefreshIndicator(
-                color: AppColors.roseCta,
-                onRefresh: () => cart.load(showLoading: false),
-                child: cart.items.isEmpty
-                    ? ListView(
-                        physics: const AlwaysScrollableScrollPhysics(),
-                        children: [
-                          SizedBox(
-                            height: MediaQuery.sizeOf(context).height * 0.55,
-                            child: _buildEmpty(context),
-                          ),
-                        ],
-                      )
-                    : _buildStoreGroupedList(context, cart),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 2, 20, 10),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'MY SHOPPING BAG',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: _kDustyRose,
+                      letterSpacing: 1.6,
+                    ),
+                  ),
+                  const SizedBox(height: 1),
+                  Text(
+                    'Review Selected Items',
+                    style: GoogleFonts.cormorantGaramond(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: _kTextCharcoal,
+                    ),
+                  ),
+                ],
               ),
-        // When nested in MainShell (extendBody: true), lift the checkout bar
-        // above the shell's bottom nav so it stays tappable.
-        bottomNavigationBar: cart.items.isNotEmpty
-            ? Padding(
-                padding: EdgeInsets.only(bottom: _shellNavClearance(context)),
-                child: _buildCheckoutBar(context, cart),
-              )
-            : null,
-      ),
+              if (cart.items.isNotEmpty)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _kSoftBlush,
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    border: Border.all(color: _kBorder, width: 0.9),
+                  ),
+                  child: Text(
+                    '${cart.itemCount} item${cart.itemCount != 1 ? 's' : ''}',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                      color: _kDeepRose,
+                    ),
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -124,40 +185,80 @@ class _CartScreenState extends State<CartScreen> {
 
   Widget _buildEmpty(BuildContext context) {
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.shopping_bag_outlined,
-              size: 72, color: AppColors.dustyRose.withValues(alpha: 0.3)),
-          const SizedBox(height: 16),
-          Text('Your basket is empty',
-              style: Theme.of(context)
-                  .textTheme
-                  .headlineSmall
-                  ?.copyWith(color: AppColors.muted)),
-          const SizedBox(height: 8),
-          Text('Add some blooms to get started',
-              style: Theme.of(context).textTheme.bodySmall),
-          const SizedBox(height: 24),
-          OutlinedButton(
-            onPressed: () {
-              final shellState =
-                  context.findAncestorStateOfType<MainShellState>();
-              if (shellState != null) {
-                shellState.switchToTab(0);
-                return;
-              }
-
-              // Cart can also be opened as a pushed page (e.g. from Account),
-              // where no MainShell ancestor exists. In that case, reset to shell.
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const MainShell()),
-                (_) => false,
-              );
-            },
-            child: const Text('Continue Shopping'),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 24),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 34),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: _kBorder, width: 1),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0C502846),
+                blurRadius: 20,
+                offset: Offset(0, 6),
+              ),
+            ],
           ),
-        ],
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 76,
+                height: 76,
+                decoration: BoxDecoration(
+                  color: _kSoftBlush,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: _kBorder, width: 1.2),
+                ),
+                child: const Icon(
+                  Icons.shopping_bag_outlined,
+                  size: 36,
+                  color: _kDeepRose,
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                'Your basket is empty',
+                style: GoogleFonts.cormorantGaramond(
+                  fontSize: 24,
+                  fontWeight: FontWeight.w600,
+                  color: _kTextCharcoal,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Add fresh blooms to brighten someone\'s day.',
+                style: GoogleFonts.dmSans(
+                  fontSize: 13.5,
+                  color: _kMuted,
+                  height: 1.4,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 24),
+              RoseButton(
+                label: 'Explore Blooms',
+                onPressed: () {
+                  final shellState =
+                      context.findAncestorStateOfType<MainShellState>();
+                  if (shellState != null) {
+                    shellState.switchToTab(0);
+                    return;
+                  }
+                  Navigator.of(context).pushAndRemoveUntil(
+                    MaterialPageRoute(builder: (_) => const MainShell()),
+                    (_) => false,
+                  );
+                },
+                width: double.infinity,
+                icon: Icons.local_florist_rounded,
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -169,7 +270,7 @@ class _CartScreenState extends State<CartScreen> {
 
     return ListView(
       physics: const AlwaysScrollableScrollPhysics(),
-      padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + _shellNavClearance(context)),
+      padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + _shellNavClearance(context)),
       children: [
         ...sortedStoreIds.map((storeId) {
           final group = groups[storeId]!;
@@ -179,7 +280,7 @@ class _CartScreenState extends State<CartScreen> {
             cart: cart,
           );
         }),
-        const SizedBox(height: 16),
+        const SizedBox(height: 12),
         _buildOrderSummary(context, cart),
         // Extra space so the last card clears the floating checkout bar.
         const SizedBox(height: 140),
@@ -188,43 +289,98 @@ class _CartScreenState extends State<CartScreen> {
   }
 
   Widget _buildOrderSummary(BuildContext context, CartProvider cart) {
-    return GlassCard(
-      padding: const EdgeInsets.all(16),
+    return Container(
+      padding: const EdgeInsets.all(18),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _kBorder, width: 1),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A502846),
+            blurRadius: 16,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            'YOUR BAG',
-            style: GoogleFonts.dmSans(
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              color: AppColors.dustyRose,
-              letterSpacing: 2,
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text('Order Summary',
-              style: Theme.of(context).textTheme.headlineSmall),
-          const SizedBox(height: 12),
-          _summRow(context, 'All Items (${cart.itemCount})',
-              '₱${cart.total.toStringAsFixed(2)}'),
-          const SizedBox(height: 6),
-          _summRow(context, 'Selected (${cart.selectedItemCount})',
-              '₱${cart.selectedTotal.toStringAsFixed(2)}'),
-          const SizedBox(height: 6),
-          _summRow(context, 'Delivery Fee', 'Calculated at checkout'),
-          const Divider(height: 20),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Selected Subtotal',
-                  style: Theme.of(context).textTheme.titleMedium),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'YOUR BAG',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 10.5,
+                      fontWeight: FontWeight.w700,
+                      color: _kDustyRose,
+                      letterSpacing: 1.8,
+                    ),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Order Summary',
+                    style: GoogleFonts.cormorantGaramond(
+                      fontSize: 20,
+                      fontWeight: FontWeight.w600,
+                      color: _kTextCharcoal,
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _kSoftBlush,
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  border: Border.all(color: _kBorder, width: 0.8),
+                ),
+                child: Text(
+                  '${cart.itemCount} items',
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: _kDeepRose,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 14),
+          const Divider(height: 1, thickness: 0.7, color: _kBorder),
+          const SizedBox(height: 12),
+          _summRow(context, 'All Items (${cart.itemCount})',
+              '₱${cart.total.toStringAsFixed(2)}'),
+          const SizedBox(height: 8),
+          _summRow(context, 'Selected (${cart.selectedItemCount})',
+              '₱${cart.selectedTotal.toStringAsFixed(2)}'),
+          const SizedBox(height: 8),
+          _summRow(context, 'Delivery Fee', 'Calculated at checkout'),
+          const SizedBox(height: 12),
+          const Divider(height: 1, thickness: 0.7, color: _kBorder),
+          const SizedBox(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Selected Subtotal',
+                style: GoogleFonts.dmSans(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                  color: _kTextCharcoal,
+                ),
+              ),
               Text(
                 '₱${cart.selectedTotal.toStringAsFixed(2)}',
                 style: GoogleFonts.cormorantGaramond(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.deepRose),
+                  fontSize: 24,
+                  fontWeight: FontWeight.w700,
+                  color: _kDeepRose,
+                ),
               ),
             ],
           ),
@@ -237,12 +393,21 @@ class _CartScreenState extends State<CartScreen> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(label, style: Theme.of(context).textTheme.bodySmall),
-        Text(value,
-            style: Theme.of(context)
-                .textTheme
-                .bodySmall
-                ?.copyWith(fontWeight: FontWeight.w600)),
+        Text(
+          label,
+          style: GoogleFonts.dmSans(
+            fontSize: 12.5,
+            color: _kMuted,
+          ),
+        ),
+        Text(
+          value,
+          style: GoogleFonts.dmSans(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: _kTextCharcoal,
+          ),
+        ),
       ],
     );
   }
@@ -250,77 +415,76 @@ class _CartScreenState extends State<CartScreen> {
   Widget _buildCheckoutBar(BuildContext context, CartProvider cart) {
     final hasSelection = cart.hasSelection;
 
-    return ClipRect(
-      child: AdaptiveBlur(
-        sigma: 18,
-        child: Container(
-          padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
-          decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: AppQuality.instance.useBlur ? 0.85 : 0.96),
-            border: const Border(top: BorderSide(color: AppColors.glassBorder)),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.deepRose.withValues(alpha: 0.08),
-                blurRadius: 24,
-                offset: const Offset(0, -6),
-              ),
-            ],
+    return Container(
+      padding: const EdgeInsets.fromLTRB(20, 14, 20, 14),
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.96),
+        border: const Border(top: BorderSide(color: _kBorder, width: 1)),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x10502846),
+            blurRadius: 24,
+            offset: Offset(0, -6),
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'SELECTED TOTAL',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.dustyRose,
-                          letterSpacing: 2,
-                        ),
-                      ),
-                      if (cart.selectedItemCount > 0)
-                        Text(
-                          '${cart.selectedItemCount} item${cart.selectedItemCount > 1 ? 's' : ''} selected',
-                          style: GoogleFonts.dmSans(
-                              fontSize: 11, color: AppColors.muted),
-                        ),
-                    ],
+                  Text(
+                    'SELECTED TOTAL',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700,
+                      color: _kDustyRose,
+                      letterSpacing: 1.8,
+                    ),
                   ),
                   Text(
-                    '₱${cart.selectedTotal.toStringAsFixed(2)}',
-                    style: GoogleFonts.cormorantGaramond(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w600,
-                        color: AppColors.deepRose),
+                    cart.selectedItemCount > 0
+                        ? '${cart.selectedItemCount} item${cart.selectedItemCount > 1 ? 's' : ''} selected'
+                        : 'No items selected',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 11.5,
+                      color: _kMuted,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
-              GradientButton(
-                label: hasSelection
-                    ? 'Proceed to Checkout (${cart.selectedItemCount})'
-                    : 'Select items to checkout',
-                loading: _checkingDelivery,
-                onPressed: hasSelection && !_checkingDelivery
-                    ? () => _proceedToCheckout(context, cart)
-                    : null,
-                icon: Icons.arrow_forward,
+              Text(
+                '₱${cart.selectedTotal.toStringAsFixed(2)}',
+                style: GoogleFonts.cormorantGaramond(
+                  fontSize: 26,
+                  fontWeight: FontWeight.w700,
+                  color: _kDeepRose,
+                ),
               ),
             ],
           ),
-        ),
+          const SizedBox(height: 12),
+          RoseButton(
+            label: hasSelection
+                ? 'Proceed to Checkout (${cart.selectedItemCount})'
+                : 'Select items to checkout',
+            loading: _checkingDelivery,
+            onPressed: hasSelection && !_checkingDelivery
+                ? () => _proceedToCheckout(cart)
+                : null,
+            width: double.infinity,
+            icon: Icons.arrow_forward_rounded,
+          ),
+        ],
       ),
     );
   }
 
-  Future<void> _proceedToCheckout(
-      BuildContext context, CartProvider cart) async {
+  Future<void> _proceedToCheckout(CartProvider cart) async {
     final selectedItems = cart.selectedItems;
 
     if (selectedItems.isEmpty) {
@@ -344,6 +508,7 @@ class _CartScreenState extends State<CartScreen> {
 
     if (!stockResult.isSuccess) {
       setState(() => _checkingDelivery = false);
+      if (!mounted) return;
       if (await maybeShowActiveOrderLimitDialog(
         context,
         message: stockResult.errorMessage,
@@ -351,6 +516,7 @@ class _CartScreenState extends State<CartScreen> {
       )) {
         return;
       }
+      if (!mounted) return;
       final rawIssues = stockResult.data is Map
           ? (stockResult.data as Map)['stock_issues']
           : null;
@@ -363,6 +529,7 @@ class _CartScreenState extends State<CartScreen> {
               .toList(),
         );
       } else {
+        if (!mounted) return;
         showToast(
           context,
           stockResult.errorMessage ??
@@ -390,7 +557,8 @@ class _CartScreenState extends State<CartScreen> {
     // No saved address yet — let checkout modal handle address selection.
     if (address?.id == null) {
       setState(() => _checkingDelivery = false);
-      _openCheckoutModal(context, cart, selectedItems);
+      if (!mounted) return;
+      _openCheckoutModal(cart, selectedItems);
       return;
     }
 
@@ -416,11 +584,13 @@ class _CartScreenState extends State<CartScreen> {
           'Some selected items cannot be delivered to this address.';
       final warnings = failed?.warnings;
 
+      if (!mounted) return;
       if (isActiveOrderLimitResult(message: error, data: failed)) {
         await showActiveOrderLimitDialogFromPayload(context, data: failed);
         return;
       }
 
+      if (!mounted) return;
       if (isDeliveryUnavailableError(error) ||
           (warnings != null && warnings.isNotEmpty)) {
         await showCheckoutDeliveryUnavailableDialog(
@@ -431,15 +601,16 @@ class _CartScreenState extends State<CartScreen> {
         return;
       }
 
+      if (!mounted) return;
       showToast(context, error, isError: true);
       return;
     }
 
-    _openCheckoutModal(context, cart, selectedItems);
+    if (!mounted) return;
+    _openCheckoutModal(cart, selectedItems);
   }
 
   void _openCheckoutModal(
-    BuildContext context,
     CartProvider cart,
     List<CartItem> selectedItems,
   ) {
@@ -470,46 +641,62 @@ class _StoreSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassCard(
+    return Container(
       margin: const EdgeInsets.only(bottom: 16),
-      padding: EdgeInsets.zero,
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.95),
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(color: _kBorder, width: 1),
+        boxShadow: const [
+          BoxShadow(
+            color: Color(0x0A502846),
+            blurRadius: 16,
+            offset: Offset(0, 4),
+          ),
+        ],
+      ),
       child: Column(
         children: [
           // Store header with checkbox
           InkWell(
             onTap: () => cart.toggleStoreSelection(group.storeId),
-            borderRadius:
-                const BorderRadius.vertical(top: Radius.circular(AppRadius.lg)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
             child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               decoration: BoxDecoration(
-                color: Colors.white.withValues(alpha: 0.45),
-                borderRadius: const BorderRadius.vertical(
-                    top: Radius.circular(AppRadius.lg)),
-                border: const Border(
-                    bottom: BorderSide(color: AppColors.glassBorder)),
+                color: _kSoftBlush.withValues(alpha: 0.5),
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(19)),
+                border: const Border(bottom: BorderSide(color: _kBorder, width: 0.8)),
               ),
               child: Row(
                 children: [
                   SizedBox(
-                    width: 24,
-                    height: 24,
+                    width: 22,
+                    height: 22,
                     child: Checkbox(
                       value: group.allSelected,
                       tristate: true,
-                      onChanged: (_) =>
-                          cart.toggleStoreSelection(group.storeId),
-                      activeColor: AppColors.roseCta,
-                      shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(4)),
+                      onChanged: (_) => cart.toggleStoreSelection(group.storeId),
+                      activeColor: _kDeepRose,
+                      checkColor: Colors.white,
+                      side: const BorderSide(color: _kDustyRose, width: 1.3),
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       visualDensity: VisualDensity.compact,
                     ),
                   ),
                   const SizedBox(width: 8),
-                  const Icon(Icons.storefront_outlined,
-                      size: 18, color: AppColors.labelPink),
-                  const SizedBox(width: 6),
+                  Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: _kBorder, width: 1),
+                    ),
+                    child: const Icon(Icons.storefront_rounded, size: 15, color: _kDeepRose),
+                  ),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -517,10 +704,9 @@ class _StoreSection extends StatelessWidget {
                         Text(
                           group.storeName,
                           style: GoogleFonts.dmSans(
-                            fontSize: 13,
+                            fontSize: 13.5,
                             fontWeight: FontWeight.w700,
-                            color: AppColors.labelPink,
-                            letterSpacing: 0.1,
+                            color: _kTextCharcoal,
                           ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -528,7 +714,9 @@ class _StoreSection extends StatelessWidget {
                         Text(
                           '${group.displayLineCount} item${group.displayLineCount != 1 ? 's' : ''}',
                           style: GoogleFonts.dmSans(
-                              fontSize: 11, color: AppColors.muted),
+                            fontSize: 11,
+                            color: _kMuted,
+                          ),
                         ),
                       ],
                     ),
@@ -536,11 +724,9 @@ class _StoreSection extends StatelessWidget {
                   Text(
                     '₱${group.selectedSubtotal.toStringAsFixed(2)}',
                     style: GoogleFonts.cormorantGaramond(
-                      fontSize: 15,
-                      fontWeight: FontWeight.w600,
-                      color: group.anySelected
-                          ? AppColors.deepRose
-                          : AppColors.muted,
+                      fontSize: 17,
+                      fontWeight: FontWeight.w700,
+                      color: group.anySelected ? _kDeepRose : _kMuted,
                     ),
                   ),
                 ],
@@ -553,28 +739,29 @@ class _StoreSection extends StatelessWidget {
                 item: item,
                 cart: cart,
               )),
-          // Store subtotal footer kept for clarity (web shows total in header too)
+          // Store subtotal footer
           Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 11),
             decoration: const BoxDecoration(
-              border: Border(top: BorderSide(color: AppColors.glassBorder)),
+              border: Border(top: BorderSide(color: _kBorder, width: 0.8)),
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
                 Text(
                   'Store Subtotal',
-                  style:
-                      GoogleFonts.dmSans(fontSize: 12, color: AppColors.muted),
+                  style: GoogleFonts.dmSans(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                    color: _kMuted,
+                  ),
                 ),
                 Text(
                   '₱${group.selectedSubtotal.toStringAsFixed(2)}',
                   style: GoogleFonts.cormorantGaramond(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: group.anySelected
-                        ? AppColors.deepRose
-                        : AppColors.muted,
+                    fontSize: 17,
+                    fontWeight: FontWeight.w700,
+                    color: group.anySelected ? _kDeepRose : _kMuted,
                   ),
                 ),
               ],
@@ -600,42 +787,54 @@ class _CartItemTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
-      decoration: BoxDecoration(
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+      decoration: const BoxDecoration(
         border: Border(
-            bottom: BorderSide(
-                color: AppColors.glassBorder.withValues(alpha: 0.6),
-                width: 0.5)),
+          bottom: BorderSide(
+            color: _kBorder,
+            width: 0.6,
+          ),
+        ),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           // Checkbox
-          SizedBox(
-            width: 24,
-            height: 24,
-            child: Checkbox(
-              value: item.isSelected,
-              onChanged: (_) => cart.toggleItemSelection(item.id),
-              activeColor: AppColors.roseCta,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(4)),
-              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-              visualDensity: VisualDensity.compact,
-            ),
-          ),
-          const SizedBox(width: 8),
-          // Thumbnail
-          ClipRRect(
-            borderRadius: BorderRadius.circular(AppRadius.md),
+          Padding(
+            padding: const EdgeInsets.only(top: 18),
             child: SizedBox(
-              width: 64,
-              height: 64,
-              child: _buildImage(),
+              width: 22,
+              height: 22,
+              child: Checkbox(
+                value: item.isSelected,
+                onChanged: (_) => cart.toggleItemSelection(item.id),
+                activeColor: _kDeepRose,
+                checkColor: Colors.white,
+                side: const BorderSide(color: _kDustyRose, width: 1.3),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5)),
+                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                visualDensity: VisualDensity.compact,
+              ),
             ),
           ),
           const SizedBox(width: 10),
-          // Info — layout matches web: name → variant → price → qty → add-ons
+          // Thumbnail
+          Container(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(color: _kBorder, width: 0.8),
+            ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(13),
+              child: SizedBox(
+                width: 68,
+                height: 68,
+                child: _buildImage(),
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          // Info
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -643,75 +842,77 @@ class _CartItemTile extends StatelessWidget {
                 Text(
                   item.name,
                   style: GoogleFonts.cormorantGaramond(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w500,
-                    color:
-                        item.isSelected ? AppColors.charcoal : AppColors.muted,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w600,
+                    color: item.isSelected ? _kTextCharcoal : _kMuted,
+                    height: 1.15,
                   ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
                 if (item.isVariant)
                   Padding(
-                    padding: const EdgeInsets.only(top: 2),
+                    padding: const EdgeInsets.only(top: 3),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 6, vertical: 2),
+                      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
                       decoration: BoxDecoration(
-                        color: AppColors.roseCta.withValues(alpha: 0.09),
-                        borderRadius: BorderRadius.circular(AppRadius.sm),
-                        border: Border.all(
-                            color: AppColors.roseCta.withValues(alpha: 0.18)),
+                        color: _kSoftBlush,
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(color: _kBorder, width: 0.8),
                       ),
                       child: Text(
                         'Variant: ${item.variant?.name ?? ''}',
                         style: GoogleFonts.dmSans(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w600,
-                            color: AppColors.deepRose),
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w600,
+                          color: _kDeepRose,
+                        ),
                       ),
                     ),
                   ),
-                const SizedBox(height: 2),
+                const SizedBox(height: 4),
                 Row(
                   children: [
                     Text(
                       '₱${item.price.toStringAsFixed(2)} each',
                       style: GoogleFonts.dmSans(
-                          fontSize: 11, color: AppColors.muted),
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.w500,
+                        color: _kMuted,
+                      ),
                     ),
                     if (item.originalPrice != null) ...[
-                      const SizedBox(width: 4),
+                      const SizedBox(width: 5),
                       Text(
                         '₱${item.originalPrice!.toStringAsFixed(2)}',
                         style: GoogleFonts.dmSans(
-                          fontSize: 10,
-                          color: AppColors.muted,
+                          fontSize: 10.5,
+                          color: _kMuted,
                           decoration: TextDecoration.lineThrough,
                         ),
                       ),
                       if (item.discountPct != null) ...[
-                        const SizedBox(width: 4),
+                        const SizedBox(width: 5),
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                              horizontal: 5, vertical: 1),
+                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
                           decoration: BoxDecoration(
-                            gradient: AppColors.badgeGradient,
+                            color: _kDeepRose,
                             borderRadius: BorderRadius.circular(AppRadius.pill),
                           ),
                           child: Text(
-                            '${item.discountPct}% off',
+                            '${item.discountPct}% OFF',
                             style: GoogleFonts.dmSans(
-                                fontSize: 8,
-                                fontWeight: FontWeight.w700,
-                                color: Colors.white),
+                              fontSize: 8.5,
+                              fontWeight: FontWeight.w700,
+                              color: Colors.white,
+                            ),
                           ),
                         ),
                       ],
                     ],
                   ],
                 ),
-                const SizedBox(height: 6),
+                const SizedBox(height: 8),
                 _CartQtyControl(
                   qty: item.quantity,
                   onMinus: item.quantity > 1
@@ -731,33 +932,34 @@ class _CartItemTile extends StatelessWidget {
                             a.groupName != null && a.groupName!.isNotEmpty
                                 ? '${a.groupName}: ${a.name}'
                                 : a.name;
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 4),
+                        return Container(
+                          margin: const EdgeInsets.only(bottom: 4),
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: _kSoftBlush.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(color: _kBorder, width: 0.7),
+                          ),
                           child: Row(
                             children: [
                               ClipRRect(
-                                borderRadius: BorderRadius.circular(5),
-                                child: a.imageUrl != null &&
-                                        a.imageUrl!.isNotEmpty
+                                borderRadius: BorderRadius.circular(4),
+                                child: a.imageUrl != null && a.imageUrl!.isNotEmpty
                                     ? Image.network(
                                         a.imageUrl!,
-                                        width: 22,
-                                        height: 22,
+                                        width: 20,
+                                        height: 20,
                                         fit: BoxFit.cover,
-                                        errorBuilder: (_, __, ___) => Container(
-                                          width: 22,
-                                          height: 22,
-                                          color: AppColors.warmWhite,
-                                          child: Icon(Icons.card_giftcard,
-                                              size: 12, color: AppColors.muted),
+                                        errorBuilder: (_, __, ___) => const Icon(
+                                          Icons.card_giftcard_rounded,
+                                          size: 14,
+                                          color: _kDeepRose,
                                         ),
                                       )
-                                    : Container(
-                                        width: 22,
-                                        height: 22,
-                                        color: AppColors.warmWhite,
-                                        child: Icon(Icons.card_giftcard,
-                                            size: 12, color: AppColors.muted),
+                                    : const Icon(
+                                        Icons.card_giftcard_rounded,
+                                        size: 14,
+                                        color: _kDeepRose,
                                       ),
                               ),
                               const SizedBox(width: 6),
@@ -765,8 +967,8 @@ class _CartItemTile extends StatelessWidget {
                                 child: Text(
                                   '+ $label${a.quantity > 1 ? ' ×${a.quantity}' : ''}',
                                   style: GoogleFonts.dmSans(
-                                    fontSize: 10,
-                                    color: AppColors.muted,
+                                    fontSize: 10.5,
+                                    color: _kTextCharcoal,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -775,22 +977,22 @@ class _CartItemTile extends StatelessWidget {
                               Text(
                                 '₱${(a.price * a.quantity).toStringAsFixed(2)}',
                                 style: GoogleFonts.dmSans(
-                                  fontSize: 10,
-                                  color: AppColors.charcoal,
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: _kDeepRose,
                                 ),
                               ),
-                              const SizedBox(width: 2),
+                              const SizedBox(width: 4),
                               GestureDetector(
                                 onTap: a.addonOptionId > 0
-                                    ? () => cart.removeAddon(
-                                        item.id, a.addonOptionId)
+                                    ? () => cart.removeAddon(item.id, a.addonOptionId)
                                     : null,
-                                child: Padding(
-                                  padding: const EdgeInsets.all(2),
+                                child: const Padding(
+                                  padding: EdgeInsets.all(2),
                                   child: Icon(
-                                    Icons.close,
+                                    Icons.close_rounded,
                                     size: 14,
-                                    color: AppColors.muted.withValues(alpha: 0.85),
+                                    color: _kDustyRose,
                                   ),
                                 ),
                               ),
@@ -803,22 +1005,22 @@ class _CartItemTile extends StatelessWidget {
               ],
             ),
           ),
-          // Delete item (web cart-item-side — line total removed; price shown on left)
+          // Delete item
           GestureDetector(
             onTap: () => cart.removeItem(item.id),
             child: Container(
-              width: 26,
-              height: 26,
-              margin: const EdgeInsets.only(top: 2),
+              width: 28,
+              height: 28,
+              margin: const EdgeInsets.only(top: 2, left: 4),
               decoration: BoxDecoration(
-                color: AppColors.glassFill,
-                border: Border.all(color: AppColors.glassBorder, width: 1.5),
-                borderRadius: BorderRadius.circular(AppRadius.pill),
+                color: _kSoftBlush.withValues(alpha: 0.6),
+                shape: BoxShape.circle,
+                border: Border.all(color: _kBorder, width: 1),
               ),
               child: const Icon(
-                Icons.delete_outline,
+                Icons.delete_outline_rounded,
                 size: 14,
-                color: AppColors.muted,
+                color: _kDeepRose,
               ),
             ),
           ),
@@ -837,17 +1039,19 @@ class _CartItemTile extends StatelessWidget {
       memCacheWidth: 150,
       memCacheHeight: 150,
       placeholder: (_, __) => Container(
-        decoration: const BoxDecoration(gradient: AppColors.imageWash),
+        color: _kSoftBlush,
         child: const Center(
           child: SizedBox(
-              width: 20,
-              height: 20,
-              child: CircularProgressIndicator(
-                  strokeWidth: 2, color: AppColors.roseCta)),
+            width: 18,
+            height: 18,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: _kDeepRose,
+            ),
+          ),
         ),
       ),
       errorWidget: (_, url, error) {
-        debugPrint('Failed to load cart image: $url - $error');
         if (item.product.images.isNotEmpty) {
           final fallbackUrl = item.product.primaryImageUrl;
           if (fallbackUrl != null) {
@@ -867,10 +1071,13 @@ class _CartItemTile extends StatelessWidget {
 
   Widget _buildPlaceholder() {
     return Container(
-      decoration: const BoxDecoration(gradient: AppColors.imageWash),
+      color: _kSoftBlush,
       child: Center(
-        child: Icon(Icons.local_florist,
-            size: 28, color: AppColors.deepRose.withValues(alpha: 0.16)),
+        child: Icon(
+          Icons.local_florist_rounded,
+          size: 26,
+          color: _kDeepRose.withValues(alpha: 0.3),
+        ),
       ),
     );
   }
@@ -891,37 +1098,37 @@ class _CartQtyControl extends StatelessWidget {
   Widget build(BuildContext context) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.72),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0x73E6AAC3), width: 1.5),
+        color: _kSoftBlush.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: _kBorder, width: 1),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
           _CartQtyBtn(
-            icon: Icons.remove,
+            icon: Icons.remove_rounded,
             onTap: onMinus,
           ),
           Container(
-            width: 32,
-            height: 32,
+            width: 30,
+            height: 28,
             alignment: Alignment.center,
             decoration: const BoxDecoration(
               border: Border.symmetric(
-                vertical: BorderSide(color: Color(0x4DE6AAC3), width: 1.5),
+                vertical: BorderSide(color: _kBorder, width: 1),
               ),
             ),
             child: Text(
               '$qty',
               style: GoogleFonts.cormorantGaramond(
                 fontSize: 15,
-                fontWeight: FontWeight.w600,
-                color: AppColors.charcoal,
+                fontWeight: FontWeight.w700,
+                color: _kTextCharcoal,
               ),
             ),
           ),
           _CartQtyBtn(
-            icon: Icons.add,
+            icon: Icons.add_rounded,
             onTap: onPlus,
           ),
         ],
@@ -942,13 +1149,14 @@ class _CartQtyBtn extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
+        borderRadius: BorderRadius.circular(8),
         child: SizedBox(
-          width: 30,
-          height: 32,
+          width: 28,
+          height: 28,
           child: Icon(
             icon,
-            size: 15,
-            color: enabled ? AppColors.charcoal : AppColors.borderStrong,
+            size: 14,
+            color: enabled ? _kTextCharcoal : _kBorder,
           ),
         ),
       ),

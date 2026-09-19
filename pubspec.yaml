@@ -1,7 +1,7 @@
 name: eflowers
 description: E-FLORA — Luxury Floral Marketplace
 publish_to: 'none'
-version: 1.0.18+22
+version: 1.0.26+30
 
 environment:
   sdk: '>=3.0.0 <4.0.0'
@@ -38,11 +38,7 @@ dev_dependencies:
 flutter:
   uses-material-design: true
   assets:
-    - assets/images/app_logo.png
-    - assets/images/default_customer_avatar.png
-    - assets/images/default_customer_avatar.svg
-    - assets/images/no_addon_placeholder.png
-    - assets/images/no_addon_placeholder.svg
+    - assets/images/
 
 flutter_launcher_icons:
   android: true

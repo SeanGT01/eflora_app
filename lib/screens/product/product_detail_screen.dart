@@ -15,6 +15,8 @@ import '../../services/checkout_service.dart';
 import '../../services/cloudinary_service.dart';
 
 import '../../utils/datetime_ph.dart';
+import '../../utils/responsive.dart';
+import '../../utils/string_utils.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/adaptive_blur.dart';
@@ -26,6 +28,7 @@ import '../../widgets/stock_issue_dialog.dart';
 import '../../widgets/active_order_limit_dialog.dart';
 import '../store/store_page.dart';
 import '../orders/orders_screen.dart';
+import '../../widgets/product_image_zoom_viewer.dart';
 
 /// Web `.gallery-main` / `.gallery-thumb` fill: `linear-gradient(145deg,#f8eef2,#ebe4f4)`.
 const LinearGradient _kImageFrameWash = LinearGradient(
@@ -614,7 +617,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
       showCartActionError(context, error);
     } else {
       final itemName = _selectedVariant != null 
-          ? '${_selectedVariant!.name} ${_product!.name}'
+          ? cleanVariantName(_selectedVariant!.name, _product!.name)
           : _product!.name;
       showToast(context, '$itemName added to cart!');
     }
@@ -708,6 +711,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
           : null,
       initialDeliveryTime: _selectedTimeSlot,
       initialStoreId: _product!.storeId,
+      initialAllowPickup: _product?.allowPickup ?? true,
       onComplete: () {
         context.read<CartProvider>().load();
         OrdersScreen.reload(targetStatus: 'to_ship');
@@ -854,8 +858,6 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     }
 
     final p = _product!;
-    // Show UI if ANY option (main or variant) is in stock
-    final hasAnySellableOption = p.hasAnySellableStock;
     // Check if CURRENTLY SELECTED option is in stock
     final inStock = _currentStock > 0 && p.isAvailable;
     
@@ -917,7 +919,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   const SizedBox(height: 6),
                   Text(
                     _selectedVariant != null 
-                        ? '${_selectedVariant!.name} ${p.name}'
+                        ? cleanVariantName(_selectedVariant!.name, p.name)
                         : p.name,
                     style: GoogleFonts.cormorantGaramond(
                       fontSize: 32,
@@ -1045,6 +1047,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                             decoration: TextDecoration.underline,
                             decorationColor: AppColors.deepRose.withValues(alpha: 0.4),
                           ),
+                        ),
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        child: Text('·',
+                            style: GoogleFonts.dmSans(color: AppColors.muted)),
+                      ),
+                      Text(
+                        '${p.totalSold} sold',
+                        style: GoogleFonts.dmSans(
+                          fontSize: 12.5,
+                          color: AppColors.muted,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                       if (p.storeName != null) ...[
@@ -1275,21 +1290,37 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                       _noticeCard(
                         icon: Icons.storefront_outlined,
                         text: 'Store is closed on this day. Pick another date.',
+                        backgroundColor: const Color(0xFFFFF0F0),
+                        borderColor: const Color(0xFFFCA5A5),
+                        textColor: const Color(0xFFB91C1C),
+                        iconColor: const Color(0xFFDC2626),
                       )
                     else if (_slotBlockReason == 'order_cutoff')
                       _noticeCard(
-                        icon: Icons.schedule_rounded,
+                        icon: Icons.event_busy_rounded,
                         text: 'Same-day ordering is closed. Please choose another open day.',
+                        backgroundColor: const Color(0xFFFFF0F0),
+                        borderColor: const Color(0xFFFCA5A5),
+                        textColor: const Color(0xFFB91C1C),
+                        iconColor: const Color(0xFFDC2626),
                       )
                     else if (_slotBlockReason == 'lead_time')
                       _noticeCard(
                         icon: Icons.hourglass_bottom_rounded,
                         text: 'Remaining slots are inside the prep window. Please choose a later slot or another date.',
+                        backgroundColor: const Color(0xFFFFF0F0),
+                        borderColor: const Color(0xFFFCA5A5),
+                        textColor: const Color(0xFFB91C1C),
+                        iconColor: const Color(0xFFDC2626),
                       )
                     else if (_timeSlots.isEmpty && _selectedDeliveryDate != null)
                       _noticeCard(
                         icon: Icons.schedule_rounded,
                         text: 'All delivery slots for this day have passed. Please select another date.',
+                        backgroundColor: const Color(0xFFFFF0F0),
+                        borderColor: const Color(0xFFFCA5A5),
+                        textColor: const Color(0xFFB91C1C),
+                        iconColor: const Color(0xFFDC2626),
                       )
                     else if (_timeSlots.isNotEmpty) ...[
                       _sectionLabel('Time Slot'),
@@ -1446,45 +1477,196 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         .map((d) => d[0].toUpperCase() + d.substring(1))
         .join(', ');
 
+    final allowSameDay = sched?['allow_same_day'] != false;
+    String sameDayHeader;
     String sameDay;
-    if (deliveryStart.isNotEmpty && deliveryCutoff.isNotEmpty) {
+    if (!allowSameDay) {
+      sameDayHeader = 'Advance Orders Only';
       sameDay =
-          'Same-day delivery is available from $deliveryStart to $deliveryCutoff'
-          '${daysLabel.isNotEmpty ? ' on this store’s open days ($daysLabel)' : ''}, while delivery slots remain (Philippine time).'
-          '${orderCutoff.isNotEmpty ? ' Order by $orderCutoff for same-day.' : ''}';
+          'Same-day delivery is not offered by this store. Please place your order for tomorrow or a future open day.';
     } else if (orderCutoff.isNotEmpty) {
+      sameDayHeader = 'Same-Day Delivery';
       sameDay =
-          'Orders placed before $orderCutoff (Philippine time) are eligible for same-day delivery within our service area, while delivery slots remain.';
+          'Order by $orderCutoff for same-day delivery. Ordering after the cutoff will not be allowed for same-day delivery; please select another date.';
     } else if (daysLabel.isNotEmpty) {
+      sameDayHeader = 'Same-Day Delivery';
       sameDay =
           'Same-day delivery is available on this store’s open days ($daysLabel), based on remaining delivery time slots.';
     } else {
+      sameDayHeader = 'Same-Day Delivery';
       sameDay =
           'Same-day delivery may be available depending on remaining delivery slots for today.';
     }
 
-    final radiusText =
-        'We deliver within a ${radius.toStringAsFixed(radius.truncateToDouble() == radius ? 0 : 1)}km radius from our partner store.'
-        '${store?.address != null && store!.address!.isNotEmpty ? ' Located at ${store.address}.' : ''}';
+    final hasDeliveryWindow = deliveryStart.isNotEmpty && deliveryCutoff.isNotEmpty;
+    final deliveryWindowText =
+        'Orders are delivered between $deliveryStart and $deliveryCutoff'
+        '${daysLabel.isNotEmpty ? ' on open days ($daysLabel)' : ''}, subject to remaining delivery time slots.';
+
+    final isMunicipality = store?.usesMunicipalityDelivery ?? false;
+    final isCustomZone = store?.usesCustomZoneDelivery ?? false;
+    final municipalities = store?.selectedMunicipalities ?? const [];
+
+    String deliveryHeader;
+    Widget deliveryBody;
+
+    if (isMunicipality) {
+      deliveryHeader = 'Deliverable Municipalities & Cities';
+      deliveryBody = Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            municipalities.isNotEmpty
+                ? 'We deliver to the following cities and municipalities in Laguna:'
+                : 'Delivery available to selected cities and municipalities.',
+            style: GoogleFonts.dmSans(
+                fontSize: 13, height: 1.55, color: AppColors.muted),
+          ),
+          if (municipalities.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              children: municipalities.map((m) => Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: AppColors.roseCta.withValues(alpha: 0.08),
+                  borderRadius: BorderRadius.circular(AppRadius.pill),
+                  border: Border.all(
+                    color: AppColors.roseCta.withValues(alpha: 0.2),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.location_on_outlined,
+                        size: 13, color: AppColors.roseCta),
+                    const SizedBox(width: 4),
+                    Text(
+                      m,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.deepRose,
+                      ),
+                    ),
+                  ],
+                ),
+              )).toList(),
+            ),
+          ],
+          if (store?.address != null && store!.address!.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Located at ${store.address}.',
+              style: GoogleFonts.dmSans(
+                  fontSize: 12.5, height: 1.45, color: AppColors.muted),
+            ),
+          ],
+        ],
+      );
+    } else if (isCustomZone) {
+      deliveryHeader = 'Delivery Area';
+      final zoneText =
+          'We deliver within our partner store’s designated custom delivery zone.'
+          '${store?.address != null && store!.address!.isNotEmpty ? ' Located at ${store.address}.' : ''}';
+      deliveryBody = Text(
+        zoneText,
+        style: GoogleFonts.dmSans(
+            fontSize: 13, height: 1.55, color: AppColors.muted),
+      );
+    } else {
+      deliveryHeader = 'Delivery Radius';
+      final radiusText =
+          'We deliver within a ${radius.toStringAsFixed(radius.truncateToDouble() == radius ? 0 : 1)}km radius from our partner store.'
+          '${store?.address != null && store!.address!.isNotEmpty ? ' Located at ${store.address}.' : ''}';
+      deliveryBody = Text(
+        radiusText,
+        style: GoogleFonts.dmSans(
+            fontSize: 13, height: 1.55, color: AppColors.muted),
+      );
+    }
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Same-Day Delivery',
+        Text(sameDayHeader,
             style: GoogleFonts.dmSans(
                 fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.charcoal)),
         const SizedBox(height: 4),
         Text(sameDay,
             style: GoogleFonts.dmSans(
                 fontSize: 13, height: 1.55, color: AppColors.muted)),
+        if (hasDeliveryWindow) ...[
+          const SizedBox(height: 12),
+          Text('Delivery Window',
+              style: GoogleFonts.dmSans(
+                  fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.charcoal)),
+          const SizedBox(height: 4),
+          Text(deliveryWindowText,
+              style: GoogleFonts.dmSans(
+                  fontSize: 13, height: 1.55, color: AppColors.muted)),
+        ],
         const SizedBox(height: 12),
-        Text('Delivery Radius',
+        Text(deliveryHeader,
             style: GoogleFonts.dmSans(
                 fontSize: 13, fontWeight: FontWeight.w700, color: AppColors.charcoal)),
         const SizedBox(height: 4),
-        Text(radiusText,
+        deliveryBody,
+        if (store != null &&
+            (store.baseDeliveryFee != null ||
+                store.deliveryRatePerKm != null ||
+                store.hasFreeDelivery)) ...[
+          const SizedBox(height: 12),
+          Text('Delivery Fee & Calculation',
+              style: GoogleFonts.dmSans(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.charcoal)),
+          const SizedBox(height: 4),
+          Text(
+            store.deliveryFeeCalculationSummary,
             style: GoogleFonts.dmSans(
-                fontSize: 13, height: 1.55, color: AppColors.muted)),
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: AppColors.charcoal),
+          ),
+          const SizedBox(height: 2),
+          Text(
+            store.deliveryFeeExplanation,
+            style: GoogleFonts.dmSans(
+                fontSize: 12.5, height: 1.45, color: AppColors.muted),
+          ),
+          if (store.hasFreeDelivery) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFFE8F5E9),
+                borderRadius: BorderRadius.circular(AppRadius.sm),
+                border: Border.all(color: const Color(0xFFA5D6A7), width: 0.8),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.card_giftcard_rounded,
+                      size: 14, color: Color(0xFF2E7D32)),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      'Free delivery on orders ₱${store.freeDeliveryMinimum!.toStringAsFixed(2)} and above.',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF2E7D32),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
       ],
     );
   }
@@ -1910,16 +2092,19 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     ),
                     Padding(
                       padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                      child: Text(
-                        product.name,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        textAlign: TextAlign.center,
-                        style: GoogleFonts.dmSans(
-                          fontSize: 11,
-                          height: 1.3,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.charcoal,
+                      child: SizedBox(
+                        height: context.sp(30),
+                        child: Text(
+                          product.name,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: GoogleFonts.dmSans(
+                            fontSize: context.sp(11),
+                            height: 1.25,
+                            fontWeight: FontWeight.w500,
+                            color: AppColors.charcoal,
+                          ),
                         ),
                       ),
                     ),
@@ -1927,7 +2112,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     Text(
                       '₱${product.effectivePrice.toStringAsFixed(2)}',
                       style: GoogleFonts.cormorantGaramond(
-                        fontSize: 14,
+                        fontSize: context.sp(14),
                         fontWeight: FontWeight.w600,
                         color: AppColors.deepRose,
                       ),
@@ -1945,9 +2130,11 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   Future<void> _openReviewsModal() async {
     // Standard → main only; variant → that variant only. Never mix.
-    final Object? filterVariantId =
+    final Object filterVariantId =
         _selectedVariant != null ? _selectedVariant!.id : 'main';
-    final filterLabel = _selectedVariant?.name ?? 'Standard';
+    final filterLabel = _selectedVariant != null
+        ? cleanVariantName(_selectedVariant!.name, _product?.name ?? '')
+        : 'Standard';
 
     showModalBottomSheet(
       context: context,
@@ -1975,19 +2162,40 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ),
       );
 
-  Widget _noticeCard({required IconData icon, required String text}) {
-    return GlassCard(
-      fill: const Color(0x66F5EDE6),
-      radius: AppRadius.md,
-      padding: const EdgeInsets.all(14),
+  Widget _noticeCard({
+    required IconData icon,
+    required String text,
+    Color? backgroundColor,
+    Color? textColor,
+    Color? iconColor,
+    Color? borderColor,
+  }) {
+    final bg = backgroundColor ?? const Color(0x66F5EDE6);
+    final fg = textColor ?? AppColors.muted;
+    final ic = iconColor ?? AppColors.deepRose;
+    final border = borderColor ?? Colors.transparent;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(AppRadius.md),
+        border: Border.all(color: border, width: 1.2),
+      ),
       child: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          Icon(icon, size: 19, color: AppColors.deepRose),
+          Icon(icon, size: 20, color: ic),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               text,
-              style: GoogleFonts.dmSans(fontSize: 12.5, color: AppColors.muted),
+              style: GoogleFonts.dmSans(
+                fontSize: 13,
+                fontWeight: textColor != null ? FontWeight.w600 : FontWeight.w500,
+                color: fg,
+                height: 1.35,
+              ),
             ),
           ),
         ],
@@ -2027,92 +2235,197 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
         ),
       ],
       flexibleSpace: FlexibleSpaceBar(
-        background: Stack(
-          fit: StackFit.expand,
-          children: [
-            if (imageUrl != null && imageUrl.isNotEmpty)
-              Container(
-                decoration: const BoxDecoration(gradient: _kImageFrameWash),
-                child: CachedNetworkImage(
-                  imageUrl: imageUrl,
-                  fit: BoxFit.cover,
-                  memCacheWidth: 1400,
-                  memCacheHeight: 1400,
-                  placeholder: (context, url) {
-                    debugPrint('⏳ Main image loading: $url');
-                    return Container(
-                      color: AppColors.warmWhite,
-                      child: const Center(
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: AppColors.deepRose,
-                        ),
-                      ),
-                    );
-                  },
-                  errorWidget: (context, url, error) {
-                    debugPrint('❌ MAIN IMAGE ERROR: $url');
-                    debugPrint('❌ Error details: $error');
-                    
-                    // Try fallback to product image if variant image fails
-                    if (_selectedVariant != null && p.images.isNotEmpty) {
-                      final fallbackUrl = CloudinaryService.getLargeUrl(
-                        p.images[0].filename,
-                        size: 1200,
-                      );
-                      return CachedNetworkImage(
-                        imageUrl: fallbackUrl,
-                        fit: BoxFit.cover,
-                        memCacheWidth: 1400,
-                        memCacheHeight: 1400,
-                        errorWidget: (_, __, ___) => Container(
-                          color: AppColors.warmWhite,
-                          child: const Center(
-                            child: Icon(Icons.local_florist, size: 64, color: Color(0x22B5445A)),
+        background: GestureDetector(
+          onTap: () {
+            if (imageUrl != null && imageUrl.isNotEmpty) {
+              _openImageZoom(p);
+            }
+          },
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (imageUrl != null && imageUrl.isNotEmpty)
+                Container(
+                  decoration: const BoxDecoration(gradient: _kImageFrameWash),
+                  child: CachedNetworkImage(
+                    imageUrl: imageUrl,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 1400,
+                    memCacheHeight: 1400,
+                    placeholder: (context, url) {
+                      debugPrint('⏳ Main image loading: $url');
+                      return Container(
+                        color: AppColors.warmWhite,
+                        child: const Center(
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: AppColors.deepRose,
                           ),
                         ),
                       );
-                    }
-                    
-                    return Container(
-                      color: AppColors.warmWhite,
-                      child: const Center(
-                        child: Icon(Icons.local_florist, size: 64, color: Color(0x22B5445A)),
-                      ),
-                    );
-                  },
-                  imageBuilder: (context, imageProvider) {
-                    debugPrint('✅ Main image loaded successfully');
-                    return Image(image: imageProvider, fit: BoxFit.cover);
-                  },
+                    },
+                    errorWidget: (context, url, error) {
+                      debugPrint('❌ MAIN IMAGE ERROR: $url');
+                      debugPrint('❌ Error details: $error');
+                      
+                      // Try fallback to product image if variant image fails
+                      if (_selectedVariant != null && p.images.isNotEmpty) {
+                        final fallbackUrl = CloudinaryService.getLargeUrl(
+                          p.images[0].filename,
+                          size: 1200,
+                        );
+                        return CachedNetworkImage(
+                          imageUrl: fallbackUrl,
+                          fit: BoxFit.cover,
+                          memCacheWidth: 1400,
+                          memCacheHeight: 1400,
+                          errorWidget: (_, __, ___) => Container(
+                            color: AppColors.warmWhite,
+                            child: const Center(
+                              child: Icon(Icons.local_florist, size: 64, color: Color(0x22B5445A)),
+                            ),
+                          ),
+                        );
+                      }
+                      
+                      return Container(
+                        color: AppColors.warmWhite,
+                        child: const Center(
+                          child: Icon(Icons.local_florist, size: 64, color: Color(0x22B5445A)),
+                        ),
+                      );
+                    },
+                    imageBuilder: (context, imageProvider) {
+                      debugPrint('✅ Main image loaded successfully');
+                      return Image(image: imageProvider, fit: BoxFit.cover);
+                    },
+                  ),
+                )
+              else
+                Container(
+                  decoration: const BoxDecoration(gradient: _kImageFrameWash),
+                  child: const Center(
+                    child: Icon(Icons.local_florist, size: 64, color: Color(0x22B5445A)),
+                  ),
                 ),
-              )
-            else
-              Container(
-                decoration: const BoxDecoration(gradient: _kImageFrameWash),
-                child: const Center(
-                  child: Icon(Icons.local_florist, size: 64, color: Color(0x22B5445A)),
-                ),
-              ),
-            // Fade the photo into the page wash
-            Positioned(
-              bottom: 0, left: 0, right: 0,
-              child: Container(
-                height: 90,
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topCenter, 
-                    end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      AppColors.pageCream.withValues(alpha: 0.92),
-                    ],
+              // Fade the photo into the page wash
+              Positioned(
+                bottom: 0, left: 0, right: 0,
+                child: Container(
+                  height: 90,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter, 
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        AppColors.pageCream.withValues(alpha: 0.92),
+                      ],
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+              // Visual Zoom Badge
+              if (imageUrl != null && imageUrl.isNotEmpty)
+                Positioned(
+                  right: 14,
+                  bottom: 16,
+                  child: Material(
+                    color: Colors.transparent,
+                    child: InkWell(
+                      onTap: () => _openImageZoom(p),
+                      borderRadius: BorderRadius.circular(AppRadius.pill),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: AppColors.charcoal.withValues(alpha: 0.65),
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                          border: Border.all(
+                            color: Colors.white.withValues(alpha: 0.3),
+                            width: 0.8,
+                          ),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x2A000000),
+                              blurRadius: 8,
+                              offset: Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.zoom_in_rounded, size: 15, color: Colors.white),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Tap to zoom',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.white,
+                                letterSpacing: 0.3,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
         ),
+      ),
+    );
+  }
+
+  void _openImageZoom(Product p) {
+    final List<String> imageUrls = [];
+
+    // If a variant is selected and has an image, put it first
+    if (_selectedVariant != null && _selectedVariant!.imageUrl != null) {
+      final vUrl = CloudinaryService.getLargeUrl(_selectedVariant!.imageUrl!, size: 1600);
+      imageUrls.add(vUrl);
+    }
+
+    // Add all product images in high resolution
+    for (final img in p.images) {
+      final url = CloudinaryService.getLargeUrl(img.filename, size: 1600);
+      if (!imageUrls.contains(url)) {
+        imageUrls.add(url);
+      }
+    }
+
+    // Fallback to currently displayed image URL if list is empty
+    if (imageUrls.isEmpty) {
+      final cur = _getCurrentImageUrl();
+      if (cur != null && cur.isNotEmpty) {
+        imageUrls.add(cur);
+      }
+    }
+
+    if (imageUrls.isEmpty) return;
+
+    int initialIdx = _selectedImageIdx.clamp(0, imageUrls.length - 1);
+    if (_selectedVariant != null && _selectedVariant!.imageUrl != null) {
+      initialIdx = 0;
+    }
+
+    Navigator.of(context).push(
+      PageRouteBuilder(
+        opaque: false,
+        barrierDismissible: true,
+        barrierColor: Colors.black.withValues(alpha: 0.95),
+        pageBuilder: (context, anim, secondaryAnim) {
+          return FadeTransition(
+            opacity: anim,
+            child: ProductImageZoomViewer(
+              imageUrls: imageUrls,
+              initialIndex: initialIdx,
+              productName: p.name,
+            ),
+          );
+        },
       ),
     );
   }
@@ -2738,7 +3051,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                   boxShadow: isSelected ? AppShadows.roseButton : null,
                 ),
                 child: Text(
-                  variant.name,
+                  cleanVariantName(variant.name, p.name),
                   style: GoogleFonts.dmSans(
                     fontSize: 13,
                     fontWeight: FontWeight.w500,
@@ -2800,7 +3113,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Selected: ${_selectedVariant!.name}',
+                        'Selected: ${cleanVariantName(_selectedVariant!.name, p.name)}',
                         style: GoogleFonts.dmSans(
                           fontSize: 13,
                           fontWeight: FontWeight.w600,
@@ -2838,7 +3151,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
     final hoursNotSet = !_hasSchedule || _slotBlockReason == 'no_schedule';
     final allSlotsPassed = !_storeClosedOnDate &&
         !_timeSlotsLoading &&
-        _timeSlots.isEmpty &&
+        (_timeSlots.isEmpty || _timeSlots.every((s) => s['passed'] == 'true')) &&
         (_selectedDeliveryDate != null || hoursNotSet);
     final noSlotSelected = _selectedDeliveryDate != null && !_storeClosedOnDate && _selectedTimeSlot == null && !_timeSlotsLoading;
     final outsideDelivery = _product!.canDeliverToCustomer == false;
@@ -2910,9 +3223,9 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                                 ? 'Hours Not Set'
                                 : isStoreClosed
                                     ? 'Store Closed'
-                                    : 'No Slots Available',
-                            onPressed: null,
-                            icon: Icons.close_rounded,
+                                    : 'Choose another day',
+                            onPressed: (hoursNotSet || isStoreClosed) ? null : _showCalendarPicker,
+                            icon: (hoursNotSet || isStoreClosed) ? Icons.close_rounded : Icons.calendar_today_rounded,
                             style: ElevatedButton.styleFrom(
                               backgroundColor: AppColors.border,
                               foregroundColor: AppColors.muted,
@@ -3310,12 +3623,30 @@ class _ProductReviewsSheetState extends State<_ProductReviewsSheet> {
     );
   }
 
+  String _formatReviewDateTime(dynamic raw) {
+    if (raw == null) return '';
+    DateTime? dt;
+    if (raw is DateTime) {
+      dt = raw;
+    } else if (raw is String) {
+      dt = parseBackendDateTime(raw);
+    }
+    if (dt == null) return '';
+    final phTime = toPhilippineWallClock(dt);
+    return '${DateFormat('MMM d, yyyy').format(phTime)} at ${DateFormat('h:mm a').format(phTime)}';
+  }
+
   Widget _reviewRow(Map<String, dynamic> r) {
     final name = (r['customer_name'] ?? 'Anonymous').toString();
     final rating = (r['rating'] as num?)?.toInt() ?? 0;
     final comment = (r['comment']?.toString().trim().isNotEmpty == true)
         ? r['comment'].toString().trim()
         : 'No written comment.';
+    final dateStr = _formatReviewDateTime(r['created_at']);
+    final metaText = dateStr.isNotEmpty
+        ? '— Reviewed by $name • $dateStr'
+        : '— Reviewed by $name';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -3343,7 +3674,7 @@ class _ProductReviewsSheetState extends State<_ProductReviewsSheet> {
                   fontSize: 13, height: 1.45, color: AppColors.muted)),
           const SizedBox(height: 6),
           Text(
-            '— Reviewed by $name',
+            metaText,
             style: GoogleFonts.dmSans(
               fontSize: 12,
               fontStyle: FontStyle.italic,

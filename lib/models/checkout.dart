@@ -129,6 +129,13 @@ class StoreOrderTotal {
   final List<Map<String, dynamic>>? items; // Items in this store order
   final bool allowCod;
   final bool allowGcash;
+  final bool allowCop;
+  final bool allowPickup;
+  final String? storeAddress;
+  final String? storePhone;
+  final double? storeLatitude;
+  final double? storeLongitude;
+  final String fulfillmentType;
   final bool freeDeliveryEnabled;
   final double? freeDeliveryMinimum;
   final bool freeDeliveryApplied;
@@ -148,6 +155,13 @@ class StoreOrderTotal {
     this.items,
     this.allowCod = false,
     this.allowGcash = true,
+    this.allowCop = false,
+    this.allowPickup = true,
+    this.storeAddress,
+    this.storePhone,
+    this.storeLatitude,
+    this.storeLongitude,
+    this.fulfillmentType = 'delivery',
     this.freeDeliveryEnabled = false,
     this.freeDeliveryMinimum,
     this.freeDeliveryApplied = false,
@@ -186,6 +200,13 @@ class StoreOrderTotal {
       items: (json['items'] as List?)?.map((i) => i as Map<String, dynamic>).toList(),
       allowCod: json['allow_cod'] == true,
       allowGcash: json['allow_gcash'] != false,
+      allowCop: json['allow_cop'] == true,
+      allowPickup: json['allow_pickup'] != false,
+      storeAddress: json['store_address'] as String?,
+      storePhone: json['store_phone'] as String?,
+      storeLatitude: (json['store_latitude'] as num?)?.toDouble(),
+      storeLongitude: (json['store_longitude'] as num?)?.toDouble(),
+      fulfillmentType: (json['fulfillment_type'] as String?) ?? 'delivery',
       freeDeliveryEnabled: json['free_delivery_enabled'] == true,
       freeDeliveryMinimum: (json['free_delivery_minimum'] as num?)?.toDouble(),
       freeDeliveryApplied: json['free_delivery_applied'] == true,
@@ -252,6 +273,7 @@ class Order {
   final double customerLongitude;
   final String? paymentProofUrl;
   final String? paymentProofPublicId;
+  final String fulfillmentType;
   final DateTime createdAt;
 
   Order({
@@ -273,6 +295,7 @@ class Order {
     required this.customerLongitude,
     this.paymentProofUrl,
     this.paymentProofPublicId,
+    this.fulfillmentType = 'delivery',
     required this.createdAt,
   });
 
@@ -298,6 +321,7 @@ class Order {
       customerLongitude: (json['customer_longitude'] as num?)?.toDouble() ?? 0.0,
       paymentProofUrl: json['payment_proof_url'],
       paymentProofPublicId: json['payment_proof_public_id'],
+      fulfillmentType: json['fulfillment_type'] ?? 'delivery',
       createdAt: parseBackendDateTime(json['created_at']?.toString())
           ?? DateTime.now().toUtc(),
     );
@@ -308,6 +332,7 @@ class CheckoutState {
   final Address? selectedAddress;
   final String? deliveryNotes;
   final DeliveryPreference deliveryPreference;
+  final String fulfillmentType; // "delivery" | "pickup"
   final int currentStep; // 0: Address, 1: Review, 2: Payment
   final bool isProcessing;
   final String? error;
@@ -318,6 +343,7 @@ class CheckoutState {
     this.selectedAddress,
     this.deliveryNotes,
     this.deliveryPreference = const DeliveryPreference(),
+    this.fulfillmentType = 'delivery',
     this.currentStep = 0,
     this.isProcessing = false,
     this.error,
@@ -331,6 +357,7 @@ class CheckoutState {
     Address? selectedAddress,
     String? deliveryNotes,
     DeliveryPreference? deliveryPreference,
+    String? fulfillmentType,
     int? currentStep,
     bool? isProcessing,
     Object? error = _unset,
@@ -341,6 +368,7 @@ class CheckoutState {
       selectedAddress: selectedAddress ?? this.selectedAddress,
       deliveryNotes: deliveryNotes ?? this.deliveryNotes,
       deliveryPreference: deliveryPreference ?? this.deliveryPreference,
+      fulfillmentType: fulfillmentType ?? this.fulfillmentType,
       currentStep: currentStep ?? this.currentStep,
       isProcessing: isProcessing ?? this.isProcessing,
       error: identical(error, _unset) ? this.error : error as String?,

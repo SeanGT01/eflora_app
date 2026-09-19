@@ -23,6 +23,7 @@ class CheckoutModal extends StatefulWidget {
   final String? initialDeliveryDate;
   final String? initialDeliveryTime;
   final int? initialStoreId;
+  final bool? initialAllowPickup;
 
   const CheckoutModal({
     super.key,
@@ -36,6 +37,7 @@ class CheckoutModal extends StatefulWidget {
     this.initialDeliveryDate,
     this.initialDeliveryTime,
     this.initialStoreId,
+    this.initialAllowPickup,
   });
 
   @override
@@ -49,6 +51,15 @@ class _CheckoutModalState extends State<CheckoutModal> {
   void initState() {
     super.initState();
     _checkoutProvider = CheckoutProvider();
+    
+    bool canPickup = widget.initialAllowPickup ?? true;
+    if (widget.initialAllowPickup == null &&
+        widget.selectedItems != null &&
+        widget.selectedItems!.isNotEmpty) {
+      canPickup = widget.selectedItems!.every((item) => item.allowPickup);
+    }
+    _checkoutProvider.setAllowPickup(canPickup);
+
     if (widget.buyNowProductId != null) {
       _checkoutProvider.setBuyNowItem(
         productId: widget.buyNowProductId!,
@@ -196,7 +207,7 @@ class _CheckoutModalState extends State<CheckoutModal> {
       final first = created.first;
       final payMethod = first.paymentMethod.toLowerCase().trim();
       final payStatus = first.paymentStatus.toLowerCase().trim();
-      if (first.status == 'pending' && payMethod != 'cod' && payStatus != 'pending_verification' && payStatus != 'verified') {
+      if (first.status == 'pending' && payMethod != 'cod' && payMethod != 'cop' && payStatus != 'pending_verification' && payStatus != 'verified') {
         targetTab = 'pending';
       }
     }
@@ -216,7 +227,7 @@ class _StepIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const labels = ['Delivery', 'Review', 'Payment'];
+    const labels = ['Fulfillment', 'Review', 'Payment'];
 
     return Row(
       children: [
@@ -268,6 +279,7 @@ void showCheckoutModal(
   String? initialDeliveryDate,
   String? initialDeliveryTime,
   int? initialStoreId,
+  bool? initialAllowPickup,
 }) {
   showDialog(
     context: context,
@@ -283,6 +295,7 @@ void showCheckoutModal(
       initialDeliveryDate: initialDeliveryDate,
       initialDeliveryTime: initialDeliveryTime,
       initialStoreId: initialStoreId,
+      initialAllowPickup: initialAllowPickup,
     ),
   );
 }

@@ -44,6 +44,7 @@ class CustomConfirmDialog extends StatelessWidget {
     return showDialog<bool>(
       context: context,
       barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.45),
       builder: (ctx) => CustomConfirmDialog(
         title: title,
         message: message,
@@ -63,42 +64,44 @@ class CustomConfirmDialog extends StatelessWidget {
   Widget build(BuildContext context) {
     return Dialog(
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(22),
-        side: BorderSide(color: Colors.white.withValues(alpha: 0.9), width: 1.5),
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: AppColors.border, width: 1),
       ),
-      elevation: 6,
-      shadowColor: Colors.black.withValues(alpha: 0.12),
-      insetPadding: const EdgeInsets.symmetric(horizontal: 22, vertical: 24),
-      backgroundColor: Colors.white,
+      elevation: 8,
+      shadowColor: const Color(0x1F502846),
+      insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
+      backgroundColor: AppColors.cream,
       surfaceTintColor: Colors.transparent,
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 380),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Header
-            Container(
-              padding: const EdgeInsets.fromLTRB(20, 18, 16, 16),
-              decoration: BoxDecoration(
-                color: const Color(0xFFFDFBF7),
-                borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
-                border: Border(bottom: BorderSide(color: AppColors.border.withValues(alpha: 0.35))),
-              ),
-              child: Row(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(20, 20, 20, 20),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Header row with Icon + Title + Close button
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   Container(
-                    width: 38,
-                    height: 38,
+                    width: 40,
+                    height: 40,
                     decoration: BoxDecoration(
                       color: isDestructive
-                          ? const Color(0xFFFDE8E8)
-                          : AppColors.blush.withValues(alpha: 0.35),
+                          ? AppColors.error.withValues(alpha: 0.12)
+                          : AppColors.dustyRose.withValues(alpha: 0.14),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(
-                      icon ?? (isDestructive ? Icons.warning_amber_rounded : Icons.help_outline_rounded),
-                      color: isDestructive ? const Color(0xFFD32F2F) : AppColors.deepRose,
-                      size: 20,
+                      icon ??
+                          (isDestructive
+                              ? Icons.warning_amber_rounded
+                              : Icons.help_outline_rounded),
+                      color: isDestructive
+                          ? AppColors.deepRose
+                          : AppColors.deepRose,
+                      size: 22,
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -106,8 +109,8 @@ class CustomConfirmDialog extends StatelessWidget {
                     child: Text(
                       title,
                       style: GoogleFonts.cormorantGaramond(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w600,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w700,
                         color: AppColors.charcoal,
                         letterSpacing: 0.2,
                       ),
@@ -115,11 +118,11 @@ class CustomConfirmDialog extends StatelessWidget {
                   ),
                   InkWell(
                     onTap: onCancel,
-                    customBorder: const CircleBorder(),
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
                     child: Container(
                       padding: const EdgeInsets.all(6),
                       decoration: BoxDecoration(
-                        color: AppColors.border.withValues(alpha: 0.08),
+                        color: AppColors.charcoal.withValues(alpha: 0.05),
                         shape: BoxShape.circle,
                       ),
                       child: const Icon(
@@ -131,112 +134,116 @@ class CustomConfirmDialog extends StatelessWidget {
                   ),
                 ],
               ),
-            ),
-            // Body
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 18, 20, 22),
-              child: Column(
+              const SizedBox(height: 16),
+
+              // Body content
+              if (contentWidget != null)
+                contentWidget!
+              else if (message != null)
+                Text(
+                  message!,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 14,
+                    height: 1.5,
+                    color: AppColors.charcoal.withValues(alpha: 0.85),
+                  ),
+                ),
+              const SizedBox(height: 22),
+
+              // Action Buttons
+              Row(
                 children: [
-                  if (contentWidget != null)
-                    contentWidget!
-                  else if (message != null)
-                    Text(
-                      message!,
-                      textAlign: TextAlign.center,
-                      style: GoogleFonts.dmSans(
-                        fontSize: 14,
-                        height: 1.5,
-                        color: AppColors.charcoal.withValues(alpha: 0.8),
+                  if (showCancelButton) ...[
+                    Expanded(
+                      child: SizedBox(
+                        height: 44,
+                        child: OutlinedButton(
+                          onPressed: onCancel,
+                          style: OutlinedButton.styleFrom(
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            side: const BorderSide(color: AppColors.borderStrong),
+                            backgroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(AppRadius.pill),
+                            ),
+                          ),
+                          child: Text(
+                            cancelText,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              color: AppColors.charcoal,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                       ),
                     ),
-                  const SizedBox(height: 22),
-                  Row(
-                    children: [
-                      if (showCancelButton) ...[
-                        Expanded(
-                          child: Container(
-                            height: 46,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF7F2EE),
-                              borderRadius: BorderRadius.circular(AppRadius.pill),
-                              border: Border.all(color: AppColors.border.withValues(alpha: 0.6), width: 1),
-                            ),
-                            child: Material(
-                              color: Colors.transparent,
-                              child: InkWell(
-                                onTap: onCancel,
-                                borderRadius: BorderRadius.circular(AppRadius.pill),
-                                child: Center(
-                                  child: Text(
-                                    cancelText,
-                                    style: GoogleFonts.dmSans(
-                                      fontSize: 13.5,
-                                      fontWeight: FontWeight.w600,
-                                      color: AppColors.charcoal,
+                    const SizedBox(width: 12),
+                  ],
+                  Expanded(
+                    child: Container(
+                      height: 44,
+                      decoration: isConfirmEnabled
+                          ? (isDestructive
+                              ? BoxDecoration(
+                                  gradient: const LinearGradient(
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                    colors: [
+                                      Color(0xFFB5445A),
+                                      Color(0xFF8B263E),
+                                    ],
+                                  ),
+                                  borderRadius:
+                                      BorderRadius.circular(AppRadius.pill),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0x38B5445A),
+                                      blurRadius: 8,
+                                      offset: Offset(0, 3),
                                     ),
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                      ],
-                      Expanded(
-                        child: Container(
-                          height: 46,
-                          decoration: isConfirmEnabled
-                              ? (isDestructive
-                                  ? BoxDecoration(
-                                      gradient: const LinearGradient(
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                        colors: [Color(0xFFE53935), Color(0xFFC62828)],
-                                      ),
-                                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                                      boxShadow: const [
-                                        BoxShadow(
-                                          color: Color(0x38E53935),
-                                          blurRadius: 8,
-                                          offset: Offset(0, 3),
-                                        ),
-                                      ],
-                                    )
-                                  : BoxDecoration(
-                                      gradient: AppColors.brandGradient,
-                                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                                      boxShadow: AppShadows.roseButton,
-                                    ))
+                                  ],
+                                )
                               : BoxDecoration(
-                                  color: const Color(0xFFE2DDD8),
-                                  borderRadius: BorderRadius.circular(AppRadius.pill),
-                                ),
-                          child: Material(
-                            color: Colors.transparent,
-                            child: InkWell(
-                              onTap: isConfirmEnabled ? onConfirm : null,
-                              borderRadius: BorderRadius.circular(AppRadius.pill),
-                              child: Center(
-                                child: Text(
-                                  confirmText,
-                                  style: GoogleFonts.dmSans(
-                                    fontSize: 13.5,
-                                    fontWeight: FontWeight.w700,
-                                    color: isConfirmEnabled ? Colors.white : const Color(0xFF9E9E9E),
-                                    letterSpacing: 0.2,
-                                  ),
-                                ),
+                                  gradient: AppColors.brandGradient,
+                                  borderRadius:
+                                      BorderRadius.circular(AppRadius.pill),
+                                  boxShadow: AppShadows.roseButton,
+                                ))
+                          : BoxDecoration(
+                              color:
+                                  AppColors.borderStrong.withValues(alpha: 0.4),
+                              borderRadius:
+                                  BorderRadius.circular(AppRadius.pill),
+                            ),
+                      child: Material(
+                        color: Colors.transparent,
+                        child: InkWell(
+                          onTap: isConfirmEnabled ? onConfirm : null,
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                          child: Center(
+                            child: Text(
+                              confirmText,
+                              style: GoogleFonts.dmSans(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                                color: isConfirmEnabled
+                                    ? Colors.white
+                                    : AppColors.muted,
+                                letterSpacing: 0.2,
                               ),
+                              overflow: TextOverflow.ellipsis,
                             ),
                           ),
                         ),
                       ),
-                    ],
+                    ),
                   ),
                 ],
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

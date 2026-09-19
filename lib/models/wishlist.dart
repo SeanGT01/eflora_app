@@ -1,3 +1,5 @@
+import '../utils/string_utils.dart';
+
 class WishlistItem {
   final int id;
   final int productId;
@@ -36,9 +38,9 @@ class WishlistItem {
       variantId: j['variant_id'] as int?,
       storeId: j['store_id'] as int?,
       storeName: (j['store_name'] as String?) ?? 'Store',
-      name: (j['name'] as String?) ?? 'Product',
-      productName: j['product_name'] as String?,
-      variantName: j['variant_name'] as String?,
+      name: formatTitleCase((j['name'] as String?) ?? 'Product'),
+      productName: j['product_name'] != null ? formatTitleCase(j['product_name'] as String) : null,
+      variantName: j['variant_name'] != null ? formatTitleCase(j['variant_name'] as String) : null,
       imageUrl: j['image_url'] as String?,
       price: (j['price'] as num?)?.toDouble() ?? 0,
       originalPrice: (j['original_price'] as num?)?.toDouble(),

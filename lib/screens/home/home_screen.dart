@@ -28,6 +28,7 @@ import '../search/search_screen.dart';
 import '../cart/cart_screen.dart';
 import '../store/store_page.dart';
 import '../../widgets/profile_onboarding_flow.dart';
+import '../../widgets/eflora_brand_header.dart';
 import '../../utils/responsive.dart';
 
 /// Web hero slides use a 145° linear gradient; this diagonal reads the same in
@@ -472,7 +473,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
         category: row.$1,
         includeOutsideLocation: includeOutside,
         page: 1,
-        perPage: 8,
+        perPage: 10,
       );
     }));
     if (!mounted) return;
@@ -700,96 +701,33 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
 
   Widget _buildAppBar() {
     final auth = context.watch<AuthProvider>();
-    return SliverAppBar(
-      backgroundColor: Colors.transparent,
-      surfaceTintColor: Colors.transparent,
-      floating: true,
-      snap: true,
-      elevation: 0,
-      scrolledUnderElevation: 0,
-      flexibleSpace: const ClipRect(
-        child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Color(0xF5FFFAFC),
-            border: Border(
-              bottom: BorderSide(color: Color(0x8CFFFFFF), width: 1),
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Color(0x0FB5445A),
-                blurRadius: 16,
-                offset: Offset(0, 4),
-              ),
-            ],
+    return SliverToBoxAdapter(
+      child: EfloraTopBar(
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.search_rounded, color: AppColors.charcoal),
+            onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const SearchScreen(),
+                )),
           ),
-          child: SizedBox.expand(),
-        ),
-      ),
-      titleSpacing: _kHomeGutter - 4,
-      title: Row(
-        children: [
-          // Flower logo (matching web SVG)
-          SizedBox(
-            width: 38,
-            height: 38,
-            child: CustomPaint(
-              painter: _FlowerLogoPainter(),
-            ),
-          ),
-          const SizedBox(width: 5),
-          // Logo text
-          Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                'E-FLORA',
-                style: GoogleFonts.cormorantGaramond(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.charcoal,
-                  height: 1.0,
-                ),
-              ),
-              Text(
-                'Blooming with Technology',
+          if (auth.isLoggedIn) ...[
+            _CartIconButton(),
+          ] else
+            TextButton(
+              onPressed: _navigateToLogin,
+              child: Text(
+                'Sign in',
                 style: GoogleFonts.dmSans(
-                  fontSize: 7,
-                  fontWeight: FontWeight.w600,
-                  color: AppColors.muted,
-                  letterSpacing: 0.18,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  color: AppColors.roseCta,
                 ),
               ),
-            ],
-          ),
+            ),
         ],
       ),
-      actions: [
-        IconButton(
-          icon: const Icon(Icons.search_rounded),
-          onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => const SearchScreen(),
-              )),
-        ),
-        if (auth.isLoggedIn) ...[
-          _CartIconButton(),
-        ] else
-          TextButton(
-            onPressed: _navigateToLogin,
-            child: Text(
-              'Sign in',
-              style: GoogleFonts.dmSans(
-                fontSize: 13,
-                fontWeight: FontWeight.w700,
-                color: AppColors.roseCta,
-              ),
-            ),
-          ),
-        SizedBox(width: _kHomeGutter / 2),
-      ],
     );
   }
 
@@ -1513,7 +1451,7 @@ class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
     List<Product> products,
     SliverGridDelegateWithFixedCrossAxisCount gridDelegate,
   ) {
-    final count = math.min(products.length, 6);
+    final count = math.min(products.length, 10);
     final crossAxisCount = gridDelegate.crossAxisCount;
     final crossSpacing = gridDelegate.crossAxisSpacing;
     final mainSpacing = gridDelegate.mainAxisSpacing;
@@ -2015,60 +1953,4 @@ class _GlassProductShimmer extends StatelessWidget {
       ),
     );
   }
-}
-
-/// Custom painter for E-FLORA flower logo (matching web SVG design)
-class _FlowerLogoPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final center = Offset(size.width / 2, size.height / 2);
-    const dustyRose = AppColors.dustyRose;
-    const blush = AppColors.blush;
-
-    // Draw 6 petals (ellipses rotated around center)
-    for (int i = 0; i < 6; i++) {
-      final angle = (i * 60) * 3.14159 / 180; // Convert to radians
-      canvas.save();
-      canvas.translate(center.dx, center.dy);
-      canvas.rotate(angle);
-
-      // Draw petal (ellipse: width=5, height=8, positioned at top)
-      final paint = Paint()
-        ..color = (i % 2 == 0 ? dustyRose : blush)
-            .withValues(alpha: (0.75 - i * 0.05).clamp(0.5, 1.0));
-
-      // Ellipse positioned above center
-      final petalRect = Rect.fromCenter(
-        center: const Offset(0, -6),
-        width: 5,
-        height: 8,
-      );
-      canvas.drawOval(petalRect, paint);
-      canvas.restore();
-    }
-
-    // Center circle (dusty rose)
-    canvas.drawCircle(
-      center,
-      4,
-      Paint()..color = dustyRose.withOpacity(0.9),
-    );
-
-    // Inner white circle
-    canvas.drawCircle(
-      center,
-      2.5,
-      Paint()..color = const Color(0xFFFFFDF9),
-    );
-
-    // Gold center dot
-    canvas.drawCircle(
-      center,
-      1.5,
-      Paint()..color = const Color(0xFFffd700).withOpacity(0.8),
-    );
-  }
-
-  @override
-  bool shouldRepaint(_FlowerLogoPainter oldDelegate) => false;
 }

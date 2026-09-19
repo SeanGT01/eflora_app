@@ -37,6 +37,34 @@ class ProductCard extends StatelessWidget {
                 fit: StackFit.expand,
                 children: [
                   _buildImage(context),
+                  if (product.discountPct != null && product.hasAnySellableStock)
+                    Positioned(
+                      top: 8,
+                      left: 8,
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6.5, vertical: 2.5),
+                        decoration: BoxDecoration(
+                          gradient: AppColors.badgeGradient,
+                          borderRadius: BorderRadius.circular(AppRadius.pill),
+                          boxShadow: const [
+                            BoxShadow(
+                              color: Color(0x33000000),
+                              blurRadius: 4,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
+                        ),
+                        child: Text(
+                          '${product.discountPct}% OFF',
+                          style: GoogleFonts.dmSans(
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w800,
+                            color: Colors.white,
+                            letterSpacing: 0.4,
+                          ),
+                        ),
+                      ),
+                    ),
                   if (!product.hasAnySellableStock)
                     Positioned.fill(
                       child: Container(
@@ -66,92 +94,76 @@ class ProductCard extends StatelessWidget {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(10, 6, 10, 8),
+            padding: const EdgeInsets.fromLTRB(8, 5, 8, 6),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  product.name,
-                  style: GoogleFonts.cormorantGaramond(
-                    fontSize: context.sp(15),
-                    fontWeight: FontWeight.w500,
+                _AutoFitProductName(
+                  name: product.name,
+                  maxHeight: context.sp(30),
+                  maxLines: 2,
+                  baseStyle: GoogleFonts.cormorantGaramond(
+                    fontSize: context.sp(14.0).clamp(13.0, 15.5),
+                    fontWeight: FontWeight.w700,
                     color: AppColors.charcoal,
                     height: 1.15,
                   ),
-                  maxLines: context.responsive.isCompact ? 2 : 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
-                if (product.storeName != null) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    product.storeName!.toUpperCase(),
-                    style: GoogleFonts.dmSans(
-                      fontSize: 8.5,
-                      fontWeight: FontWeight.w700,
-                      color: AppColors.labelPink,
-                      letterSpacing: 0.8,
+                if (product.storeName != null && product.storeName!.trim().isNotEmpty) ...[
+                  const SizedBox(height: 1),
+                  Center(
+                    child: Text(
+                      product.storeName!.trim().toUpperCase(),
+                      style: GoogleFonts.dmSans(
+                        fontSize: context.sp(8.5).clamp(8.0, 9.5),
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.labelPink,
+                        letterSpacing: 0.8,
+                        height: 1.1,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
-                const SizedBox(height: 5),
+                const SizedBox(height: 3),
                 Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
+                  crossAxisAlignment: CrossAxisAlignment.center,
                   children: [
                     Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Text(
-                            '₱${product.effectivePrice.toStringAsFixed(2)}',
-                            style: GoogleFonts.cormorantGaramond(
-                              fontSize: context.sp(17),
-                              fontWeight: FontWeight.w600,
-                              color: AppColors.deepRose,
-                              height: 1.1,
+                      child: FittedBox(
+                        alignment: Alignment.centerLeft,
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.baseline,
+                          textBaseline: TextBaseline.alphabetic,
+                          children: [
+                            Text(
+                              '₱${product.effectivePrice.toStringAsFixed(2)}',
+                              style: GoogleFonts.dmSans(
+                                fontSize: context.sp(16.5).clamp(15.0, 18.0),
+                                fontWeight: FontWeight.w800,
+                                color: const Color(0xFF8B1832),
+                                letterSpacing: -0.3,
+                              ),
                             ),
-                          ),
-                          if (product.discountPct != null) ...[
-                            const SizedBox(height: 1),
-                            Row(
-                              children: [
-                                Flexible(
-                                  child: Text(
-                                    '₱${product.price.toStringAsFixed(2)}',
-                                    style: GoogleFonts.dmSans(
-                                      fontSize: 10,
-                                      color: AppColors.muted,
-                                      decoration: TextDecoration.lineThrough,
-                                    ),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
+                            if (product.discountPct != null) ...[
+                              const SizedBox(width: 4),
+                              Text(
+                                '₱${product.price.toStringAsFixed(2)}',
+                                style: GoogleFonts.dmSans(
+                                  fontSize: context.sp(11.0).clamp(10.0, 12.0),
+                                  fontWeight: FontWeight.w600,
+                                  color: const Color(0xFF64748B),
+                                  decoration: TextDecoration.lineThrough,
+                                  decorationThickness: 1.5,
                                 ),
-                                const SizedBox(width: 4),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 5,
-                                    vertical: 1,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    gradient: AppColors.badgeGradient,
-                                    borderRadius: BorderRadius.circular(AppRadius.pill),
-                                  ),
-                                  child: Text(
-                                    '${product.discountPct}% off',
-                                    style: GoogleFonts.dmSans(
-                                      fontSize: 8,
-                                      fontWeight: FontWeight.w700,
-                                      color: Colors.white,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
+                              ),
+                            ],
                           ],
-                        ],
+                        ),
                       ),
                     ),
                     const SizedBox(width: 6),
@@ -192,6 +204,7 @@ class ProductCard extends StatelessWidget {
       child: CachedNetworkImage(
         imageUrl: url,
         fit: BoxFit.cover,
+        alignment: const Alignment(0.0, -0.2),
         filterQuality: FilterQuality.high,
         memCacheWidth: cachePx,
         maxWidthDiskCache: cachePx,
@@ -250,3 +263,70 @@ class ProductCard extends StatelessWidget {
     );
   }
 }
+
+/// Dynamically scales and wraps product names so they are not cut off by ellipsis,
+/// center-aligns the text across up to 3 lines, and keeps an exact fixed height slot
+/// so all product cards stay perfectly uniform.
+class _AutoFitProductName extends StatelessWidget {
+  final String name;
+  final TextStyle baseStyle;
+  final double maxHeight;
+  final int maxLines;
+
+  const _AutoFitProductName({
+    required this.name,
+    required this.baseStyle,
+    required this.maxHeight,
+    this.maxLines = 2,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final maxWidth = constraints.maxWidth;
+        if (maxWidth <= 0) return SizedBox(height: maxHeight);
+
+        final startSize = baseStyle.fontSize ?? 14.0;
+        const minSize = 10.0;
+
+        double bestSize = minSize;
+        for (double size = startSize; size >= minSize; size -= 0.5) {
+          final tp = TextPainter(
+            text: TextSpan(
+              text: name,
+              style: baseStyle.copyWith(fontSize: size),
+            ),
+            maxLines: maxLines,
+            textAlign: TextAlign.center,
+            textDirection: TextDirection.ltr,
+          )..layout(maxWidth: maxWidth);
+
+          if (!tp.didExceedMaxLines && tp.height <= maxHeight) {
+            bestSize = size;
+            break;
+          }
+        }
+
+        return SizedBox(
+          height: maxHeight,
+          width: maxWidth,
+          child: Center(
+            child: Text(
+              name,
+              textAlign: TextAlign.center,
+              style: baseStyle.copyWith(
+                fontSize: bestSize,
+                height: 1.15,
+              ),
+              maxLines: maxLines,
+              softWrap: true,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+

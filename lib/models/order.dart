@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../utils/string_utils.dart';
 
 int _safeInt(dynamic v) => v is int ? v : v is String ? int.parse(v) : (v as num?)?.toInt() ?? 0;
 double _safeDbl(dynamic v) => v is double ? v : v is int ? v.toDouble() : v is String ? double.parse(v) : (v as num?)?.toDouble() ?? 0.0;
@@ -32,7 +33,7 @@ class OrderItemAddon {
     return OrderItemAddon(
       id: _safeInt(j['id']),
       addonOptionId: (optionId != null && optionId > 0) ? optionId : null,
-      name: j['name'] ?? 'Add-on',
+      name: formatTitleCase(j['name'] ?? 'Add-on'),
       price: price,
       quantity: qty <= 0 ? 1 : qty,
       imageUrl: j['image_url'] as String?,
@@ -92,11 +93,26 @@ class OrderItem {
       final r = _safeInt(rawRating);
       if (r >= 1 && r <= 5) rating = r;
     }
+    String name = (j['product_name'] ?? j['name'] ?? '').toString();
+    if (name.startsWith('[Deleted Snapshot]')) {
+      name = name.substring('[Deleted Snapshot]'.length).trim();
+      if (name.startsWith('-')) name = name.substring(1).trim();
+    } else if (name.startsWith('[Deleted')) {
+      final idx = name.indexOf(']');
+      if (idx != -1) {
+        name = name.substring(idx + 1).trim();
+        if (name.startsWith('-')) name = name.substring(1).trim();
+      }
+    }
+    if (name.isEmpty) name = 'Product';
+
     return OrderItem(
       id: _safeInt(j['id']),
       productId: _safeInt(j['product_id']),
-      productName: j['product_name'] ?? j['name'] ?? '',
-      variantName: j['variant_name'] ?? j['variant'],
+      productName: formatTitleCase(name),
+      variantName: j['variant_name'] != null
+          ? formatTitleCase(j['variant_name'].toString())
+          : (j['variant'] != null ? formatTitleCase(j['variant'].toString()) : null),
       variantId: j['variant_id'] != null ? _safeInt(j['variant_id']) : null,
       quantity: qty,
       price: price,
@@ -154,6 +170,7 @@ class Order {
   final String? donePreparingProofUrl;
   final String? paymentMethod;
   final String? paymentStatus;
+  final String? fulfillmentType;
   final bool isCustomOrder;
   
   // Status timeline timestamps
@@ -179,6 +196,7 @@ class Order {
     this.storeLatitude, this.storeLongitude,
     this.paymentProofUrl, this.deliveryProofUrl, this.deliveryProof2Url, this.donePreparingProofUrl,
     this.paymentMethod, this.paymentStatus,
+    this.fulfillmentType,
     this.isCustomOrder = false,
     this.pendingAt, this.acceptedAt, this.preparingAt, this.donePreparingAt,
     this.confirmedAt, this.deliveredAt,
@@ -223,6 +241,7 @@ class Order {
       donePreparingProofUrl: j['done_preparing_proof_url'],
       paymentMethod: j['payment_method']?.toString(),
       paymentStatus: j['payment_status']?.toString(),
+      fulfillmentType: (j['fulfillment_type'] as String?)?.toLowerCase().trim() ?? 'delivery',
       isCustomOrder: isCustomOrder,
       pendingAt: j['pending_at'] != null ? DateTime.tryParse(j['pending_at']) : null,
       acceptedAt: j['accepted_at'] != null ? DateTime.tryParse(j['accepted_at']) : null,
@@ -241,6 +260,7 @@ class Order {
 
   Order copyWith({
     String? status,
+    String? fulfillmentType,
     bool? allRated,
     bool? storeRated,
   }) {
@@ -264,6 +284,7 @@ class Order {
       donePreparingProofUrl: donePreparingProofUrl,
       paymentMethod: paymentMethod,
       paymentStatus: paymentStatus,
+      fulfillmentType: fulfillmentType ?? this.fulfillmentType,
       isCustomOrder: isCustomOrder,
       pendingAt: pendingAt,
       acceptedAt: acceptedAt,
@@ -280,6 +301,13 @@ class Order {
     );
   }
 
+  bool get isPickup {
+    final ft = (fulfillmentType ?? '').toLowerCase().trim();
+    if (ft == 'pickup') return true;
+    if (ft == 'delivery') return false;
+    return _isCop;
+  }
+
   bool get _isCod {
     final method = (paymentMethod ?? '').toLowerCase().trim();
     final payStatus = (paymentStatus ?? '').toLowerCase().trim();
@@ -287,6 +315,16 @@ class Order {
         payStatus == 'cod_pending' ||
         payStatus == 'cod_approved';
   }
+
+  bool get _isCop {
+    final method = (paymentMethod ?? '').toLowerCase().trim();
+    final payStatus = (paymentStatus ?? '').toLowerCase().trim();
+    return method == 'cop' ||
+        payStatus == 'cop_pending' ||
+        payStatus == 'cop_approved';
+  }
+
+  bool get _isPayOnFulfillment => _isCod || _isCop;
 
   /// Quotes created before the unified checkout flow used `paid` after a
   /// receipt upload. Treat them as awaiting review just like normal orders.
@@ -305,17 +343,20 @@ class Order {
     if (status == 'delivered') return 'delivered';
     if (status == 'completed') return 'completed';
     if (status == 'on_delivery') return 'on_delivery';
-    if (status == 'done_preparing') return 'processing';
+    if (status == 'done_preparing') {
+      return isPickup ? 'on_delivery' : 'processing';
+    }
 
-    // COD awaiting seller confirmation → To Ship (not To Pay)
-    if (isCustomOrder && _isCod && status == 'pending') {
+    // COD / COP awaiting seller confirmation → To Ship (not To Pay)
+    if (isCustomOrder && _isPayOnFulfillment && status == 'pending') {
       return 'processing';
     }
-    if (_isCod && (status == 'pending' || payStatus == 'cod_pending')) {
+    if (_isPayOnFulfillment && (status == 'pending' || payStatus == 'cod_pending' || payStatus == 'cop_pending')) {
       return 'processing';
     }
-    if (_isCod &&
+    if (_isPayOnFulfillment &&
         (payStatus == 'cod_approved' ||
+            payStatus == 'cop_approved' ||
             status == 'accepted' ||
             status == 'preparing')) {
       return 'processing';
@@ -379,20 +420,20 @@ class Order {
     if (status == 'cancelled') return 'Cancelled';
     if (status == 'delivered') return 'Delivered';
     if (status == 'completed') return 'Completed';
-    if (status == 'on_delivery') return 'In Transit';
-    if (status == 'done_preparing') return 'Ready';
+    if (status == 'on_delivery') return isPickup ? 'Ready for Pickup' : 'In Transit';
+    if (status == 'done_preparing') return isPickup ? 'Ready for Pickup' : 'Ready';
 
-    if (isCustomOrder && _isCod && status == 'pending') {
+    if (isCustomOrder && _isPayOnFulfillment && status == 'pending') {
       return 'Pending';
     }
-    if (_isCod && (status == 'pending' || payStatus == 'cod_pending')) {
+    if (_isPayOnFulfillment && (status == 'pending' || payStatus == 'cod_pending' || payStatus == 'cop_pending')) {
       return 'Awaiting Confirmation';
     }
     if (payStatus == 'pending_verification' || _isLegacyCustomQuoteReview) {
       return 'Under Review';
     }
     if (status == 'accepted' || status == 'confirmed') return 'Processing';
-    if (status == 'preparing' || payStatus == 'cod_approved') return 'Preparing';
+    if (status == 'preparing' || payStatus == 'cod_approved' || payStatus == 'cop_approved') return 'Preparing';
     if (displayKey == 'processing') return 'Preparing';
 
     if (status == 'pending') {
@@ -401,7 +442,7 @@ class Order {
     return status;
   }
 
-  /// Pending GCash unpaid or COD awaiting confirmation can be cancelled.
+  /// Pending GCash unpaid or COD/COP awaiting confirmation can be cancelled.
   bool get canCancel {
     if (status != 'pending') return false;
     final payStatus = (paymentStatus ?? '').toLowerCase().trim();

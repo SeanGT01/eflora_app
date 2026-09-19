@@ -8,6 +8,8 @@ import '../models/product.dart';
 import '../providers/cart_provider.dart';
 import '../services/api_service.dart';
 import '../theme/app_theme.dart';
+import '../utils/responsive.dart';
+import '../utils/string_utils.dart';
 import 'common.dart';
 import 'delivery_unavailable_dialog.dart';
 
@@ -143,7 +145,7 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
         _QuickAddOption(
           key: 'v-${v.id}',
           variantId: v.id,
-          name: v.name,
+          name: cleanVariantName(v.name, product.name),
           price: v.effectivePrice,
           regularPrice: v.price,
           stock: v.stockQuantity,
@@ -451,7 +453,7 @@ class _QuickAddVariantSheetState extends State<_QuickAddVariantSheet> {
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: GoogleFonts.cormorantGaramond(
-                          fontSize: 22,
+                          fontSize: context.sp(21),
                           fontWeight: FontWeight.w600,
                           height: 1.15,
                           color: AppColors.charcoal,

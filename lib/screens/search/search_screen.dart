@@ -1,4 +1,3 @@
-
 import 'dart:async';
 
 import 'package:flutter/material.dart';
@@ -10,14 +9,20 @@ import '../../providers/category_provider.dart';
 import '../../services/api_service.dart';
 import '../../theme/app_background.dart';
 import '../../theme/app_theme.dart';
-import '../../widgets/glass.dart';
 import '../../widgets/product_card.dart';
+import '../../widgets/common.dart';
 import '../product/product_detail_screen.dart';
-import '../main_shell.dart';
 import '../../widgets/auth_required_sheet.dart';
 import '../../widgets/quick_add_variant_sheet.dart';
 import '../../utils/responsive.dart';
 import '../../navigation/floating_nav_metrics.dart';
+
+const _kDeepRose = Color(0xFFB5445A);
+const _kDustyRose = Color(0xFFD4788A);
+const _kSoftBlush = Color(0xFFFBE9EE);
+const _kTextCharcoal = Color(0xFF2C2520);
+const _kMuted = Color(0xFF8F7D79);
+const _kBorder = Color(0xFFF0DDE2);
 
 class SearchScreen extends StatefulWidget {
   final String? initialCategorySlug;
@@ -32,6 +37,7 @@ class SearchScreen extends StatefulWidget {
     this.initialQuery,
     this.includeOutsideLocation,
   });
+
   @override
   State<SearchScreen> createState() => _SearchScreenState();
 }
@@ -148,56 +154,109 @@ class _SearchScreenState extends State<SearchScreen> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: AppBackground(
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildSearchBar(),
-              if (_hasCategory) _buildCategoryContext(),
-              Expanded(
-                child: _loading
-                    ? const Center(
-                        child: CircularProgressIndicator(color: AppColors.roseCta),
-                      )
-                    : !_searched
-                        ? _buildSuggestions()
-                        : _results.isEmpty
-                            ? _buildNoResults()
-                            : Builder(
-                                builder: (context) {
-                                  final r = context.responsive;
-                                  return GridView.builder(
+        child: Column(
+          children: [
+            EfloraTopBar(
+              leading: Navigator.of(context).canPop()
+                  ? IconButton(
+                      icon: const Icon(Icons.arrow_back_rounded, color: _kTextCharcoal),
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                      onPressed: () => Navigator.of(context).pop(),
+                    )
+                  : null,
+            ),
+            _buildSearchBar(),
+            if (_hasCategory) _buildCategoryContext(),
+            Expanded(
+              child: _loading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: _kDeepRose),
+                    )
+                  : !_searched
+                      ? _buildSuggestions()
+                      : _results.isEmpty
+                          ? _buildNoResults()
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                if (!_hasCategory)
+                                  Padding(
                                     padding: EdgeInsets.fromLTRB(
                                       context.pageGutter,
-                                      0,
+                                      2,
                                       context.pageGutter,
-                                      floatingNavScrollClearance(context),
+                                      8,
                                     ),
-                                    gridDelegate:
-                                        SliverGridDelegateWithFixedCrossAxisCount(
-                                      crossAxisCount: r.productCrossAxisCount,
-                                      crossAxisSpacing: r.productCrossSpacing,
-                                      mainAxisSpacing: r.productMainSpacing,
-                                      childAspectRatio: r.productAspectRatio,
-                                    ),
-                                    itemCount: _results.length,
-                                    itemBuilder: (_, i) => ProductCard(
-                                      product: _results[i],
-                                      onTap: () => Navigator.push(
-                                        context,
-                                        MaterialPageRoute(
-                                          builder: (_) => ProductDetailScreen(
-                                            productId: _results[i].id,
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text(
+                                          '${_results.length} bloom${_results.length != 1 ? 's' : ''} found',
+                                          style: GoogleFonts.dmSans(
+                                            fontSize: 12.5,
+                                            fontWeight: FontWeight.w600,
+                                            color: _kMuted,
                                           ),
                                         ),
-                                      ),
-                                      onAddToCart: () => _addToCart(_results[i]),
+                                        if (_ctrl.text.isNotEmpty)
+                                          Text(
+                                            '"${_ctrl.text}"',
+                                            style: GoogleFonts.cormorantGaramond(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.w700,
+                                              color: _kDeepRose,
+                                            ),
+                                          ),
+                                      ],
                                     ),
-                                  );
-                                },
-                              ),
-              ),
-            ],
-          ),
+                                  ),
+                                Expanded(
+                                  child: Builder(
+                                    builder: (context) {
+                                      final r = context.responsive;
+                                      return GridView.builder(
+                                        padding: EdgeInsets.fromLTRB(
+                                          context.pageGutter,
+                                          0,
+                                          context.pageGutter,
+                                          floatingNavScrollClearance(context),
+                                        ),
+                                        gridDelegate:
+                                            SliverGridDelegateWithFixedCrossAxisCount(
+                                          crossAxisCount:
+                                              r.productCrossAxisCount,
+                                          crossAxisSpacing:
+                                              r.productCrossSpacing,
+                                          mainAxisSpacing:
+                                              r.productMainSpacing,
+                                          childAspectRatio:
+                                              r.productAspectRatio,
+                                        ),
+                                        itemCount: _results.length,
+                                        itemBuilder: (_, i) => ProductCard(
+                                          product: _results[i],
+                                          onTap: () => Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  ProductDetailScreen(
+                                                productId: _results[i].id,
+                                              ),
+                                            ),
+                                          ),
+                                          onAddToCart: () =>
+                                              _addToCart(_results[i]),
+                                        ),
+                                      );
+                                    },
+                                  ),
+                                ),
+                              ],
+                            ),
+            ),
+          ],
         ),
       ),
     );
@@ -205,88 +264,70 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildCategoryContext() {
     final label = _categoryName ?? 'Category';
+    final countText = _loading || !_searched
+        ? 'Searching blooms…'
+        : '${_results.length} bloom${_results.length != 1 ? 's' : ''} found';
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+      padding: const EdgeInsets.fromLTRB(20, 0, 20, 10),
       child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            label,
-            style: GoogleFonts.cormorantGaramond(
-              fontSize: 22,
-              fontWeight: FontWeight.w500,
-              color: AppColors.charcoal,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  countText,
+                  style: GoogleFonts.dmSans(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: _kDustyRose,
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                Text(
+                  label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.cormorantGaramond(
+                    fontSize: 22,
+                    fontWeight: FontWeight.w600,
+                    color: _kTextCharcoal,
+                  ),
+                ),
+              ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  /// Pill-shaped frosted search field, matching the site's glass search input.
-  Widget _buildSearchBar() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
-      child: Row(
-        children: [
-          _GlassIconButton(
-            icon: Icons.arrow_back,
+          const SizedBox(width: 8),
+          InkWell(
             onTap: () {
-              // Pushed from Home → pop. Search tab inside MainShell → go Home.
-              // Popping the root route is what left a black screen.
-              if (Navigator.of(context).canPop()) {
-                Navigator.of(context).pop();
-              } else {
-                MainShell.switchTab(context, 0);
-              }
+              setState(() {
+                _categorySlug = null;
+                _categoryName = null;
+              });
+              _runSearch();
             },
-          ),
-          const SizedBox(width: 10),
-          Expanded(
-            child: GlassCard(
-              radius: AppRadius.pill,
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 2),
+            borderRadius: BorderRadius.circular(AppRadius.pill),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+              decoration: BoxDecoration(
+                color: _kSoftBlush,
+                borderRadius: BorderRadius.circular(AppRadius.pill),
+                border: Border.all(color: _kBorder, width: 0.9),
+              ),
               child: Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  const Icon(Icons.search, size: 18, color: AppColors.dustyRose),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: TextField(
-                      controller: _ctrl,
-                      autofocus: !_hasCategory,
-                      onChanged: _onQueryChanged,
-                      onSubmitted: (_) => _runSearch(),
-                      cursorColor: AppColors.roseCta,
-                      decoration: InputDecoration(
-                        isDense: true,
-                        hintText: _hasCategory
-                            ? 'Search in ${_categoryName ?? 'this category'}…'
-                            : 'Search flowers, plants, categories…',
-                        filled: false,
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                        contentPadding: const EdgeInsets.symmetric(vertical: 14),
-                        hintStyle: GoogleFonts.dmSans(
-                          fontSize: 13,
-                          color: AppColors.muted.withValues(alpha: 0.7),
-                        ),
-                      ),
-                      style: GoogleFonts.dmSans(
-                        fontSize: 13,
-                        color: AppColors.charcoal,
-                        fontWeight: FontWeight.w500,
-                      ),
+                  Text(
+                    'Clear Filter',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: _kDeepRose,
                     ),
                   ),
-                  if (_ctrl.text.isNotEmpty) ...[
-                    const SizedBox(width: 6),
-                    GradientCircleButton(
-                      icon: Icons.arrow_forward,
-                      size: 30,
-                      iconSize: 15,
-                      onPressed: _runSearch,
-                    ),
-                  ],
+                  const SizedBox(width: 4),
+                  const Icon(Icons.close_rounded, size: 13, color: _kDeepRose),
                 ],
               ),
             ),
@@ -296,49 +337,159 @@ class _SearchScreenState extends State<SearchScreen> {
     );
   }
 
+  /// Refined pill-shaped search field matching E-FLORA design language.
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 2, 20, 12),
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: Colors.white.withValues(alpha: 0.95),
+          borderRadius: BorderRadius.circular(AppRadius.pill),
+          border: Border.all(color: _kBorder, width: 1.1),
+          boxShadow: const [
+            BoxShadow(
+              color: Color(0x0A502846),
+              blurRadius: 14,
+              offset: Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Row(
+          children: [
+            const Icon(Icons.search_rounded, size: 20, color: _kDustyRose),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _ctrl,
+                autofocus: !_hasCategory,
+                onChanged: _onQueryChanged,
+                onSubmitted: (_) => _runSearch(),
+                cursorColor: _kDeepRose,
+                decoration: InputDecoration(
+                  isDense: true,
+                  hintText: _hasCategory
+                      ? 'Search in ${_categoryName ?? 'this category'}…'
+                      : 'Search flowers, bouquets, plants…',
+                  filled: false,
+                  border: InputBorder.none,
+                  enabledBorder: InputBorder.none,
+                  focusedBorder: InputBorder.none,
+                  contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                  hintStyle: GoogleFonts.dmSans(
+                    fontSize: 13,
+                    color: _kMuted.withValues(alpha: 0.75),
+                  ),
+                ),
+                style: GoogleFonts.dmSans(
+                  fontSize: 13.5,
+                  color: _kTextCharcoal,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            if (_ctrl.text.isNotEmpty) ...[
+              GestureDetector(
+                onTap: () {
+                  _ctrl.clear();
+                  _onQueryChanged('');
+                },
+                child: Container(
+                  padding: const EdgeInsets.all(4),
+                  decoration: const BoxDecoration(
+                    color: _kSoftBlush,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.close_rounded,
+                      size: 13, color: _kDeepRose),
+                ),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: _runSearch,
+                child: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: const BoxDecoration(
+                    color: _kDeepRose,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.arrow_forward_rounded,
+                      size: 15, color: Colors.white),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildSuggestions() {
     return Consumer<CategoryProvider>(
       builder: (_, categoryProvider, __) {
         final categories = categoryProvider.mainCategories
-            .where((cat) => cat.slug != 'all')  // Exclude 'All' category
-            .take(5)  // Take first 5 for display
+            .where((cat) => cat.slug != 'all')
+            .take(6)
             .toList();
-        
+
         return SingleChildScrollView(
-          padding: EdgeInsets.fromLTRB(20, 8, 20, floatingNavScrollClearance(context)),
+          padding: EdgeInsets.fromLTRB(
+              20, 8, 20, floatingNavScrollClearance(context)),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const GlassSectionTitle(
-                eyebrow: 'Discover',
-                title: 'Popular Categories',
+              Text(
+                'DISCOVER',
+                style: GoogleFonts.dmSans(
+                  fontSize: 10.5,
+                  fontWeight: FontWeight.w700,
+                  color: _kDustyRose,
+                  letterSpacing: 1.8,
+                ),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 2),
+              Text(
+                'Popular Categories',
+                style: GoogleFonts.cormorantGaramond(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w600,
+                  color: _kTextCharcoal,
+                ),
+              ),
+              const SizedBox(height: 14),
               Wrap(
-                spacing: 8, runSpacing: 8,
-                children: categories.map((cat) => GestureDetector(
-                  onTap: () {
-                    _ctrl.clear();
-                    setState(() {
-                      _categorySlug = cat.slug;
-                      _categoryName = cat.name;
-                    });
-                    _runSearch();
-                  },
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 9),
-                    decoration: BoxDecoration(
-                      color: AppColors.glassFill,
-                      borderRadius: BorderRadius.circular(AppRadius.pill),
-                      border: Border.all(color: AppColors.glassBorder, width: 1),
-                      boxShadow: AppShadows.glass,
-                    ),
-                    child: Text(
-                      cat.name,
-                      style: GoogleFonts.dmSans(
-                        color: AppColors.charcoal,
-                        fontSize: 12.5,
-                        fontWeight: FontWeight.w600,
+                spacing: 10,
+                runSpacing: 10,
+                children: categories.map((cat) => Material(
+                  color: Colors.white,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    side: const BorderSide(color: _kBorder, width: 1.1),
+                  ),
+                  elevation: 0.8,
+                  shadowColor: const Color(0x0A502846),
+                  child: InkWell(
+                    onTap: () {
+                      _ctrl.clear();
+                      setState(() {
+                        _categorySlug = cat.slug;
+                        _categoryName = cat.name;
+                      });
+                      _runSearch();
+                    },
+                    borderRadius: BorderRadius.circular(AppRadius.pill),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 10),
+                      child: Text(
+                        cat.name,
+                        style: GoogleFonts.dmSans(
+                          color: _kTextCharcoal,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
                       ),
                     ),
                   ),
@@ -353,65 +504,79 @@ class _SearchScreenState extends State<SearchScreen> {
 
   Widget _buildNoResults() {
     return Center(
-      child: Padding(
+      child: SingleChildScrollView(
         padding: const EdgeInsets.all(28),
-        child: GlassCard(
-          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 32),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 34),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.95),
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(color: _kBorder, width: 1),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x0C502846),
+                blurRadius: 20,
+                offset: Offset(0, 6),
+              ),
+            ],
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               Container(
-                width: 68,
-                height: 68,
-                decoration: const BoxDecoration(
-                  gradient: AppColors.imageWash,
+                width: 72,
+                height: 72,
+                decoration: BoxDecoration(
+                  color: _kSoftBlush,
                   shape: BoxShape.circle,
+                  border: Border.all(color: _kBorder, width: 1.2),
                 ),
-                child: const Icon(Icons.search_off, size: 30, color: Color(0x99B5445A)),
+                child: const Icon(Icons.search_off_rounded,
+                    size: 34, color: _kDeepRose),
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 18),
               Text(
                 _hasCategory
                     ? 'No products in ${_categoryName ?? 'this category'}'
-                    : 'No results found',
+                    : 'No blooms found',
                 style: GoogleFonts.cormorantGaramond(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.charcoal,
+                  fontSize: 24,
+                  fontWeight: FontWeight.w600,
+                  color: _kTextCharcoal,
                 ),
-              ),
-              const SizedBox(height: 6),
-              Text(
-                _hasCategory
-                    ? 'Try another category or browse outside location'
-                    : 'Try a different search term',
-                style: GoogleFonts.dmSans(fontSize: 12.5, color: AppColors.muted),
                 textAlign: TextAlign.center,
               ),
+              const SizedBox(height: 8),
+              Text(
+                _hasCategory
+                    ? 'Try another category or search for all floral arrangements.'
+                    : 'Try a different keyword or explore our popular categories.',
+                style: GoogleFonts.dmSans(
+                  fontSize: 13,
+                  color: _kMuted,
+                  height: 1.4,
+                ),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: 20),
+              if (_hasCategory || _ctrl.text.isNotEmpty)
+                RoseButton(
+                  label: 'Browse All Flowers',
+                  onPressed: () {
+                    _ctrl.clear();
+                    setState(() {
+                      _categorySlug = null;
+                      _categoryName = null;
+                    });
+                    _runSearch();
+                  },
+                  width: double.infinity,
+                  icon: Icons.local_florist_rounded,
+                ),
             ],
           ),
         ),
       ),
-    );
-  }
-}
-
-/// Round frosted icon button used for the back affordance.
-class _GlassIconButton extends StatelessWidget {
-  const _GlassIconButton({required this.icon, required this.onTap});
-
-  final IconData icon;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return GlassCard(
-      radius: AppRadius.pill,
-      padding: EdgeInsets.zero,
-      width: 42,
-      height: 42,
-      onTap: onTap,
-      child: Center(child: Icon(icon, size: 19, color: AppColors.charcoal)),
     );
   }
 }

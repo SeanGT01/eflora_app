@@ -581,9 +581,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                     builder: (_, auth, __) {
                                       final url = auth.user?.avatarUrl;
                                       if (url == null || url.isEmpty) {
-                                        return const CustomerDefaultAvatar(
+                                        return CustomerDefaultAvatar(
                                           size: 106,
                                           showRing: false,
+                                          seed: auth.user?.id ?? auth.user?.fullName,
                                         );
                                       }
                                       return ClipOval(
@@ -591,9 +592,10 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                                           imageUrl: url,
                                           fit: BoxFit.cover,
                                           errorWidget: (_, __, ___) =>
-                                              const CustomerDefaultAvatar(
+                                              CustomerDefaultAvatar(
                                                 size: 106,
                                                 showRing: false,
+                                                seed: auth.user?.id ?? auth.user?.fullName,
                                               ),
                                         ),
                                       );

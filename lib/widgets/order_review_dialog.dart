@@ -53,10 +53,39 @@ class _OrderReviewDialogState extends State<OrderReviewDialog> {
   // Store review state
   int _storeStars = 0;
   final TextEditingController _storeComment = TextEditingController();
+  final Set<String> _selectedStoreFeedback = <String>{};
+
+  static const List<String> _commonStoreFeedbackOptions = [
+    '🌸 Fresh & Beautiful Flowers',
+    '⚡ Fast & On-Time Delivery',
+    '📦 Careful & Secure Packaging',
+    '💬 Responsive & Polite Seller',
+    '🎀 Accurate to Photos',
+    '💌 Neat Dedication Card',
+    '✨ Great Value & Service',
+  ];
+
+  static const List<String> _commonProductFeedbackOptions = [
+    '🌸 Fresh & Long-Lasting',
+    '💐 Beautiful Arrangement',
+    '🎀 Accurate to Photo',
+    '🌷 Fragrant Blooms',
+    '✨ High Quality',
+    '💖 Recipient Loved It',
+  ];
+
+  String get _finalStoreComment {
+    final chips = _selectedStoreFeedback.toList();
+    final customText = _storeComment.text.trim();
+    if (chips.isEmpty) return customText;
+    if (customText.isEmpty) return chips.join(', ');
+    return '${chips.join(', ')}. $customText';
+  }
 
   // Product reviews state: itemId -> rating
   final Map<int, int> _ratings = {};
   final Map<int, TextEditingController> _commentControllers = {};
+  final Map<int, Set<String>> _selectedProductFeedback = {};
 
   bool _submitting = false;
 
@@ -99,11 +128,23 @@ class _OrderReviewDialogState extends State<OrderReviewDialog> {
 
   void _initSteps() {
     _unratedItems = widget.order.items
-        .where((item) => !_existingRatings.containsKey(item.id))
+        .where((item) =>
+            !_existingRatings.containsKey(item.id) &&
+            !item.productName.startsWith('[Deleted'))
         .toList();
 
     for (final item in _unratedItems) {
       _commentControllers[item.id] = TextEditingController();
+    }
+
+    if (_storeRated && _unratedItems.isEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          Navigator.of(context).pop(true);
+          AppToastHost.show('You have already rated this order.');
+        }
+      });
+      return;
     }
 
     if (_storeRated) {
@@ -127,10 +168,10 @@ class _OrderReviewDialogState extends State<OrderReviewDialog> {
   Future<void> _submitStore() async {
     if (_storeStars < 1) return;
     setState(() => _submitting = true);
+    final comment = _finalStoreComment;
     final body = <String, dynamic>{
       'rating': _storeStars,
-      if (_storeComment.text.trim().isNotEmpty)
-        'comment': _storeComment.text.trim(),
+      if (comment.isNotEmpty) 'comment': comment,
     };
     final res = await ApiService.submitOrderRatings(
       widget.order.id,
@@ -169,11 +210,22 @@ class _OrderReviewDialogState extends State<OrderReviewDialog> {
     setState(() => _submitting = true);
 
     final ratings = _ratings.entries.where((e) => e.value > 0).map((e) {
-      final comment = _commentControllers[e.key]?.text.trim();
+      final itemId = e.key;
+      final chips = (_selectedProductFeedback[itemId] ?? <String>{}).toList();
+      final customText = _commentControllers[itemId]?.text.trim() ?? '';
+      String? finalComment;
+      if (chips.isNotEmpty && customText.isNotEmpty) {
+        finalComment = '${chips.join(', ')}. $customText';
+      } else if (chips.isNotEmpty) {
+        finalComment = chips.join(', ');
+      } else if (customText.isNotEmpty) {
+        finalComment = customText;
+      }
+
       return <String, dynamic>{
-        'order_item_id': e.key,
+        'order_item_id': itemId,
         'rating': e.value,
-        if (comment != null && comment.isNotEmpty) 'comment': comment,
+        if (finalComment != null && finalComment.isNotEmpty) 'comment': finalComment,
       };
     }).toList();
 
@@ -387,14 +439,93 @@ class _OrderReviewDialogState extends State<OrderReviewDialog> {
                     }),
                   ),
                 ),
-                const SizedBox(height: 16),
+                const SizedBox(height: 18),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    'What did you like about this shop?',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.charcoal,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: _commonStoreFeedbackOptions.map((tag) {
+                      final isSelected = _selectedStoreFeedback.contains(tag);
+                      return InkWell(
+                        onTap: () {
+                          setState(() {
+                            if (isSelected) {
+                              _selectedStoreFeedback.remove(tag);
+                            } else {
+                              _selectedStoreFeedback.add(tag);
+                            }
+                          });
+                        },
+                        borderRadius: BorderRadius.circular(20),
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 180),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 12,
+                            vertical: 7,
+                          ),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? AppColors.roseCta.withValues(alpha: 0.12)
+                                : Colors.white,
+                            borderRadius: BorderRadius.circular(20),
+                            border: Border.all(
+                              color: isSelected
+                                  ? AppColors.roseCta
+                                  : AppColors.border,
+                              width: isSelected ? 1.4 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (isSelected) ...[
+                                const Icon(
+                                  Icons.check_rounded,
+                                  size: 14,
+                                  color: AppColors.roseCta,
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              Text(
+                                tag,
+                                style: GoogleFonts.dmSans(
+                                  fontSize: 12,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w700
+                                      : FontWeight.w500,
+                                  color: isSelected
+                                      ? AppColors.roseCta
+                                      : AppColors.charcoal,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+                const SizedBox(height: 14),
                 TextField(
                   controller: _storeComment,
                   maxLines: 3,
                   maxLength: 500,
                   style: GoogleFonts.dmSans(fontSize: 13),
                   decoration: InputDecoration(
-                    hintText: 'Optional feedback about packaging, communication, or service',
+                    hintText: 'Additional feedback about packaging, communication, or service (optional)',
                     hintStyle: GoogleFonts.dmSans(
                       fontSize: 12.5,
                       color: AppColors.muted,
@@ -568,6 +699,67 @@ class _OrderReviewDialogState extends State<OrderReviewDialog> {
                   }),
                 ),
               ),
+              const SizedBox(height: 12),
+              Text(
+                'What did you like about this product?',
+                style: GoogleFonts.dmSans(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: AppColors.charcoal,
+                ),
+              ),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: _commonProductFeedbackOptions.map((tag) {
+                  final isSelected = (_selectedProductFeedback[item.id] ?? <String>{}).contains(tag);
+                  return InkWell(
+                    onTap: () {
+                      setState(() {
+                        _selectedProductFeedback.putIfAbsent(item.id, () => <String>{});
+                        if (isSelected) {
+                          _selectedProductFeedback[item.id]!.remove(tag);
+                        } else {
+                          _selectedProductFeedback[item.id]!.add(tag);
+                        }
+                      });
+                    },
+                    borderRadius: BorderRadius.circular(16),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: isSelected
+                            ? AppColors.roseCta.withValues(alpha: 0.12)
+                            : Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: isSelected ? AppColors.roseCta : AppColors.border,
+                          width: isSelected ? 1.3 : 1.0,
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (isSelected) ...[
+                            const Icon(Icons.check_rounded, size: 13, color: AppColors.roseCta),
+                            const SizedBox(width: 3),
+                          ],
+                          Text(
+                            tag,
+                            style: GoogleFonts.dmSans(
+                              fontSize: 11.5,
+                              fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
+                              color: isSelected ? AppColors.roseCta : AppColors.charcoal,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
               const SizedBox(height: 10),
               TextField(
                 controller: _commentControllers[item.id],
@@ -575,7 +767,7 @@ class _OrderReviewDialogState extends State<OrderReviewDialog> {
                 maxLength: 500,
                 style: GoogleFonts.dmSans(fontSize: 12.5),
                 decoration: InputDecoration(
-                  hintText: 'Share your thoughts about this product (optional)',
+                  hintText: 'Additional feedback about this product (optional)',
                   hintStyle: GoogleFonts.dmSans(
                     fontSize: 12,
                     color: AppColors.muted,

@@ -1,3 +1,5 @@
+import '../utils/string_utils.dart';
+
 /// Global main category (e.g., "Bouquets", "Plants", "Flowers")
 class Category {
   final int id;
@@ -27,7 +29,7 @@ class Category {
   factory Category.fromJson(Map<String, dynamic> json) {
     return Category(
       id: json['id'] as int? ?? 0,
-      name: json['name'] as String? ?? 'Uncategorized',
+      name: formatTitleCase(json['name'] as String? ?? 'Uncategorized'),
       slug: json['slug'] as String? ?? '',
       description: json['description'] as String?,
       icon: json['icon'] as String?,
@@ -111,10 +113,10 @@ class StoreCategory {
       id: json['id'] as int? ?? 0,
       storeId: json['store_id'] as int? ?? 0,
       mainCategoryId: json['main_category_id'] as int? ?? 0,
-      mainCategoryName: json['main_category_name'] as String?,
+      mainCategoryName: json['main_category_name'] != null ? formatTitleCase(json['main_category_name'] as String) : null,
       mainCategorySlug: json['main_category_slug'] as String?,
       mainCategoryIcon: json['main_category_icon'] as String?,
-      name: json['name'] as String? ?? 'Uncategorized',
+      name: formatTitleCase(json['name'] as String? ?? 'Uncategorized'),
       slug: json['slug'] as String? ?? '',
       description: json['description'] as String?,
       imageUrl: json['image_url'] as String?,

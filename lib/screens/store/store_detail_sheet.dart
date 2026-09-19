@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter_map/flutter_map.dart';
+import 'package:intl/intl.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/retry.dart';
 import 'package:latlong2/latlong.dart';
 import '../../config/mapbox_config.dart';
 import '../../models/store.dart';
 import '../../services/api_service.dart';
+import '../../utils/datetime_ph.dart';
 import '../../theme/app_theme.dart';
 import '../../widgets/glass.dart';
 
@@ -155,9 +157,7 @@ class StoreDetailSheet extends StatelessWidget {
                             Icons.phone_outlined, 'Contact', store.contactNumber!),
                       _infoRow(Icons.delivery_dining_outlined, 'Delivery Area',
                           store.deliveryCoverageSummary),
-                      if (store.baseDeliveryFee != null)
-                        _infoRow(Icons.payments_outlined, 'Base Delivery Fee',
-                            '₱${store.baseDeliveryFee!.toStringAsFixed(2)}'),
+                      _buildDeliveryFeeRow(),
                       ..._scheduleRuleRows(),
                       const SizedBox(height: 20),
                       // ── Schedule ──
@@ -504,13 +504,22 @@ class StoreDetailSheet extends StatelessWidget {
       ));
     }
 
-    final orderCutoff = schedule['order_cutoff']?.toString();
-    if (orderCutoff != null && orderCutoff.isNotEmpty) {
+    final allowSameDay = schedule['allow_same_day'] != false;
+    if (!allowSameDay) {
       rows.add(_infoRow(
-        Icons.alarm_outlined,
-        'Same-day Order Cutoff',
-        'Order by ${_to12HrWeb(orderCutoff)} for same-day',
+        Icons.event_busy_outlined,
+        'Same-day Delivery',
+        'Disabled (Advance pre-orders only)',
       ));
+    } else {
+      final orderCutoff = schedule['order_cutoff']?.toString();
+      if (orderCutoff != null && orderCutoff.isNotEmpty) {
+        rows.add(_infoRow(
+          Icons.alarm_outlined,
+          'Same-day Order Cutoff',
+          'Order by ${_to12HrWeb(orderCutoff)} for same-day',
+        ));
+      }
     }
 
     return rows;
@@ -558,6 +567,166 @@ class StoreDetailSheet extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildDeliveryFeeRow() {
+    final baseFee = store.baseDeliveryFee;
+    final ratePerKm = store.deliveryRatePerKm;
+    final freeMin = store.freeDeliveryMinimum;
+    final hasFree = store.hasFreeDelivery;
+    final isFree = store.isAlwaysFreeDelivery;
+
+    // Check if store has any delivery fee info configured
+    if (baseFee == null && ratePerKm == null && !hasFree) {
+      return const SizedBox.shrink();
+    }
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 10),
+      child: GlassCard(
+        blur: 0,
+        padding: const EdgeInsets.all(12),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 36,
+              height: 36,
+              decoration: BoxDecoration(
+                color: AppColors.blush.withValues(alpha: 0.38),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: const Icon(Icons.payments_outlined,
+                  size: 18, color: AppColors.deepRose),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'DELIVERY FEE & CALCULATION',
+                    style: GoogleFonts.dmSans(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w700,
+                      color: AppColors.labelPink,
+                      letterSpacing: 1,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  if (isFree) ...[
+                    Text(
+                      'Free delivery for all orders',
+                      style: GoogleFonts.dmSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF2E7D32),
+                      ),
+                    ),
+                  ] else ...[
+                    Text(
+                      store.deliveryFeeCalculationSummary,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.charcoal,
+                        height: 1.35,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      store.deliveryFeeExplanation,
+                      style: GoogleFonts.dmSans(
+                        fontSize: 12,
+                        color: AppColors.muted,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 7),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        if (baseFee != null)
+                          _feeChip(
+                            icon: Icons.storefront_outlined,
+                            label: 'Base fee: ₱${baseFee.toStringAsFixed(2)}',
+                          ),
+                        if (ratePerKm != null && ratePerKm > 0)
+                          _feeChip(
+                            icon: Icons.route_outlined,
+                            label: 'Distance rate: +₱${ratePerKm.toStringAsFixed(2)} / km',
+                          ),
+                      ],
+                    ),
+                  ],
+                  if (hasFree) ...[
+                    const SizedBox(height: 8),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 9, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFE8F5E9),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                            color: const Color(0xFFA5D6A7), width: 0.8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.card_giftcard_rounded,
+                              size: 14, color: Color(0xFF2E7D32)),
+                          const SizedBox(width: 5),
+                          Flexible(
+                            child: Text(
+                              'Free delivery on orders ₱${freeMin!.toStringAsFixed(2)} and above',
+                              style: GoogleFonts.dmSans(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.w600,
+                                color: const Color(0xFF2E7D32),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _feeChip({required IconData icon, required String label}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.blush.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: AppColors.dustyRose.withValues(alpha: 0.25),
+          width: 0.8,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 12, color: AppColors.deepRose),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: GoogleFonts.dmSans(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: AppColors.deepRose,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -1899,6 +2068,9 @@ class _ReviewsModal extends StatelessWidget {
     final comment = (review.comment?.trim().isNotEmpty == true)
         ? review.comment!.trim()
         : 'No written comment.';
+    final dateStr = review.createdAt != null
+        ? ' • ${DateFormat('MMM d, yyyy').format(toPhilippineWallClock(review.createdAt!))} at ${DateFormat('h:mm a').format(toPhilippineWallClock(review.createdAt!))}'
+        : '';
     return Container(
       margin: const EdgeInsets.only(bottom: 10),
       padding: const EdgeInsets.all(12),
@@ -1928,7 +2100,7 @@ class _ReviewsModal extends StatelessWidget {
                   fontSize: 13, height: 1.45, color: AppColors.muted)),
           const SizedBox(height: 6),
           Text(
-            '— Reviewed by $name',
+            '— Reviewed by $name$dateStr',
             style: GoogleFonts.dmSans(
               fontSize: 12,
               fontStyle: FontStyle.italic,

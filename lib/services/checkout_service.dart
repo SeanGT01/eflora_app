@@ -100,6 +100,13 @@ class CheckoutService {
       items: items,
       allowCod: order['allow_cod'] == true,
       allowGcash: order['allow_gcash'] != false,
+      allowCop: order['allow_cop'] == true,
+      allowPickup: order['allow_pickup'] != false,
+      storeAddress: order['store_address'] as String?,
+      storePhone: order['store_phone'] as String?,
+      storeLatitude: (order['store_latitude'] as num?)?.toDouble(),
+      storeLongitude: (order['store_longitude'] as num?)?.toDouble(),
+      fulfillmentType: (order['fulfillment_type'] as String?) ?? 'delivery',
       freeDeliveryEnabled: order['free_delivery_enabled'] == true,
       freeDeliveryMinimum: (order['free_delivery_minimum'] as num?)?.toDouble(),
       freeDeliveryApplied: order['free_delivery_applied'] == true,
@@ -110,13 +117,15 @@ class CheckoutService {
   /// Validate checkout - sends cart delivery address to backend
   /// Backend will validate delivery, calculate fees, return store totals and QR codes
   static Future<ApiResult> validateCheckout({
-    required int addressId,
+    int? addressId,
     required String deliveryNotes,
+    String fulfillmentType = 'delivery',
     List<Map<String, dynamic>>? items,
   }) async {
     try {
       final payload = {
-        'delivery_address_id': addressId,
+        'fulfillment_type': fulfillmentType,
+        if (addressId != null) 'delivery_address_id': addressId,
         'delivery_notes': deliveryNotes,
         if (items != null && items.isNotEmpty) 'items': items,
       };
@@ -351,8 +360,9 @@ class CheckoutService {
   /// This is the final step - creates Order records and reduces stock
   /// Supports per-store payment proofs via storePaymentProofs map
   static Future<ApiResult> createOrders({
-    required int addressId,
+    int? addressId,
     required String deliveryNotes,
+    String fulfillmentType = 'delivery',
     String? paymentProofUrl,
     String? paymentProofPublicId,
     Map<int, Map<String, String>>? storePaymentProofs,
@@ -374,6 +384,8 @@ class CheckoutService {
                   .toString()
                   .toLowerCase();
           final isCod = paymentMethod == 'cod';
+          final isCop = paymentMethod == 'cop';
+          final effectivePaymentMethod = isCop ? 'cop' : (isCod ? 'cod' : 'gcash');
           final orderEntry = <String, dynamic>{
             'store_id': storeId,
             'subtotal': order['subtotal'],
@@ -381,15 +393,16 @@ class CheckoutService {
             'distance_km': order['distance_km'],
             'total': order['total'],
             'items': order['items'],
-            'payment_method': isCod ? 'cod' : 'gcash',
+            'fulfillment_type': fulfillmentType,
+            'payment_method': effectivePaymentMethod,
             if (storeDeliveryDates != null && storeDeliveryDates.containsKey(storeId))
               'requested_delivery_date': DateFormat('yyyy-MM-dd').format(storeDeliveryDates[storeId]!),
             if (storeDeliveryTimes != null && storeDeliveryTimes.containsKey(storeId))
               'requested_delivery_time': storeDeliveryTimes[storeId],
           };
 
-          // Per-store payment proof (GCash only)
-          if (!isCod) {
+          // Per-store payment proof (GCash only; COD and COP do not require proof)
+          if (!isCod && !isCop) {
             if (storePaymentProofs != null && storePaymentProofs.containsKey(storeId)) {
               orderEntry['payment_proof_url'] = storePaymentProofs[storeId]!['url'];
               orderEntry['payment_proof_public_id'] = storePaymentProofs[storeId]!['public_id'];
@@ -405,7 +418,8 @@ class CheckoutService {
       }
 
       final payload = {
-        'address_id': addressId,
+        'fulfillment_type': fulfillmentType,
+        if (addressId != null) 'address_id': addressId,
         'delivery_notes': deliveryNotes,
         'orders': ordersData,
       };
@@ -462,7 +476,8 @@ class CheckoutService {
     required int productId,
     int? variantId,
     required int quantity,
-    required int addressId,
+    int? addressId,
+    String fulfillmentType = 'delivery',
     List<int>? addonOptionIds,
   }) async {
     try {
@@ -476,7 +491,8 @@ class CheckoutService {
         'product_id': productId,
         'variant_id': variantId,
         'quantity': quantity,
-        'delivery_address_id': addressId,
+        'fulfillment_type': fulfillmentType,
+        if (addressId != null) 'delivery_address_id': addressId,
         if (addonOptionIds != null && addonOptionIds.isNotEmpty)
           'addon_option_ids': addonOptionIds,
       };
@@ -569,7 +585,8 @@ class CheckoutService {
     required int productId,
     int? variantId,
     required int quantity,
-    required int addressId,
+    int? addressId,
+    String fulfillmentType = 'delivery',
     required String deliveryNotes,
     required DateTime deliveryDate,
     required String deliveryTime,
@@ -585,16 +602,21 @@ class CheckoutService {
         if (token != null) 'Authorization': 'Bearer $token',
       };
 
+      final isCod = paymentMethod.toLowerCase() == 'cod';
+      final isCop = paymentMethod.toLowerCase() == 'cop';
+      final effectivePaymentMethod = isCop ? 'cop' : (isCod ? 'cod' : 'gcash');
+
       final payload = {
         'product_id': productId,
         'variant_id': variantId,
         'quantity': quantity,
-        'address_id': addressId,
+        'fulfillment_type': fulfillmentType,
+        if (addressId != null) 'address_id': addressId,
         'delivery_notes': deliveryNotes,
         'requested_delivery_date': DateFormat('yyyy-MM-dd').format(deliveryDate),
         'requested_delivery_time': deliveryTime,
-        'payment_method': paymentMethod == 'cod' ? 'cod' : 'gcash',
-        if (paymentMethod != 'cod') ...{
+        'payment_method': effectivePaymentMethod,
+        if (!isCod && !isCop) ...{
           'payment_proof_url': paymentProofUrl,
           'payment_proof_public_id': paymentProofPublicId,
         },
@@ -804,6 +826,8 @@ class CheckoutService {
     switch (reason) {
       case 'no_schedule':
         return 'This store has not set delivery hours yet.';
+      case 'same_day_disabled':
+        return 'Same-day delivery is not offered by this store. Please choose tomorrow or a later date.';
       case 'order_cutoff':
         return 'Same-day ordering is closed. Please choose another open day.';
       case 'lead_time':
@@ -827,7 +851,7 @@ class CheckoutService {
   }) {
     if (hasBookableSlots) return null;
     final reason = asBlockReason(apiReason);
-    if (reason == 'no_schedule' || reason == 'lead_time') return reason;
+    if (reason == 'no_schedule' || reason == 'lead_time' || reason == 'same_day_disabled') return reason;
     if (!hasSchedule) return 'no_schedule';
 
     final weekday = date == null
@@ -853,6 +877,9 @@ class CheckoutService {
     final raw = (error ?? '').trim();
     if (raw.isEmpty) return raw;
     final lower = raw.toLowerCase();
+    if (lower.contains('does not offer same-day') || lower.contains('not offer same-day')) {
+      return slotBlockMessage('same_day_disabled');
+    }
     if (lower.contains('same-day ordering')) {
       return slotBlockMessage('order_cutoff');
     }

@@ -23,6 +23,7 @@ class CheckoutProvider extends ChangeNotifier {
   Address? get selectedAddress => _state.selectedAddress;
   String? get deliveryNotes => _state.deliveryNotes;
   DeliveryPreference get deliveryPreference => _state.deliveryPreference;
+  String get fulfillmentType => _state.fulfillmentType;
   int get currentStep => _state.currentStep;
   bool get isProcessing => _state.isProcessing;
   String? get error => _state.error;
@@ -30,11 +31,40 @@ class CheckoutProvider extends ChangeNotifier {
   List<Order>? get createdOrders => _state.createdOrders;
 
   bool canProceedToStep1() {
+    if (_state.fulfillmentType == 'pickup') return true;
     return _state.selectedAddress != null;
   }
 
   bool canProceedToStep2() {
     return canProceedToStep1() && _state.validationResponse?.success == true;
+  }
+
+  bool _allowPickup = true;
+
+  bool get allowPickup => _allowPickup;
+
+  void setAllowPickup(bool allowed) {
+    if (_allowPickup == allowed) return;
+    _allowPickup = allowed;
+    if (!_allowPickup && _state.fulfillmentType == 'pickup') {
+      _state = _state.copyWith(
+        fulfillmentType: 'delivery',
+        error: null,
+        validationResponse: null,
+      );
+    }
+    notifyListeners();
+  }
+
+  void setFulfillmentType(String type) {
+    if (type == 'pickup' && !_allowPickup) return;
+    if (_state.fulfillmentType == type) return;
+    _state = _state.copyWith(
+      fulfillmentType: type,
+      error: null,
+      validationResponse: null,
+    );
+    notifyListeners();
   }
 
   void setSelectedAddress(Address address) {
@@ -115,14 +145,16 @@ class CheckoutProvider extends ChangeNotifier {
           productId: _buyNowProductId!,
           variantId: _buyNowVariantId,
           quantity: _buyNowQuantity,
-          addressId: _state.selectedAddress!.id ?? 0,
+          addressId: _state.selectedAddress?.id,
+          fulfillmentType: _state.fulfillmentType,
           addonOptionIds: _buyNowAddonOptionIds,
         );
       } else {
         // Normal cart checkout
         response = await CheckoutService.validateCheckout(
-          addressId: _state.selectedAddress!.id ?? 0,
+          addressId: _state.selectedAddress?.id,
           deliveryNotes: _state.deliveryNotes ?? '',
+          fulfillmentType: _state.fulfillmentType,
           items: items,
         );
       }
@@ -143,6 +175,16 @@ class CheckoutProvider extends ChangeNotifier {
         // Check for delivery warnings (stores that can't deliver)
         if (validation.warnings != null && validation.warnings!.isNotEmpty) {
           debugPrint('⚠️ Delivery warnings: ${validation.warnings}');
+        }
+
+        if (validation.storeOrderTotals.isNotEmpty) {
+          final canPickup = validation.storeOrderTotals.every((st) => st.allowPickup);
+          if (_allowPickup != canPickup) {
+            _allowPickup = canPickup;
+            if (!_allowPickup && _state.fulfillmentType == 'pickup') {
+              _state = _state.copyWith(fulfillmentType: 'delivery');
+            }
+          }
         }
 
         _state = _state.copyWith(
@@ -208,7 +250,8 @@ class CheckoutProvider extends ChangeNotifier {
           productId: _buyNowProductId!,
           variantId: _buyNowVariantId,
           quantity: _buyNowQuantity,
-          addressId: _state.selectedAddress!.id ?? 0,
+          addressId: _state.selectedAddress?.id,
+          fulfillmentType: _state.fulfillmentType,
           deliveryNotes: _state.deliveryNotes ?? '',
           deliveryDate: storeDeliveryDates!.values.first,
           deliveryTime: storeDeliveryTimes!.values.first,
@@ -230,8 +273,9 @@ class CheckoutProvider extends ChangeNotifier {
         }).toList();
 
         response = await CheckoutService.createOrders(
-          addressId: _state.selectedAddress!.id ?? 0,
+          addressId: _state.selectedAddress?.id,
           deliveryNotes: _state.deliveryNotes ?? '',
+          fulfillmentType: _state.fulfillmentType,
           paymentProofUrl: paymentProofUrl,
           paymentProofPublicId: paymentProofPublicId,
           storePaymentProofs: storePaymentProofs,

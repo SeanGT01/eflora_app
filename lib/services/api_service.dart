@@ -28,6 +28,16 @@ class ApiService {
     final p = await SharedPreferences.getInstance();
     await p.remove('jwt_token');
     await p.remove('user_data');
+    await p.remove('cached_orders_list');
+    _ordersCache = null;
+  }
+
+  static Future<void> clearOrdersCache() async {
+    _ordersCache = null;
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.remove('cached_orders_list');
+    } catch (_) {}
   }
 
   /// ✅ DEPRECATED: Use addToCart() instead (supports variants via optional parameter)

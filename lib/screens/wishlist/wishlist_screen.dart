@@ -186,19 +186,19 @@ class _WishlistCard extends StatelessWidget {
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
                             style: GoogleFonts.dmSans(
-                              fontSize: 10.5,
+                              fontSize: context.sp(10.5),
                               color: AppColors.muted,
                             ),
                           ),
                           const SizedBox(height: 2),
                           SizedBox(
-                            height: 36,
+                            height: context.sp(36),
                             child: Text(
                               item.productName ?? item.name,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.cormorantGaramond(
-                                fontSize: 15,
+                                fontSize: context.sp(15),
                                 fontWeight: FontWeight.w600,
                                 color: AppColors.charcoal,
                                 height: 1.2,
@@ -206,7 +206,7 @@ class _WishlistCard extends StatelessWidget {
                             ),
                           ),
                           SizedBox(
-                            height: 16,
+                            height: context.sp(16),
                             child: Text(
                               (item.variantName != null &&
                                       item.variantName!.isNotEmpty)
@@ -215,7 +215,7 @@ class _WishlistCard extends StatelessWidget {
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
                               style: GoogleFonts.dmSans(
-                                fontSize: 11,
+                                fontSize: context.sp(11),
                                 color: AppColors.deepRose,
                               ),
                             ),
@@ -224,7 +224,7 @@ class _WishlistCard extends StatelessWidget {
                           Text(
                             '₱${item.price.toStringAsFixed(2)}',
                             style: GoogleFonts.dmSans(
-                              fontSize: 13.5,
+                              fontSize: context.sp(13.5),
                               fontWeight: FontWeight.w700,
                               color: AppColors.charcoal,
                             ),
