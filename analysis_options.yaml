@@ -1,1 +1,8 @@
 include: package:flutter_lints/flutter.yaml
+
+analyzer:
+  exclude:
+    - "lost_methods.dart"
+    - "check.dart"
+    - "parse_test.dart"
+    - "test_decode.dart"

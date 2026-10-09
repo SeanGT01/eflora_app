@@ -1773,12 +1773,14 @@ class ChatDrawerState extends State<ChatDrawer>
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'Quick Answers',
+                      'Quick Answers - FAQs bot',
                       style: GoogleFonts.dmSans(
                         fontSize: 14.5,
                         fontWeight: FontWeight.w700,
                         color: AppColors.charcoal,
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                     Row(
                       children: [
@@ -2269,31 +2271,16 @@ class ChatDrawerState extends State<ChatDrawer>
                 children: [
                   Row(
                     children: [
-                      Text(
-                        'Quick Answers',
-                        style: GoogleFonts.dmSans(
-                          fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.charcoal,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(width: 6),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 1.5),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFE8F5E9),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
+                      Expanded(
                         child: Text(
-                          'FAQ Bot',
+                          'Quick Answers - FAQs bot',
                           style: GoogleFonts.dmSans(
-                            fontSize: 9.5,
-                            fontWeight: FontWeight.w700,
-                            color: const Color(0xFF2E7D32),
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: AppColors.charcoal,
                           ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
