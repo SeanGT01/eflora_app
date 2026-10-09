@@ -8,6 +8,8 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
+      - name: Disable experimental SPM
+        script: flutter config --no-enable-swift-package-manager
       - name: Flutter doctor
         script: flutter doctor -v
       - name: Get dependencies
@@ -22,7 +24,7 @@ workflows:
       - name: Package Unsigned IPA artifact
         script: |
           mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
+          cp -r build/ios/iphoneos/Runner.app Payload/ || find . -name "Runner.app" -type d -exec cp -r {} Payload/ \;
           zip -r build/ios/iphoneos/E-FLORA-unsigned.ipa Payload
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
@@ -38,6 +40,8 @@ workflows:
       xcode: latest
       cocoapods: default
     scripts:
+      - name: Disable experimental SPM
+        script: flutter config --no-enable-swift-package-manager
       - name: Get dependencies
         script: flutter pub get
       - name: Build iOS (Release without code signing)
@@ -46,7 +50,7 @@ workflows:
       - name: Package Unsigned IPA artifact
         script: |
           mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
+          cp -r build/ios/iphoneos/Runner.app Payload/ || find . -name "Runner.app" -type d -exec cp -r {} Payload/ \;
           zip -r build/ios/iphoneos/E-FLORA-unsigned.ipa Payload
     artifacts:
       - build/ios/iphoneos/*.ipa
