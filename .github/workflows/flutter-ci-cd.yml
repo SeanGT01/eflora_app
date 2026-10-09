@@ -77,10 +77,6 @@ jobs:
         retention-days: 30
       continue-on-error: true
     
-    - name: Build IPA (iOS)
-      run: flutter build ios --release --no-codesign
-      continue-on-error: true
-
   notify:
     needs: [ analyze, build ]
     runs-on: ubuntu-latest
