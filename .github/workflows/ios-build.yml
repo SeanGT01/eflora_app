@@ -23,11 +23,10 @@ jobs:
           channel: 'stable'
           cache: true
 
-      - name: Disable experimental Swift Package Manager
-        run: flutter config --no-enable-swift-package-manager
-
-      - name: Flutter doctor
-        run: flutter doctor -v
+      - name: Configure Flutter (Disable SPM & Analytics)
+        run: |
+          flutter config --no-enable-swift-package-manager
+          flutter config --no-analytics
 
       - name: Install dependencies
         run: flutter pub get
@@ -38,27 +37,28 @@ jobs:
       - name: Build Flutter bundle and generate iOS configuration
         run: |
           flutter build bundle
-          cat << 'EOF' > ios/Flutter/Generated.xcconfig
-          FLUTTER_ROOT=${FLUTTER_ROOT}
-          FLUTTER_APPLICATION_PATH=${GITHUB_WORKSPACE}
-          COCOAPODS_PARALLEL_CODE_SIGN=true
-          FLUTTER_TARGET=lib/main.dart
-          FLUTTER_BUILD_DIR=build
-          FLUTTER_BUILD_NAME=1.0.27
-          FLUTTER_BUILD_NUMBER=31
-          EXCLUDED_ARCHS[sdk=iphonesimulator*]=i386
-          EXCLUDED_ARCHS[sdk=iphoneos*]=armv7
-          DART_OBFUSCATION=false
-          TRACK_WIDGET_CREATION=true
-          TREE_SHAKE_ICONS=false
-          PACKAGE_CONFIG=.dart_tool/package_config.json
-          EOF
+          printf '%s\n' \
+            "FLUTTER_ROOT=${FLUTTER_ROOT}" \
+            "FLUTTER_APPLICATION_PATH=${GITHUB_WORKSPACE}" \
+            "COCOAPODS_PARALLEL_CODE_SIGN=true" \
+            "FLUTTER_TARGET=lib/main.dart" \
+            "FLUTTER_BUILD_DIR=build" \
+            "FLUTTER_BUILD_NAME=1.0.27" \
+            "FLUTTER_BUILD_NUMBER=31" \
+            "EXCLUDED_ARCHS[sdk=iphonesimulator*]=i386" \
+            "EXCLUDED_ARCHS[sdk=iphoneos*]=armv7" \
+            "DART_OBFUSCATION=false" \
+            "TRACK_WIDGET_CREATION=true" \
+            "TREE_SHAKE_ICONS=false" \
+            "PACKAGE_CONFIG=.dart_tool/package_config.json" \
+            > ios/Flutter/Generated.xcconfig
+          echo "Generated.xcconfig created:"
           cat ios/Flutter/Generated.xcconfig
 
       - name: Compile iOS with Xcode (Device SDK, Unsigned)
         run: |
           cd ios
-          pod install --repo-update
+          pod install
           xcodebuild -workspace Runner.xcworkspace \
             -scheme Runner \
             -configuration Release \
