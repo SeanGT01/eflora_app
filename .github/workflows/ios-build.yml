@@ -25,12 +25,12 @@ jobs:
 
       - name: Select Xcode 16
         run: |
-          if [ -d "/Applications/Xcode_16.2.app" ]; then
-            sudo xcode-select -s /Applications/Xcode_16.2.app
-          elif [ -d "/Applications/Xcode_16.1.app" ]; then
+          if [ -d "/Applications/Xcode_16.1.app" ]; then
             sudo xcode-select -s /Applications/Xcode_16.1.app
           elif [ -d "/Applications/Xcode_16.0.app" ]; then
             sudo xcode-select -s /Applications/Xcode_16.0.app
+          elif [ -d "/Applications/Xcode_16.2.app" ]; then
+            sudo xcode-select -s /Applications/Xcode_16.2.app
           fi
           xcodebuild -version
 
@@ -52,18 +52,40 @@ jobs:
       - name: Run unit tests
         run: flutter test
 
-      - name: Build iOS App (Zero Code-Signing Required)
-        run: flutter build ios --simulator
+      - name: Prepare Flutter iOS build configuration
+        run: flutter build ios --config-only
 
-      - name: Package iOS App Artifact
+      - name: Compile iOS with Xcode (Device SDK, Unsigned)
         run: |
-          cd build/ios/iphonesimulator
-          zip -r ../../../E-FLORA-iOS-App.zip Runner.app
-          cd ../../..
+          cd ios
+          pod install
+          xcodebuild -workspace Runner.xcworkspace \
+            -scheme Runner \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            clean build
+          cd ..
+
+      - name: Package Unsigned IPA artifact
+        run: |
+          mkdir -p Payload
+          APP_PATH=$(find ios/build -name "Runner.app" -type d | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find build -name "Runner.app" -type d | head -n 1)
+          fi
+          if [ -z "$APP_PATH" ]; then
+            APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d | head -n 1)
+          fi
+          echo "Found app bundle at: $APP_PATH"
+          cp -r "$APP_PATH" Payload/
+          zip -r E-FLORA-iOS-App.ipa Payload
 
       - name: Upload iOS App Artifact
         uses: actions/upload-artifact@v4
         with:
           name: eflora-ios-app
-          path: E-FLORA-iOS-App.zip
+          path: E-FLORA-iOS-App.ipa
           retention-days: 14
