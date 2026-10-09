@@ -53,7 +53,7 @@ jobs:
         run: flutter test
 
       - name: Prepare Flutter iOS build configuration
-        run: flutter build ios --config-only
+        run: flutter build ios --config-only --no-codesign
 
       - name: Compile iOS with Xcode (Device SDK, Unsigned)
         run: |
@@ -66,6 +66,7 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGN_IDENTITY="" \
+            SYMROOT="${PWD}/build" \
             clean build
           cd ..
 
@@ -79,7 +80,7 @@ jobs:
           if [ -z "$APP_PATH" ]; then
             APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -name "Runner.app" -type d | head -n 1)
           fi
-          echo "Found app bundle at: $APP_PATH"
+          echo "Packaging: $APP_PATH"
           cp -r "$APP_PATH" Payload/
           zip -r E-FLORA-iOS-App.ipa Payload
 
