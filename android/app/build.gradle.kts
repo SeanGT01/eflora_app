@@ -1,4 +1,4 @@
-﻿import java.util.Properties
+import java.util.Properties
 
 plugins {
     id("com.android.application")
@@ -43,15 +43,6 @@ android {
         versionName = flutter.versionName
     }
 
-    packaging {
-        resources {
-            excludes += "/META-INF/{AL2.0,LGPL2.1}"
-        }
-        jniLibs {
-            useLegacyPackaging = true
-        }
-    }
-
     lint {
         checkReleaseBuilds = false
         abortOnError = false
@@ -71,15 +62,7 @@ android {
     }
 
     buildTypes {
-        getByName("debug") {
-            ndk {
-                debugSymbolLevel = "none"
-            }
-        }
-        getByName("release") {
-            ndk {
-                debugSymbolLevel = "none"
-            }
+        release {
             // Use release keystore when key.properties exists, otherwise fallback to debug.
             signingConfig = if (keystorePropertiesFile.exists()) {
                 signingConfigs.getByName("release")
