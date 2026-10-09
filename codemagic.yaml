@@ -16,10 +16,6 @@ workflows:
         script: flutter test
       - name: Build Android APK
         script: flutter build apk --release
-      - name: Install CocoaPods
-        script: |
-          cd ios
-          pod install
       - name: Build iOS (Release without code signing)
         script: |
           flutter build ios --release --no-codesign
@@ -44,10 +40,6 @@ workflows:
     scripts:
       - name: Get dependencies
         script: flutter pub get
-      - name: Install CocoaPods
-        script: |
-          cd ios
-          pod install
       - name: Build iOS (Release without code signing)
         script: |
           flutter build ios --release --no-codesign
