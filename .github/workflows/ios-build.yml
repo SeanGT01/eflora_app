@@ -52,18 +52,18 @@ jobs:
       - name: Run unit tests
         run: flutter test
 
-      - name: Build iOS (Release, No Code Signing)
-        run: flutter build ios --release --no-codesign
+      - name: Build iOS App (Zero Code-Signing Required)
+        run: flutter build ios --simulator
 
-      - name: Package Unsigned IPA artifact
+      - name: Package iOS App Artifact
         run: |
-          mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/
-          zip -r build/ios/iphoneos/E-FLORA-unsigned.ipa Payload
+          cd build/ios/iphonesimulator
+          zip -r ../../../E-FLORA-iOS-App.zip Runner.app
+          cd ../../..
 
-      - name: Upload iOS IPA Artifact
+      - name: Upload iOS App Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: eflora-ios-unsigned-ipa
-          path: build/ios/iphoneos/E-FLORA-unsigned.ipa
+          name: eflora-ios-app
+          path: E-FLORA-iOS-App.zip
           retention-days: 14
