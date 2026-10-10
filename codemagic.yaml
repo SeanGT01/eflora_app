@@ -1,4 +1,24 @@
 workflows:
+  ios-simulator-workflow:
+    name: E-FLORA iOS App Preview (In-Browser Simulator)
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Disable experimental SPM
+        script: flutter config --no-enable-swift-package-manager
+      - name: Disable analytics
+        script: flutter config --no-analytics
+      - name: Get dependencies
+        script: flutter pub get
+      - name: Build iOS Simulator for App Preview
+        script: flutter build ios --simulator
+    artifacts:
+      - build/ios/iphonesimulator/Runner.app
+
   multiplatform-workflow:
     name: E-FLORA Multiplatform CI/CD (Android + iOS)
     max_build_duration: 30
@@ -10,51 +30,19 @@ workflows:
     scripts:
       - name: Disable experimental SPM
         script: flutter config --no-enable-swift-package-manager
-      - name: Flutter doctor
-        script: flutter doctor -v
+      - name: Disable analytics
+        script: flutter config --no-analytics
       - name: Get dependencies
         script: flutter pub get
       - name: Run unit smoke tests
         script: flutter test
       - name: Build Android APK
         script: flutter build apk --release
-      - name: Build iOS (Release without code signing)
-        script: |
-          flutter build ios --release --no-codesign
-      - name: Package Unsigned IPA artifact
-        script: |
-          mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/ || find . -name "Runner.app" -type d -exec cp -r {} Payload/ \;
-          zip -r build/ios/iphoneos/E-FLORA-unsigned.ipa Payload
+      - name: Build iOS Simulator for App Preview
+        script: flutter build ios --simulator
     artifacts:
       - build/app/outputs/flutter-apk/*.apk
-      - build/ios/iphoneos/*.ipa
-      - build/ios/iphoneos/Runner.app
-
-  ios-release-workflow:
-    name: E-FLORA iOS Dedicated Build
-    max_build_duration: 25
-    instance_type: mac_mini_m2
-    environment:
-      flutter: stable
-      xcode: latest
-      cocoapods: default
-    scripts:
-      - name: Disable experimental SPM
-        script: flutter config --no-enable-swift-package-manager
-      - name: Get dependencies
-        script: flutter pub get
-      - name: Build iOS (Release without code signing)
-        script: |
-          flutter build ios --release --no-codesign
-      - name: Package Unsigned IPA artifact
-        script: |
-          mkdir -p Payload
-          cp -r build/ios/iphoneos/Runner.app Payload/ || find . -name "Runner.app" -type d -exec cp -r {} Payload/ \;
-          zip -r build/ios/iphoneos/E-FLORA-unsigned.ipa Payload
-    artifacts:
-      - build/ios/iphoneos/*.ipa
-      - build/ios/iphoneos/Runner.app
+      - build/ios/iphonesimulator/Runner.app
 
   android-release-workflow:
     name: E-FLORA Android Dedicated Build
